@@ -1,0 +1,93 @@
+{
+  "last_updated": "2026-04-04",
+  "topics": [
+    {
+      "name": "LLM APIs & Wrapper Foundations",
+      "folder": "gen_ai",
+      "status": "in_progress",
+      "total_modules": 10,
+      "modules": [
+        {
+          "id": 1,
+          "name": "LLM API Basics",
+          "file": "01_llm_api_basics.md",
+          "date": "2026-04-04",
+          "score": null,
+          "status": "pending"
+        },
+        {
+          "id": 2,
+          "name": "Message Structure & Roles",
+          "file": "02_message_roles.md",
+          "date": "2026-04-04",
+          "score": null,
+          "status": "pending"
+        },
+        {
+          "id": 3,
+          "name": "Memory & Context Window",
+          "file": "03_memory_and_context.md",
+          "date": "2026-04-04",
+          "score": null,
+          "status": "pending"
+        },
+        {
+          "id": 4,
+          "name": "System Message Power",
+          "file": "04_system_message_power.md",
+          "date": "2026-04-04",
+          "score": null,
+          "status": "pending"
+        },
+        {
+          "id": 5,
+          "name": "Model Parameters",
+          "file": "05_model_parameters.md",
+          "date": null,
+          "score": null,
+          "status": "not_started"
+        },
+        {
+          "id": 6,
+          "name": "TBD",
+          "file": null,
+          "date": null,
+          "score": null,
+          "status": "not_started"
+        },
+        {
+          "id": 7,
+          "name": "TBD",
+          "file": null,
+          "date": null,
+          "score": null,
+          "status": "not_started"
+        },
+        {
+          "id": 8,
+          "name": "TBD",
+          "file": null,
+          "date": null,
+          "score": null,
+          "status": "not_started"
+        },
+        {
+          "id": 9,
+          "name": "TBD",
+          "file": null,
+          "date": null,
+          "score": null,
+          "status": "not_started"
+        },
+        {
+          "id": 10,
+          "name": "TBD",
+          "file": null,
+          "date": null,
+          "score": null,
+          "status": "not_started"
+        }
+      ]
+    }
+  ]
+}
