@@ -15,9 +15,9 @@ A personal learning system powered by Claude. Study any topic broken into module
 git clone https://github.com/DevanshSrivastava88/Learnix.git
 ```
 
-**Step 4** — Add this to your Claude Desktop config file
-- Windows: `%APPDATA%\Claude\claude_desktop_config.json`
-- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+**Step 4** — Open Claude Desktop → **Settings → Developer → Edit Config**
+
+This opens the config file in your text editor. Paste this in:
 
 ```json
 {
@@ -72,14 +72,9 @@ npm -v
 
 Claude Desktop needs the **filesystem MCP server** so it can read and write files in this folder.
 
-**Find your config file:**
+Open Claude Desktop → **Settings → Developer → Edit Config**
 
-| OS | Path |
-|----|------|
-| Windows | `%APPDATA%\Claude\claude_desktop_config.json` |
-| macOS | `~/Library/Application Support/Claude/claude_desktop_config.json` |
-
-Open the file (create it if it doesn't exist) and add this:
+This opens the config file directly in your text editor. Add this:
 
 ```json
 {
