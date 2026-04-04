@@ -4,6 +4,46 @@ A personal learning system powered by Claude. Study any topic broken into module
 
 ---
 
+## Quick Start in 5 Steps
+
+**Step 1** — Install [Claude Desktop](https://claude.ai/download)
+
+**Step 2** — Install [Node.js](https://nodejs.org) (LTS version)
+
+**Step 3** — Clone this repo
+```bash
+git clone https://github.com/DevanshSrivastava88/Learnix.git
+```
+
+**Step 4** — Add this to your Claude Desktop config file
+- Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+
+```json
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "/absolute/path/to/Learnix"
+      ]
+    }
+  }
+}
+```
+
+> Replace `/absolute/path/to/Learnix` with the actual folder path.
+> On Windows use double backslashes: `C:\\Users\\YourName\\Documents\\Learnix`
+
+**Step 5** — Restart Claude Desktop, then say:
+> **"Read the CLAUDE.md file in my Learnix folder"**
+
+You're in.
+
+---
+
 ## How It Works
 
 - You pick a topic (e.g. Gen AI, Python, System Design)
