@@ -37,6 +37,8 @@ This opens the config file in your text editor. Paste this in:
 > Replace `/absolute/path/to/Learnix` with the actual folder path.
 > On Windows use double backslashes: `C:\\Users\\YourName\\Documents\\Learnix`
 
+> **If the config file already has content**, don't replace it — just add the `mcpServers` block alongside the existing keys.
+
 **Step 5** — Restart Claude Desktop, then say:
 > **"Read the CLAUDE.md file in my Learnix folder"**
 
