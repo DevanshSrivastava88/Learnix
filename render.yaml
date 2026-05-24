@@ -1,0 +1,19 @@
+services:
+  - type: worker
+    name: learnix-bot
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python bot.py
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: GITHUB_TOKEN
+        sync: false
+      - key: GITHUB_REPO
+        value: DevanshSrivastava88/Learnix
+      - key: DAILY_REMINDER_TIME
+        value: "09:00"
+      - key: TELEGRAM_USER_ID
+        sync: false
