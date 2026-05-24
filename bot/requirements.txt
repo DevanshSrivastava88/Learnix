@@ -1,0 +1,5 @@
+python-telegram-bot[job-queue]==21.3
+anthropic==0.40.0
+supabase==2.10.0
+python-dotenv==1.0.1
+pytz==2024.2
