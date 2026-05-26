@@ -52,9 +52,11 @@ def generate_quiz(title: str, notes: str = "") -> list[dict]:
         "\nTest understanding, not just recall. Keep expected_answer to 1-3 sentences."
     )
     raw = _ask(prompt)
-    raw = re.sub(r"^```(?:json)?\s*", "", raw)
-    raw = re.sub(r"\s*```$", "", raw)
-    return json.loads(raw.strip())[:5]
+    start = raw.find("[")
+    end = raw.rfind("]") + 1
+    if start == -1 or end == 0:
+        raise ValueError(f"No JSON array in response: {raw[:200]}")
+    return json.loads(raw[start:end])[:5]
 
 
 def score_answer(question: str, expected_answer: str, user_answer: str) -> dict:
@@ -68,9 +70,11 @@ def score_answer(question: str, expected_answer: str, user_answer: str) -> dict:
         "Be lenient with phrasing but strict on concept."
     )
     raw = _ask(prompt, max_tokens=256)
-    raw = re.sub(r"^```(?:json)?\s*", "", raw)
-    raw = re.sub(r"\s*```$", "", raw)
-    return json.loads(raw.strip())
+    start = raw.find("{")
+    end = raw.rfind("}") + 1
+    if start == -1 or end == 0:
+        raise ValueError(f"No JSON in response: {raw[:200]}")
+    return json.loads(raw[start:end])
 
 
 def parse_task(text: str) -> dict:
@@ -94,10 +98,12 @@ def parse_task(text: str) -> dict:
         "- Only ask for clarification if type is genuinely ambiguous\n"
         "- Keep title short (3-5 words max)"
     )
-    raw = _ask(prompt, max_tokens=256)
-    raw = re.sub(r"^```(?:json)?\s*", "", raw)
-    raw = re.sub(r"\s*```$", "", raw)
-    return json.loads(raw.strip())
+    raw = _ask(prompt, max_tokens=512)
+    start = raw.find("{")
+    end = raw.rfind("}") + 1
+    if start == -1 or end == 0:
+        raise ValueError(f"No JSON in response: {raw[:200]}")
+    return json.loads(raw[start:end])
 
 
 def daily_summary(status: dict) -> str:
