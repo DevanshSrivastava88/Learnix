@@ -37,14 +37,21 @@ async def cmd_newtask(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
 
 
 async def nt_get_type(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
-    text = update.message.text.strip()
-    if "Habit" in text:
-        ctx.user_data["task_type"] = "habit"
-    elif "Milestone" in text:
-        ctx.user_data["task_type"] = "milestone"
-    else:
+    text = update.message.text.strip().lower()
+    if text in ("cancel",):
         await update.message.reply_text("Cancelled.", reply_markup=ReplyKeyboardRemove())
         return ConversationHandler.END
+    if "habit" in text or text == "h" or text == "a":
+        ctx.user_data["task_type"] = "habit"
+    elif "milestone" in text or text == "m" or text == "b":
+        ctx.user_data["task_type"] = "milestone"
+    else:
+        buttons = [["Habit (recurring reminder)"], ["Milestone (goal with checklist)"], ["Cancel"]]
+        await update.message.reply_text(
+            "Please choose Habit or Milestone:",
+            reply_markup=ReplyKeyboardMarkup(buttons, one_time_keyboard=True, resize_keyboard=True),
+        )
+        return NT_TYPE
     await update.message.reply_text("What's the name of this task?", reply_markup=ReplyKeyboardRemove())
     return NT_TITLE
 
