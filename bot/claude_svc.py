@@ -127,4 +127,4 @@ def daily_summary(status: dict) -> str:
         "Include: greeting, progress summary, goal status (on track / behind), "
         "today's target topic, one motivating line."
     )
-    return _ask(prompt, max_tokens=300)
+    return _ask(prompt, max_tokens=4096)

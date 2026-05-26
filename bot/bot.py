@@ -216,7 +216,7 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
         try:
             reply = claude_svc._ask(
                 f"You are Learnix, a friendly AI life coach. Reply casually and helpfully in 1-2 sentences.\n\nUser: {text}",
-                max_tokens=150,
+                max_tokens=4096,
             )
             await update.message.reply_text(reply)
         except Exception:
