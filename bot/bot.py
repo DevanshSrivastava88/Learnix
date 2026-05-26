@@ -189,6 +189,38 @@ async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     # Quiz answers
     if uid in ctx.bot_data.get("quiz_state", {}):
         await study_handlers.handle_quiz_answer(update, ctx)
+        return
+
+    # Free-form intent routing
+    await handle_free_text(update, ctx)
+
+
+async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    import claude_svc
+    from tasks.handlers import _parse_and_respond
+    text = update.message.text.strip()
+    try:
+        intent = claude_svc.classify_intent(text)
+    except Exception:
+        intent = "chat"
+
+    if intent == "task":
+        await _parse_and_respond(update, ctx, text, claude_svc)
+    elif intent == "study":
+        await update.message.reply_text(
+            "Sounds like you want to study something! 📚\n\n"
+            "Use /goal to set up a learning goal, then /study to start a session.",
+        )
+    else:
+        # General chat — Learnix responds naturally
+        try:
+            reply = claude_svc._ask(
+                f"You are Learnix, a friendly AI life coach. Reply casually and helpfully in 1-2 sentences.\n\nUser: {text}",
+                max_tokens=150,
+            )
+            await update.message.reply_text(reply)
+        except Exception:
+            await update.message.reply_text("I'm here! Use /help to see what I can do.")
 
 
 async def _reminder_job(ctx: ContextTypes.DEFAULT_TYPE) -> None:

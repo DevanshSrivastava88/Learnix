@@ -82,6 +82,20 @@ def score_answer(question: str, expected_answer: str, user_answer: str) -> dict:
     return _ask_json(prompt)
 
 
+def classify_intent(text: str) -> str:
+    """Classify free-form message as: task | study | chat"""
+    result = _ask_json(
+        f'Classify this message into exactly one category.\n'
+        f'Message: "{text}"\n\n'
+        f'Categories:\n'
+        f'- "task": user wants to create a reminder, habit, todo, or track something\n'
+        f'- "study": user wants to learn something, asks a question, or mentions studying\n'
+        f'- "chat": general conversation, greeting, or anything else\n\n'
+        f'Return: {{"intent": "task" | "study" | "chat"}}'
+    )
+    return result.get("intent", "chat")
+
+
 def parse_task(text: str) -> dict:
     """Parse natural language task description into structured data."""
     from datetime import date
