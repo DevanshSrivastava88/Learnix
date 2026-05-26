@@ -1,4 +1,4 @@
--- Learnix initial schema
+-- Learnix initial schema (dedicated Supabase project: rqdhaphfyitvtckdjgqg)
 
 create table if not exists goals (
   id          uuid primary key default gen_random_uuid(),
@@ -23,9 +23,9 @@ create table if not exists topics (
   created_at   timestamptz not null default now()
 );
 
-create index if not exists topics_goal_id_idx    on topics(goal_id);
-create index if not exists topics_parent_id_idx  on topics(parent_id);
-create index if not exists topics_status_idx     on topics(status);
+create index if not exists topics_goal_id_idx   on topics(goal_id);
+create index if not exists topics_parent_id_idx on topics(parent_id);
+create index if not exists topics_status_idx    on topics(status);
 
 create table if not exists quiz_attempts (
   id           uuid primary key default gen_random_uuid(),
@@ -42,5 +42,4 @@ create table if not exists settings (
   last_study_date     date
 );
 
--- seed default settings row
 insert into settings (id) values (1) on conflict (id) do nothing;
