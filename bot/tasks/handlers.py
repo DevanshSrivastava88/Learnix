@@ -1,7 +1,6 @@
 """Task handlers: /newtask, /tasks, /done_<id>, /edittask, /deletetask, /pause, /resume, /complete"""
 
 import logging
-from datetime import datetime
 
 import pytz
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
@@ -16,7 +15,7 @@ logger = logging.getLogger(__name__)
 IST = pytz.timezone("Asia/Kolkata")
 
 # Conversation states
-NT_TYPE, NT_TITLE, NT_DESC, NT_RECURRENCE, NT_DEADLINE, NT_MILESTONES = range(20, 26)
+NT_DESCRIBE, NT_CONFIRM = range(20, 22)
 DT_SELECT, DT_CONFIRM = range(30, 32)
 
 
@@ -25,134 +24,101 @@ DT_SELECT, DT_CONFIRM = range(30, 32)
 # ---------------------------------------------------------------------------
 
 async def cmd_newtask(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
-    buttons = [["Habit (recurring reminder)"], ["Milestone (goal with checklist)"], ["Cancel"]]
-    await update.message.reply_text(
-        "What kind of task?\n\n"
-        "• *Habit* — recurring action (e.g. make bed daily)\n"
-        "• *Milestone* — goal with checklist + deadline (e.g. launch project)",
-        parse_mode=ParseMode.MARKDOWN,
-        reply_markup=ReplyKeyboardMarkup(buttons, one_time_keyboard=True, resize_keyboard=True),
-    )
-    return NT_TYPE
-
-
-async def nt_get_type(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
-    text = update.message.text.strip().lower()
-    if text in ("cancel",):
-        await update.message.reply_text("Cancelled.", reply_markup=ReplyKeyboardRemove())
-        return ConversationHandler.END
-    if "habit" in text or text == "h" or text == "a":
-        ctx.user_data["task_type"] = "habit"
-    elif "milestone" in text or text == "m" or text == "b":
-        ctx.user_data["task_type"] = "milestone"
-    else:
-        buttons = [["Habit (recurring reminder)"], ["Milestone (goal with checklist)"], ["Cancel"]]
-        await update.message.reply_text(
-            "Please choose Habit or Milestone:",
-            reply_markup=ReplyKeyboardMarkup(buttons, one_time_keyboard=True, resize_keyboard=True),
-        )
-        return NT_TYPE
-    await update.message.reply_text("What's the name of this task?", reply_markup=ReplyKeyboardRemove())
-    return NT_TITLE
-
-
-async def nt_get_title(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
-    ctx.user_data["task_title"] = update.message.text.strip()
-    await update.message.reply_text("Short description? (or '-' to skip):")
-    return NT_DESC
-
-
-async def nt_get_desc(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
-    desc = update.message.text.strip()
-    ctx.user_data["task_desc"] = "" if desc == "-" else desc
-    if ctx.user_data["task_type"] == "habit":
-        buttons = [["Every day"], ["Every 2 days"], ["Every 3 days"], ["Every 7 days"]]
-        await update.message.reply_text(
-            "How often should I remind you?",
-            reply_markup=ReplyKeyboardMarkup(buttons, one_time_keyboard=True, resize_keyboard=True),
-        )
-        return NT_RECURRENCE
-    else:
-        await update.message.reply_text(
-            "Target completion date? (YYYY-MM-DD, e.g. 2026-12-01)\nOr '-' to skip:"
-        )
-        return NT_DEADLINE
-
-
-async def nt_get_recurrence(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
+    import claude_svc
+    # If user passed text with the command (e.g. /newtask workout daily), parse immediately
     text = update.message.text.strip()
-    mapping = {"Every day": 1, "Every 2 days": 2, "Every 3 days": 3, "Every 7 days": 7}
-    days = mapping.get(text)
-    if not days:
-        try:
-            days = int(text.split()[1]) if "day" in text else int(text)
-        except Exception:
-            days = 1
-    ctx.user_data["recurrence_days"] = days
-    uid = update.effective_user.id
-    task = db.create_task(
-        user_id=uid,
-        title=ctx.user_data["task_title"],
-        task_type="habit",
-        description=ctx.user_data.get("task_desc", ""),
-        recurrence_days=days,
-    )
+    inline = text.replace("/newtask", "").strip()
+    if inline:
+        return await _parse_and_respond(update, ctx, inline, claude_svc)
     await update.message.reply_text(
-        f"✅ Habit *{task['title']}* created! I'll remind you every {days} day(s).",
+        "What do you want to track? Just describe it naturally.\n\n"
+        "_e.g. 'remind me to work out every day' or 'launch my app by July'_",
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=ReplyKeyboardRemove(),
     )
-    ctx.user_data.clear()
-    return ConversationHandler.END
+    return NT_DESCRIBE
 
 
-async def nt_get_deadline(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
-    deadline = update.message.text.strip()
-    if deadline != "-":
-        try:
-            datetime.fromisoformat(deadline)
-        except ValueError:
-            await update.message.reply_text("Invalid date. Use YYYY-MM-DD or '-':")
-            return NT_DEADLINE
-        ctx.user_data["target_date"] = deadline
+async def nt_describe(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
+    import claude_svc
+    return await _parse_and_respond(update, ctx, update.message.text.strip(), claude_svc)
+
+
+async def _parse_and_respond(update, ctx, text: str, claude_svc) -> int:
+    try:
+        parsed = claude_svc.parse_task(text)
+    except Exception as e:
+        logger.error(f"parse_task failed: {e}")
+        await update.message.reply_text("Couldn't understand that. Try again or /cancel.")
+        return NT_DESCRIBE
+
+    if parsed.get("clarify"):
+        await update.message.reply_text(parsed["clarify"])
+        ctx.user_data["partial_task"] = parsed
+        return NT_DESCRIBE
+
+    ctx.user_data["parsed_task"] = parsed
+    task_type = parsed.get("type", "habit")
+    title = parsed.get("title", "")
+    desc = parsed.get("description", "")
+    recur = parsed.get("recurrence_days", 1)
+    target = parsed.get("target_date")
+
+    if task_type == "habit":
+        freq = f"every {recur} day(s)" if recur > 1 else "daily"
+        summary = f"*{title}* — habit, {freq}"
     else:
-        ctx.user_data["target_date"] = None
+        deadline = f"deadline: {target}" if target else "no deadline"
+        summary = f"*{title}* — milestone, {deadline}"
+
+    if desc:
+        summary += f"\n_{desc}_"
+
+    buttons = [["✅ Yes, create it"], ["✏️ Edit"], ["❌ Cancel"]]
     await update.message.reply_text(
-        "Add checklist items? Send each item one by one, then send 'done' when finished.\n"
-        "Or send '-' to skip:"
+        f"Got it:\n\n{summary}\n\nLook right?",
+        parse_mode=ParseMode.MARKDOWN,
+        reply_markup=ReplyKeyboardMarkup(buttons, one_time_keyboard=True, resize_keyboard=True),
     )
-    ctx.user_data["milestones"] = []
-    return NT_MILESTONES
+    return NT_CONFIRM
 
 
-async def nt_collect_milestones(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
+async def nt_confirm(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     text = update.message.text.strip()
-    if text == "-" or text.lower() == "done":
-        uid = update.effective_user.id
-        task = db.create_task(
-            user_id=uid,
-            title=ctx.user_data["task_title"],
-            task_type="milestone",
-            description=ctx.user_data.get("task_desc", ""),
-            target_date=ctx.user_data.get("target_date"),
-        )
-        for i, item in enumerate(ctx.user_data.get("milestones", [])):
-            db.create_milestone(task["id"], item, order_index=i)
-        count = len(ctx.user_data.get("milestones", []))
-        await update.message.reply_text(
-            f"✅ Milestone *{task['title']}* created with {count} checklist item(s)!",
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=ReplyKeyboardRemove(),
-        )
+    parsed = ctx.user_data.get("parsed_task", {})
+
+    if "Cancel" in text or text.lower() == "cancel":
+        await update.message.reply_text("Cancelled.", reply_markup=ReplyKeyboardRemove())
         ctx.user_data.clear()
         return ConversationHandler.END
-    ctx.user_data["milestones"].append(text)
-    count = len(ctx.user_data["milestones"])
-    await update.message.reply_text(
-        f"Added item {count}: *{text}*\nSend another item or 'done' to finish:",
-        parse_mode=ParseMode.MARKDOWN,
+
+    if "Edit" in text:
+        await update.message.reply_text(
+            "Describe the task again with corrections:",
+            reply_markup=ReplyKeyboardRemove(),
+        )
+        return NT_DESCRIBE
+
+    uid = update.effective_user.id
+    task_type = parsed.get("type", "habit")
+    task = db.create_task(
+        user_id=uid,
+        title=parsed.get("title", "Task"),
+        task_type=task_type,
+        description=parsed.get("description", ""),
+        recurrence_days=parsed.get("recurrence_days", 1) if task_type == "habit" else None,
+        target_date=parsed.get("target_date") if task_type == "milestone" else None,
     )
-    return NT_MILESTONES
+    if task_type == "habit":
+        recur = parsed.get("recurrence_days", 1)
+        freq = f"every {recur} day(s)" if recur > 1 else "daily"
+        msg = f"✅ Habit *{task['title']}* created! I'll remind you {freq}."
+    else:
+        msg = f"✅ Milestone *{task['title']}* created!"
+
+    await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN, reply_markup=ReplyKeyboardRemove())
+    ctx.user_data.clear()
+    return ConversationHandler.END
 
 
 # ---------------------------------------------------------------------------
@@ -370,12 +336,8 @@ def get_handlers():
     newtask_conv = ConversationHandler(
         entry_points=[CommandHandler("newtask", cmd_newtask)],
         states={
-            NT_TYPE: [MessageHandler(filters.TEXT & ~filters.COMMAND, nt_get_type)],
-            NT_TITLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, nt_get_title)],
-            NT_DESC: [MessageHandler(filters.TEXT & ~filters.COMMAND, nt_get_desc)],
-            NT_RECURRENCE: [MessageHandler(filters.TEXT & ~filters.COMMAND, nt_get_recurrence)],
-            NT_DEADLINE: [MessageHandler(filters.TEXT & ~filters.COMMAND, nt_get_deadline)],
-            NT_MILESTONES: [MessageHandler(filters.TEXT & ~filters.COMMAND, nt_collect_milestones)],
+            NT_DESCRIBE: [MessageHandler(filters.TEXT & ~filters.COMMAND, nt_describe)],
+            NT_CONFIRM:  [MessageHandler(filters.TEXT & ~filters.COMMAND, nt_confirm)],
         },
         fallbacks=[CommandHandler("cancel", _cancel), cancel_handler],
     )

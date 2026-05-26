@@ -73,6 +73,33 @@ def score_answer(question: str, expected_answer: str, user_answer: str) -> dict:
     return json.loads(raw.strip())
 
 
+def parse_task(text: str) -> dict:
+    """Parse natural language task description into structured data."""
+    from datetime import date
+    today = date.today().isoformat()
+    prompt = (
+        f"Today is {today}. Extract task info from this message: \"{text}\"\n\n"
+        "Return ONLY a JSON object, no markdown:\n"
+        "{\n"
+        "  \"type\": \"habit\" or \"milestone\",\n"
+        "  \"title\": \"short task name\",\n"
+        "  \"description\": \"optional detail or empty string\",\n"
+        "  \"recurrence_days\": 1 (for habits — 1=daily, 7=weekly, etc.),\n"
+        "  \"target_date\": \"YYYY-MM-DD\" or null (for milestones),\n"
+        "  \"clarify\": \"one question to ask if critical info is missing, else empty string\"\n"
+        "}\n\n"
+        "Rules:\n"
+        "- If it sounds like a recurring action (workout, read, meditate, remind), it's a habit\n"
+        "- If it sounds like a one-time project/goal with a deadline, it's a milestone\n"
+        "- Only ask for clarification if type is genuinely ambiguous\n"
+        "- Keep title short (3-5 words max)"
+    )
+    raw = _ask(prompt, max_tokens=256)
+    raw = re.sub(r"^```(?:json)?\s*", "", raw)
+    raw = re.sub(r"\s*```$", "", raw)
+    return json.loads(raw.strip())
+
+
 def daily_summary(status: dict) -> str:
     prompt = (
         "Write a punchy daily learning reminder (under 150 words, use emojis, Telegram Markdown).\n\n"
