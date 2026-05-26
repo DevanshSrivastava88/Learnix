@@ -25,6 +25,18 @@ def _ask(prompt: str, max_tokens: int = 1024) -> str:
     return resp.text.strip()
 
 
+def _ask_json(prompt: str) -> dict | list:
+    """Call Gemini with JSON mode — forces clean JSON output, no markdown."""
+    resp = _model.generate_content(
+        prompt,
+        generation_config=genai.types.GenerationConfig(
+            response_mime_type="application/json",
+            max_output_tokens=8192,
+        ),
+    )
+    return json.loads(resp.text.strip())
+
+
 def teach_topic(title: str, notes: str = "") -> str:
     if notes.strip():
         prompt = (
@@ -47,16 +59,14 @@ def generate_quiz(title: str, notes: str = "") -> list[dict]:
     prompt = (
         f"{context}"
         f"Generate exactly 5 quiz questions about: {title}\n\n"
-        "Return ONLY a JSON array, no markdown, no extra text:\n"
+        "Return a JSON array:\n"
         '[{"question": "...", "expected_answer": "..."}, ...]'
         "\nTest understanding, not just recall. Keep expected_answer to 1-3 sentences."
     )
-    raw = _ask(prompt)
-    start = raw.find("[")
-    end = raw.rfind("]") + 1
-    if start == -1 or end == 0:
-        raise ValueError(f"No JSON array in response: {raw[:200]}")
-    return json.loads(raw[start:end])[:5]
+    result = _ask_json(prompt)
+    if isinstance(result, list):
+        return result[:5]
+    raise ValueError("generate_quiz: expected JSON array")
 
 
 def score_answer(question: str, expected_answer: str, user_answer: str) -> dict:
@@ -65,16 +75,11 @@ def score_answer(question: str, expected_answer: str, user_answer: str) -> dict:
         f"Question: {question}\n"
         f"Expected answer: {expected_answer}\n"
         f"User's answer: {user_answer}\n\n"
-        "Return ONLY a JSON object, no markdown:\n"
+        "Return a JSON object: "
         '{"correct": true/false, "explanation": "1-2 sentences"}\n'
         "Be lenient with phrasing but strict on concept."
     )
-    raw = _ask(prompt, max_tokens=256)
-    start = raw.find("{")
-    end = raw.rfind("}") + 1
-    if start == -1 or end == 0:
-        raise ValueError(f"No JSON in response: {raw[:200]}")
-    return json.loads(raw[start:end])
+    return _ask_json(prompt)
 
 
 def parse_task(text: str) -> dict:
@@ -98,12 +103,7 @@ def parse_task(text: str) -> dict:
         "- Only ask for clarification if type is genuinely ambiguous\n"
         "- Keep title short (3-5 words max)"
     )
-    raw = _ask(prompt, max_tokens=512)
-    start = raw.find("{")
-    end = raw.rfind("}") + 1
-    if start == -1 or end == 0:
-        raise ValueError(f"No JSON in response: {raw[:200]}")
-    return json.loads(raw[start:end])
+    return _ask_json(prompt)
 
 
 def daily_summary(status: dict) -> str:
