@@ -30,17 +30,13 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     settings_svc.get_settings(uid)  # creates row with defaults if new user
     first_name = update.effective_user.first_name or "there"
     await update.message.reply_text(
-        f"👋 Hey *{first_name}*! Welcome to Learnix — your personal AI learning and life OS.\n\n"
-        f"Here's what you can do:\n\n"
-        f"📚 *Study* — AI-powered learning with teach + quiz\n"
-        f"  /goal — Create a study goal\n"
-        f"  /study — Start a study session\n\n"
-        f"✅ *Habits* — Recurring reminders\n"
-        f"  /newtask — Create a habit or milestone\n\n"
-        f"📊 /tasks — See all your tasks\n"
-        f"📈 /graph — Activity trend graph\n"
-        f"⚙️ /settings — Configure reminder times\n"
-        f"❓ /help — Full command list",
+        f"👋 Hey *{first_name}*! I'm your AI life OS — just talk to me naturally.\n\n"
+        f"📚 *Study* — /goal, /study\n"
+        f"✅ *Tasks* — just say what you want to track, or use /newtask\n"
+        f"⏰ *Reminders* — say 'remind me to X in Y mins'\n"
+        f"📊 /tasks — see everything\n"
+        f"📈 /graph — activity graph\n"
+        f"⚙️ /settings — tweak reminder times",
         parse_mode=ParseMode.MARKDOWN,
     )
 
@@ -51,32 +47,26 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
-        "*📖 Learnix Commands*\n\n"
+        "*Learnix Commands*\n\n"
         "*Study:*\n"
         "/goal — Create study goal\n"
         "/goals — List study goals\n"
         "/addtopic — Add topic to goal\n"
-        "/study — Start study session now\n"
-        "/progress — Full progress view\n"
-        "/editgoal — Edit a goal\n"
-        "/deletegoal — Delete a goal\n"
-        "/pausegoal — Pause/resume a goal\n\n"
-        "*Tasks:*\n"
-        "/newtask — Create habit or milestone\n"
+        "/study — Start study session\n"
+        "/progress — Progress view\n"
+        "/editgoal, /deletegoal, /pausegoal — Manage goals\n\n"
+        "*Tasks & Reminders:*\n"
+        "Just talk naturally — or use /newtask\n"
         "/tasks — List all tasks\n"
-        "/done\\_<id> — Mark habit done\n"
+        "/done\\_<id> — Mark task done\n"
         "/deletetask — Delete a task\n"
-        "/pause — Pause a task\n"
-        "/resume — Resume a paused task\n"
-        "/complete — Mark milestone complete\n\n"
+        "/pause, /resume — Pause or resume\n\n"
         "*Analytics:*\n"
-        "/graph — Activity trend graph (last 30 days)\n\n"
+        "/graph — Activity graph (last 30 days)\n\n"
         "*Settings:*\n"
         "/settings — View settings\n"
-        "/settime — Set daily study time\n"
-        "/setmorning — Set morning brief time\n"
-        "/seteod — Set EOD check-in time\n\n"
-        "/cancel — Cancel any ongoing action",
+        "/settime, /setmorning, /seteod — Set reminder times\n\n"
+        "/cancel — Cancel anything",
         parse_mode=ParseMode.MARKDOWN,
     )
 

@@ -85,37 +85,41 @@ def score_answer(question: str, expected_answer: str, user_answer: str) -> dict:
 def classify_intent(text: str) -> str:
     """Classify free-form message as: task | study | chat"""
     result = _ask_json(
-        f'Classify this message into exactly one category.\n'
+        f'Classify this message into exactly one category. Default to "task" when unsure.\n'
         f'Message: "{text}"\n\n'
         f'Categories:\n'
-        f'- "task": user wants to create a reminder, habit, todo, or track something\n'
-        f'- "study": user wants to learn something, asks a question, or mentions studying\n'
-        f'- "chat": general conversation, greeting, or anything else\n\n'
+        f'- "task": user wants to add a reminder, habit, todo, or track something — use this as the default\n'
+        f'- "study": user explicitly wants to learn a topic or asks an educational question\n'
+        f'- "chat": clearly just a greeting or small talk with no action implied\n\n'
         f'Return: {{"intent": "task" | "study" | "chat"}}'
     )
-    return result.get("intent", "chat")
+    return result.get("intent", "task")
 
 
 def parse_task(text: str) -> dict:
-    """Parse natural language task description into structured data."""
+    """Parse natural language task. Returns type: reminder | habit."""
     from datetime import date
     today = date.today().isoformat()
     prompt = (
         f"Today is {today}. Extract task info from this message: \"{text}\"\n\n"
         "Return ONLY a JSON object, no markdown:\n"
         "{\n"
-        "  \"type\": \"habit\" or \"milestone\",\n"
-        "  \"title\": \"short task name\",\n"
+        "  \"type\": \"reminder\" or \"habit\",\n"
+        "  \"title\": \"short task name (3-5 words)\",\n"
         "  \"description\": \"optional detail or empty string\",\n"
-        "  \"recurrence_days\": 1 (for habits — 1=daily, 7=weekly, etc.),\n"
-        "  \"target_date\": \"YYYY-MM-DD\" or null (for milestones),\n"
-        "  \"clarify\": \"one question to ask if critical info is missing, else empty string\"\n"
+        "  \"delay_minutes\": integer (for reminders — how many minutes from now, e.g. 20),\n"
+        "  \"recurrence_days\": integer (for habits — 1=daily, 7=weekly),\n"
+        "  \"clarify\": \"one question if critical info is missing, else empty string\"\n"
         "}\n\n"
         "Rules:\n"
-        "- If it sounds like a recurring action (workout, read, meditate, remind), it's a habit\n"
-        "- If it sounds like a one-time project/goal with a deadline, it's a milestone\n"
-        "- Only ask for clarification if type is genuinely ambiguous\n"
-        "- Keep title short (3-5 words max)"
+        "- 'reminder': one-time — phrases like 'in 20 mins', 'in 2 hours', 'at 5pm', 'in 10', 'remind me in X'\n"
+        "- A bare number like 'in 10' or 'remind in 10' always means 10 minutes\n"
+        "- 'habit': recurring — 'every day', 'daily', 'every morning', or no time/delay specified\n"
+        "- For reminder: set delay_minutes as integer minutes from now, recurrence_days=null\n"
+        "- For habit: set recurrence_days (default 1), delay_minutes=null\n"
+        "- Convert hours to minutes: '2 hours' = 120, '1.5 hours' = 90\n"
+        "- Only ask clarify if genuinely ambiguous\n"
+        "- Keep title short (3-5 words)"
     )
     return _ask_json(prompt)
 

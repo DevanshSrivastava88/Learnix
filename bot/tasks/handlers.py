@@ -25,14 +25,13 @@ DT_SELECT, DT_CONFIRM = range(30, 32)
 
 async def cmd_newtask(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     import claude_svc
-    # If user passed text with the command (e.g. /newtask workout daily), parse immediately
     text = update.message.text.strip()
     inline = text.replace("/newtask", "").strip()
     if inline:
         return await _parse_and_respond(update, ctx, inline, claude_svc)
     await update.message.reply_text(
-        "What do you want to track? Just describe it naturally.\n\n"
-        "_e.g. 'remind me to work out every day' or 'launch my app by July'_",
+        "What do you want to track? Just say it.\n\n"
+        "_e.g. 'remind me to game in 20 mins' or 'workout every day'_",
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=ReplyKeyboardRemove(),
     )
@@ -49,7 +48,7 @@ async def _parse_and_respond(update, ctx, text: str, claude_svc) -> int:
         parsed = claude_svc.parse_task(text)
     except Exception as e:
         logger.error(f"parse_task failed: {e}")
-        await update.message.reply_text("Couldn't understand that. Try again or /cancel.")
+        await update.message.reply_text("Didn't catch that, say it again?")
         return NT_DESCRIBE
 
     if parsed.get("clarify"):
@@ -57,30 +56,48 @@ async def _parse_and_respond(update, ctx, text: str, claude_svc) -> int:
         ctx.user_data["partial_task"] = parsed
         return NT_DESCRIBE
 
-    ctx.user_data["parsed_task"] = parsed
     task_type = parsed.get("type", "habit")
     title = parsed.get("title", "")
     desc = parsed.get("description", "")
+
+    # One-time reminder — schedule a job, no DB needed
+    if task_type == "reminder":
+        delay = parsed.get("delay_minutes") or 0
+        if delay <= 0:
+            await update.message.reply_text("How many minutes from now?")
+            ctx.user_data["partial_task"] = parsed
+            return NT_DESCRIBE
+        uid = update.effective_user.id
+        ctx.job_queue.run_once(
+            _reminder_fire,
+            when=delay * 60,
+            data={"user_id": uid, "title": title},
+            name=f"onetime_{uid}_{title}",
+        )
+        time_str = f"{delay} min" if delay < 60 else f"{delay // 60}h {delay % 60}m".replace(" 0m", "")
+        await update.message.reply_text(f"⏰ Got it! I'll remind you about *{title}* in {time_str}.", parse_mode=ParseMode.MARKDOWN)
+        return ConversationHandler.END
+
+    # Habit
+    ctx.user_data["parsed_task"] = parsed
     recur = parsed.get("recurrence_days", 1)
-    target = parsed.get("target_date")
-
-    if task_type == "habit":
-        freq = f"every {recur} day(s)" if recur > 1 else "daily"
-        summary = f"*{title}* — habit, {freq}"
-    else:
-        deadline = f"deadline: {target}" if target else "no deadline"
-        summary = f"*{title}* — milestone, {deadline}"
-
+    freq = "every day" if recur == 1 else f"every {recur} days"
+    summary = f"*{title}* — {freq}"
     if desc:
         summary += f"\n_{desc}_"
 
-    buttons = [["✅ Yes, create it"], ["✏️ Edit"], ["❌ Cancel"]]
+    buttons = [["✅ Yeah, add it"], ["✏️ Edit"], ["❌ Cancel"]]
     await update.message.reply_text(
         f"Got it:\n\n{summary}\n\nLook right?",
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=ReplyKeyboardMarkup(buttons, one_time_keyboard=True, resize_keyboard=True),
     )
     return NT_CONFIRM
+
+
+async def _reminder_fire(ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    data = ctx.job.data
+    await ctx.bot.send_message(data["user_id"], f"⏰ Hey! Don't forget: *{data['title']}*", parse_mode=ParseMode.MARKDOWN)
 
 
 async def nt_confirm(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
@@ -94,29 +111,27 @@ async def nt_confirm(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
 
     if "Edit" in text:
         await update.message.reply_text(
-            "Describe the task again with corrections:",
+            "Describe it again with corrections:",
             reply_markup=ReplyKeyboardRemove(),
         )
         return NT_DESCRIBE
 
     uid = update.effective_user.id
-    task_type = parsed.get("type", "habit")
+    recur = parsed.get("recurrence_days", 1)
     task = db.create_task(
         user_id=uid,
         title=parsed.get("title", "Task"),
-        task_type=task_type,
+        task_type="habit",
         description=parsed.get("description", ""),
-        recurrence_days=parsed.get("recurrence_days", 1) if task_type == "habit" else None,
-        target_date=parsed.get("target_date") if task_type == "milestone" else None,
+        recurrence_days=recur,
+        target_date=None,
     )
-    if task_type == "habit":
-        recur = parsed.get("recurrence_days", 1)
-        freq = f"every {recur} day(s)" if recur > 1 else "daily"
-        msg = f"✅ Habit *{task['title']}* created! I'll remind you {freq}."
-    else:
-        msg = f"✅ Milestone *{task['title']}* created!"
-
-    await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN, reply_markup=ReplyKeyboardRemove())
+    freq = "every day" if recur == 1 else f"every {recur} days"
+    await update.message.reply_text(
+        f"✅ *{task['title']}* added! I'll remind you {freq}.",
+        parse_mode=ParseMode.MARKDOWN,
+        reply_markup=ReplyKeyboardRemove(),
+    )
     ctx.user_data.clear()
     return ConversationHandler.END
 
@@ -129,27 +144,14 @@ async def cmd_tasks(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     uid = update.effective_user.id
     all_tasks = db.list_tasks(uid)
     if not all_tasks:
-        await update.message.reply_text(
-            "No active tasks. Use /newtask to create a habit or milestone."
-        )
+        await update.message.reply_text("No tasks yet. Just tell me what you want to track!")
         return
-    habits = [t for t in all_tasks if t["task_type"] == "habit"]
-    milestones = [t for t in all_tasks if t["task_type"] == "milestone"]
-    lines = ["*📋 Your Tasks*\n"]
-    if habits:
-        lines.append("*Habits:*")
-        for h in habits:
-            recur = h.get("recurrence_days", 1)
-            lines.append(f"  • {h['title']} (every {recur}d) — /done_{h['id'][:8]}")
-        lines.append("")
-    if milestones:
-        lines.append("*Milestones:*")
-        for m in milestones:
-            counts = db.count_milestones(m["id"])
-            target = m.get("target_date", "no deadline")
-            lines.append(f"  • {m['title']} — {counts['done']}/{counts['total']} — deadline: {target}")
-        lines.append("")
-    lines.append("Use /deletetask or /pause to manage tasks.")
+    lines = ["*Your tasks:*\n"]
+    for t in all_tasks:
+        recur = t.get("recurrence_days", 1)
+        freq = "daily" if recur == 1 else f"every {recur}d"
+        lines.append(f"  • {t['title']} ({freq}) — /done_{t['id'][:8]}")
+    lines.append("\n/deletetask or /pause to manage.")
     await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.MARKDOWN)
 
 
