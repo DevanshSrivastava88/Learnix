@@ -227,6 +227,12 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
     import claude_svc
     from tasks.handlers import _parse_and_respond
     text = update.message.text.strip()
+
+    # Pre-check: ignore bare navigation words before hitting Gemini
+    if text.lower() in {"cancel", "back", "stop", "exit", "no", "nope", "nah"}:
+        await update.message.reply_text("Nothing to cancel. Use /help to see what I can do.")
+        return
+
     try:
         intent = claude_svc.classify_intent(text)
     except Exception:
