@@ -213,8 +213,12 @@ async def eod_poller(ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def reminder_poller(ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    """Every 300s: send habit/milestone reminders for all due tasks."""
+    """Every 300s: send habit/milestone reminders for all due tasks.
+    Habits: max 2 reminders per day, auto-skip on 3rd attempt.
+    """
     due = tasks_svc.get_due_tasks()
+    today = datetime.now(IST).date().isoformat()
+
     for task in due:
         uid = task["user_id"]
         title = task["title"]
@@ -223,11 +227,39 @@ async def reminder_poller(ctx: ContextTypes.DEFAULT_TYPE) -> None:
         try:
             if task_type == "habit":
                 short = task_id[:8]
+                count_key = f"reminded_{task_id}_{today}"
+                reminded_today = ctx.bot_data.get(count_key, 0)
+
+                if reminded_today >= 2:
+                    # Auto-skip after 2 reminders with no response
+                    import analytics_svc
+                    tasks_svc.log_skip(uid, task_id, note="auto_skip_no_response")
+                    from datetime import timedelta
+                    next_at = datetime.now(IST).replace(tzinfo=None)
+                    import pytz as _pytz
+                    from datetime import timezone as _tz
+                    next_utc = datetime.now(_tz.utc) + timedelta(days=task.get("recurrence_days", 1))
+                    tasks_svc.reschedule_task(task_id, next_utc)
+                    ctx.bot_data[count_key] = 0
+                    analytics_svc.log_activity(uid, "habit", note=f"auto_skip:{title}")
+                    await ctx.bot.send_message(
+                        uid,
+                        f"⏭ Auto-skipped *{title}* — no response after 2 reminders. See you tomorrow!",
+                        parse_mode=ParseMode.MARKDOWN,
+                    )
+                    continue
+
+                # Send reminder and advance next_reminder_at by 8 hours
                 msg = (
                     f"⏰ Habit reminder: *{title}*\n\n"
                     f"✅ Done → /done_{short}\n"
                     f"⏭ Skip → /skip_{short}"
                 )
+                await ctx.bot.send_message(uid, msg, parse_mode=ParseMode.MARKDOWN)
+                from datetime import timezone as _tz, timedelta
+                next_utc = datetime.now(_tz.utc) + timedelta(hours=8)
+                tasks_svc.reschedule_task(task_id, next_utc)
+                ctx.bot_data[count_key] = reminded_today + 1
             else:
                 counts = tasks_svc.count_milestones(task_id)
                 total = counts["total"]
@@ -239,7 +271,7 @@ async def reminder_poller(ctx: ContextTypes.DEFAULT_TYPE) -> None:
                     f"Deadline: {target}\n\n"
                     f"Use /tasks to update progress."
                 )
-            await ctx.bot.send_message(uid, msg, parse_mode=ParseMode.MARKDOWN)
+                await ctx.bot.send_message(uid, msg, parse_mode=ParseMode.MARKDOWN)
         except Exception as e:
             logger.error(f"Reminder failed for task {task_id}: {e}")
 
