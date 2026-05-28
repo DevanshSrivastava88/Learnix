@@ -97,26 +97,29 @@ def classify_intent(text: str) -> str:
 
 
 def parse_task(text: str) -> dict:
-    """Parse natural language task. Returns type: reminder | habit."""
+    """Parse natural language task. Returns type: reminder | interval_reminder | habit."""
     from datetime import date
     today = date.today().isoformat()
     prompt = (
         f"Today is {today}. Extract task info from this message: \"{text}\"\n\n"
         "Return ONLY a JSON object, no markdown:\n"
         "{\n"
-        "  \"type\": \"reminder\" or \"habit\",\n"
+        "  \"type\": \"reminder\" or \"interval_reminder\" or \"habit\",\n"
         "  \"title\": \"short task name (3-5 words)\",\n"
         "  \"description\": \"optional detail or empty string\",\n"
         "  \"delay_minutes\": integer (for reminders — how many minutes from now, e.g. 20),\n"
+        "  \"interval_minutes\": integer (for interval_reminder — repeat every X minutes, e.g. 60 for every hour),\n"
         "  \"recurrence_days\": integer (for habits — 1=daily, 7=weekly),\n"
         "  \"clarify\": \"one question if critical info is missing, else empty string\"\n"
         "}\n\n"
         "Rules:\n"
         "- 'reminder': one-time — phrases like 'in 20 mins', 'in 2 hours', 'at 5pm', 'in 10', 'remind me in X'\n"
-        "- A bare number like 'in 10' or 'remind in 10' always means 10 minutes\n"
-        "- 'habit': recurring — 'every day', 'daily', 'every morning', or no time/delay specified\n"
-        "- For reminder: set delay_minutes as integer minutes from now, recurrence_days=null\n"
-        "- For habit: set recurrence_days (default 1), delay_minutes=null\n"
+        "- 'interval_reminder': repeating intra-day — 'every hour', 'every 30 mins', 'every 2 hours', 'remind me every X'\n"
+        "- 'habit': daily/weekly — 'every day', 'daily', 'every morning', or no time/delay specified\n"
+        "- A bare number like 'in 10' or 'remind in 10' always means 10 minutes (reminder)\n"
+        "- For reminder: set delay_minutes as integer minutes from now, others null\n"
+        "- For interval_reminder: set interval_minutes (e.g. 60 for hourly, 30 for every 30 min), others null\n"
+        "- For habit: set recurrence_days (default 1), others null\n"
         "- Convert hours to minutes: '2 hours' = 120, '1.5 hours' = 90\n"
         "- Only ask clarify if genuinely ambiguous\n"
         "- Keep title short (3-5 words)"

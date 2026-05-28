@@ -78,6 +78,29 @@ async def _parse_and_respond(update, ctx, text: str, claude_svc) -> int:
         await update.message.reply_text(f"⏰ Got it! I'll remind you about *{title}* in {time_str}.", parse_mode=ParseMode.MARKDOWN)
         return ConversationHandler.END
 
+    # Interval reminder — repeating every X minutes
+    if task_type == "interval_reminder":
+        interval = parsed.get("interval_minutes") or 60
+        uid = update.effective_user.id
+        ctx.job_queue.run_repeating(
+            _reminder_fire,
+            interval=interval * 60,
+            first=interval * 60,
+            data={"user_id": uid, "title": title},
+            name=f"interval_{uid}_{title[:20]}",
+        )
+        if interval < 60:
+            interval_str = f"every {interval} min"
+        elif interval == 60:
+            interval_str = "every hour"
+        else:
+            interval_str = f"every {interval // 60}h" + (f" {interval % 60}m" if interval % 60 else "")
+        await update.message.reply_text(
+            f"⏰ Got it! I'll remind you about *{title}* {interval_str}.",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+        return ConversationHandler.END
+
     # Habit
     ctx.user_data["parsed_task"] = parsed
     ctx.user_data["freetext_task_state"] = "confirm"
