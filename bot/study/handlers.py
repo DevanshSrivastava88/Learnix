@@ -222,9 +222,15 @@ async def at_get_notes(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
 
 async def cmd_study(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     uid = update.effective_user.id
+    goals = db.list_goals(uid)
+    if not goals:
+        await update.message.reply_text(
+            "You don't have any study goals yet.\n\nUse /goal to create one first!"
+        )
+        return
     topic = db.get_next_pending_topic(uid)
     if not topic:
-        await update.message.reply_text("🎉 No pending topics! Add more with /addtopic.")
+        await update.message.reply_text("🎉 All topics done! Add more with /addtopic.")
         return
     goal = db.get_goal(topic["goal_id"])
     pos = db.get_topic_position(topic)

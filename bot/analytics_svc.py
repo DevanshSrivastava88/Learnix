@@ -75,6 +75,7 @@ def build_graph(user_id: int, days: int = 30) -> io.BytesIO:
     ax.legend(loc="upper left")
     ax.yaxis.set_major_locator(plt.MaxNLocator(integer=True))
     ax.set_xlim(-0.5, days - 0.5)
+    ax.set_ylim(bottom=0)
 
     plt.tight_layout()
     buf = io.BytesIO()
