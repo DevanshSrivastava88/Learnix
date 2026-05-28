@@ -389,7 +389,68 @@ def get_handlers():
         MessageHandler(filters.Regex(r"^/pause_"), handle_pause_task),
         MessageHandler(filters.Regex(r"^/resume_"), handle_resume_task),
         MessageHandler(filters.Regex(r"^/complete_"), handle_complete_task),
+        MessageHandler(filters.Regex(r"^/skip_"), handle_skip_task),
     ]
+
+
+async def handle_skip_task(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handles /skip_<short_id> — asks user to reschedule or outright skip."""
+    text = update.message.text.strip()
+    short_id = text.replace("/skip_", "")
+    uid = update.effective_user.id
+    tasks = db.list_tasks(uid)
+    task = next((t for t in tasks if t["id"].startswith(short_id)), None)
+    if not task:
+        await update.message.reply_text("Task not found.")
+        return
+    ctx.user_data["pending_skip"] = task
+    await update.message.reply_text(
+        f"Want to reschedule *{task['title']}*?\n\n"
+        "Reply with a time (e.g. `3pm`, `in 2 hours`, `tomorrow 9am`) "
+        "or just say `skip` to log it and move on.",
+        parse_mode=ParseMode.MARKDOWN,
+    )
+
+
+async def handle_skip_response(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> bool:
+    """Called from bot.py handle_text. Returns True if message was consumed."""
+    task = ctx.user_data.get("pending_skip")
+    if not task:
+        return False
+
+    text = update.message.text.strip()
+    uid = update.effective_user.id
+    ctx.user_data.pop("pending_skip")
+
+    if text.lower() == "skip":
+        db.log_skip(uid, task["id"], note="outright")
+        from datetime import datetime, timezone, timedelta
+        next_at = datetime.now(timezone.utc) + timedelta(days=task.get("recurrence_days", 1))
+        db.reschedule_task(task["id"], next_at)
+        await update.message.reply_text(
+            f"Logged. *{task['title']}* will remind you again in {task.get('recurrence_days', 1)} day(s).",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+        return True
+
+    import skip_time_parser as stp
+    parsed_dt = stp.parse_time_expression(text)
+    if parsed_dt is None:
+        await update.message.reply_text(
+            "Didn't catch that time. Try `3pm`, `in 2 hours`, or just say `skip`.",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+        ctx.user_data["pending_skip"] = task
+        return True
+
+    db.reschedule_task(task["id"], parsed_dt)
+    db.log_skip(uid, task["id"], note=f"rescheduled_to:{parsed_dt.isoformat()}")
+    time_str = parsed_dt.astimezone(IST).strftime("%I:%M %p IST")
+    await update.message.reply_text(
+        f"Rescheduled! I'll remind you about *{task['title']}* at {time_str}.",
+        parse_mode=ParseMode.MARKDOWN,
+    )
+    return True
 
 
 async def _cancel(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:

@@ -18,6 +18,7 @@ from telegram.constants import ParseMode
 import settings_svc
 import study.svc as study_svc
 import tasks.svc as tasks_svc
+import motivation_svc
 
 logger = logging.getLogger(__name__)
 IST = pytz.timezone("Asia/Kolkata")
@@ -221,7 +222,12 @@ async def reminder_poller(ctx: ContextTypes.DEFAULT_TYPE) -> None:
         task_type = task["task_type"]
         try:
             if task_type == "habit":
-                msg = f"⏰ Habit reminder: *{title}*\n\nDone? Reply /done_{task_id}"
+                short = task_id[:8]
+                msg = (
+                    f"⏰ Habit reminder: *{title}*\n\n"
+                    f"✅ Done → /done_{short}\n"
+                    f"⏭ Skip → /skip_{short}"
+                )
             else:
                 counts = tasks_svc.count_milestones(task_id)
                 total = counts["total"]
@@ -238,11 +244,23 @@ async def reminder_poller(ctx: ContextTypes.DEFAULT_TYPE) -> None:
             logger.error(f"Reminder failed for task {task_id}: {e}")
 
 
+async def motivation_poller(ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    """Every 300s: check skip patterns and send motivational messages if triggered."""
+    users = settings_svc.get_all_users()
+    for user in users:
+        uid = user["user_id"]
+        try:
+            await motivation_svc.check_and_send_for_user(ctx.bot, uid)
+        except Exception as e:
+            logger.error(f"Motivation poller failed for {uid}: {e}")
+
+
 def register_jobs(app: Application) -> None:
-    """Register all 4 polling jobs on app startup."""
+    """Register all polling jobs on app startup."""
     jq = app.job_queue
     jq.run_repeating(study_poller, interval=60, first=10, name="study_poller")
     jq.run_repeating(morning_poller, interval=60, first=15, name="morning_poller")
     jq.run_repeating(eod_poller, interval=60, first=20, name="eod_poller")
     jq.run_repeating(reminder_poller, interval=300, first=30, name="reminder_poller")
+    jq.run_repeating(motivation_poller, interval=300, first=60, name="motivation_poller")
     logger.info("All scheduler jobs registered.")

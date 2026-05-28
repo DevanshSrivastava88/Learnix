@@ -103,3 +103,16 @@ def toggle_milestone(milestone_id: str, done: bool) -> None:
 def count_milestones(task_id: str) -> dict:
     items = list_milestones(task_id)
     return {"total": len(items), "done": sum(1 for m in items if m["done"])}
+
+
+def log_skip(user_id: int, task_id: str, note: str = "outright") -> dict:
+    res = get_client().table("task_skips").insert({
+        "user_id": user_id,
+        "task_id": task_id,
+        "note": note,
+    }).execute()
+    return res.data[0]
+
+
+def reschedule_task(task_id: str, new_time_utc) -> None:
+    update_task(task_id, next_reminder_at=new_time_utc.isoformat())

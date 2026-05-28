@@ -14,6 +14,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, ContextTyp
 import settings_svc
 import study.handlers as study_handlers
 import tasks.handlers as tasks_handlers
+import tasks.timesheet_handlers as timesheet_handlers
 from scheduler import register_jobs
 
 load_dotenv()
@@ -34,8 +35,10 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         f"📚 *Study* — /goal, /study\n"
         f"✅ *Tasks* — just say what you want to track, or use /newtask\n"
         f"⏰ *Reminders* — say 'remind me to X in Y mins'\n"
+        f"📅 /schedule — your full day view\n"
+        f"🗓 /timesheet — plan today's habits with times\n"
         f"📊 /tasks — see everything\n"
-        f"📈 /graph — activity graph\n"
+        f"📈 /graph — activity graph  |  /skipgraph — skip analytics\n"
         f"⚙️ /settings — tweak reminder times",
         parse_mode=ParseMode.MARKDOWN,
     )
@@ -57,8 +60,10 @@ async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         "/editgoal, /deletegoal, /pausegoal — Manage goals\n\n"
         "*Tasks & Reminders:*\n"
         "Just talk naturally — or use /newtask\n"
-        "/schedule — Your full day schedule\n"
+        "/schedule — Your full day view\n"
+        "/timesheet — Plan today's habits with times\n"
         "/tasks — List all tasks\n"
+        "/skipgraph — Skip patterns graph\n"
         "/done\\_<id> — Mark task done\n"
         "/deletetask — Delete a task\n"
         "/pause, /resume — Pause or resume\n\n"
@@ -134,6 +139,18 @@ async def handle_time_input(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> b
 # /graph — Activity trend graph
 # ---------------------------------------------------------------------------
 
+async def cmd_skipgraph(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    uid = update.effective_user.id
+    await update.message.reply_text("Generating your skip analytics... 📊")
+    try:
+        import analytics_svc
+        buf = analytics_svc.build_skip_graph(uid)
+        await update.message.reply_photo(buf, caption="Your skip patterns — last 30 days 📉\nRed bars = most-skipped days. Green line = completion rate.")
+    except Exception as e:
+        logger.error(f"Skip graph failed for {uid}: {e}")
+        await update.message.reply_text(f"Could not generate graph: {e}")
+
+
 async def cmd_graph(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     uid = update.effective_user.id
     await update.message.reply_text("Generating your activity graph... 📊")
@@ -180,6 +197,11 @@ async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     # Quiz answers
     if uid in ctx.bot_data.get("quiz_state", {}):
         await study_handlers.handle_quiz_answer(update, ctx)
+        return
+
+    # Skip reschedule flow
+    from tasks.handlers import handle_skip_response
+    if await handle_skip_response(update, ctx):
         return
 
     # Pending task confirm/re-describe from free-text flow
@@ -331,6 +353,7 @@ def main() -> None:
     app.add_handler(CommandHandler("setmorning", cmd_setmorning))
     app.add_handler(CommandHandler("seteod", cmd_seteod))
     app.add_handler(CommandHandler("graph", cmd_graph))
+    app.add_handler(CommandHandler("skipgraph", cmd_skipgraph))
     app.add_handler(CommandHandler("schedule", cmd_schedule))
     app.add_handler(CommandHandler("cancel", lambda u, c: None))
 
@@ -340,6 +363,10 @@ def main() -> None:
 
     # Task handlers
     for h in tasks_handlers.get_handlers():
+        app.add_handler(h)
+
+    # Timesheet handlers
+    for h in timesheet_handlers.get_handlers():
         app.add_handler(h)
 
     # Global text handler (lowest priority)
