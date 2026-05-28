@@ -86,7 +86,7 @@ async def _parse_and_respond(update, ctx, text: str, claude_svc) -> int:
             _reminder_fire,
             interval=interval * 60,
             first=interval * 60,
-            data={"user_id": uid, "title": title},
+            data={"user_id": uid, "title": title, "interval_minutes": interval},
             name=f"interval_{uid}_{title[:20]}",
         )
         if interval < 60:

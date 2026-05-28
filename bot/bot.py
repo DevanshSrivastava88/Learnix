@@ -57,6 +57,7 @@ async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         "/editgoal, /deletegoal, /pausegoal — Manage goals\n\n"
         "*Tasks & Reminders:*\n"
         "Just talk naturally — or use /newtask\n"
+        "/schedule — Your full day schedule\n"
         "/tasks — List all tasks\n"
         "/done\\_<id> — Mark task done\n"
         "/deletetask — Delete a task\n"
@@ -228,6 +229,77 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
             await update.message.reply_text("I'm here! Use /help to see what I can do.")
 
 
+async def cmd_schedule(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    import settings_svc
+    import tasks.svc as task_db
+    from datetime import datetime, timezone
+    import pytz
+
+    uid = update.effective_user.id
+    IST = pytz.timezone("Asia/Kolkata")
+    now_utc = datetime.now(timezone.utc)
+    now_ist = now_utc.astimezone(IST)
+
+    settings = settings_svc.get_settings(uid)
+    habits = task_db.list_tasks(uid)
+
+    lines = [f"📅 *Your Day — {now_ist.strftime('%a, %d %b')}*\n"]
+
+    # Daily automatics
+    lines.append("🔔 *Automatics*")
+    lines.append(f"  🌅 `{settings['morning_brief_time']}` IST  Morning brief")
+    lines.append(f"  📚 `{settings['daily_session_time']}` IST  Study session")
+    lines.append(f"  🌙 `{settings['eod_time']}` IST  EOD check-in\n")
+
+    # Habits with next-due info
+    if habits:
+        lines.append(f"✅ *Habits* — {len(habits)} active")
+        for t in habits:
+            next_at_str = t.get("next_reminder_at")
+            recur = t.get("recurrence_days", 1)
+            freq = "daily" if recur == 1 else f"every {recur}d"
+            if next_at_str:
+                next_at = datetime.fromisoformat(next_at_str)
+                if next_at.tzinfo is None:
+                    next_at = next_at.replace(tzinfo=timezone.utc)
+                delta = next_at - now_utc
+                secs = delta.total_seconds()
+                if secs <= 0:
+                    when = "⚡ due now"
+                elif secs < 3600:
+                    when = f"in {int(secs // 60)}m"
+                elif delta.days == 0:
+                    when = f"in {int(secs // 3600)}h"
+                else:
+                    when = f"in {delta.days}d"
+            else:
+                when = "—"
+            lines.append(f"  • *{t['title']}* ({freq})  →  {when}")
+        lines.append("")
+
+    # Live reminders from job queue
+    live = [j for j in ctx.job_queue.jobs()
+            if j.name and (j.name.startswith(f"interval_{uid}_") or
+                           j.name.startswith(f"onetime_{uid}_"))]
+    if live:
+        lines.append("⏰ *Reminders running*")
+        for j in live:
+            title = (j.data or {}).get("title", "?")
+            next_run = j.job.next_run_time
+            next_str = next_run.astimezone(IST).strftime("%H:%M IST") if next_run else "?"
+            if j.name.startswith(f"interval_{uid}_"):
+                mins = (j.data or {}).get("interval_minutes", 60)
+                freq_str = "every hour" if mins == 60 else (f"every {mins}m" if mins < 60 else f"every {mins // 60}h")
+                lines.append(f"  🔄 *{title}*  →  {freq_str}  (next: {next_str})")
+            else:
+                lines.append(f"  ⏰ *{title}*  →  fires at {next_str}")
+
+    await update.message.reply_text(
+        "\n".join(lines),
+        parse_mode=ParseMode.MARKDOWN,
+    )
+
+
 async def _reminder_job(ctx: ContextTypes.DEFAULT_TYPE) -> None:
     uid = ctx.job.data["user_id"]
     topic_id = ctx.job.data["topic_id"]
@@ -259,6 +331,7 @@ def main() -> None:
     app.add_handler(CommandHandler("setmorning", cmd_setmorning))
     app.add_handler(CommandHandler("seteod", cmd_seteod))
     app.add_handler(CommandHandler("graph", cmd_graph))
+    app.add_handler(CommandHandler("schedule", cmd_schedule))
     app.add_handler(CommandHandler("cancel", lambda u, c: None))
 
     # Study handlers
