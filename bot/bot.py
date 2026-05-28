@@ -199,6 +199,10 @@ async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         await study_handlers.handle_quiz_answer(update, ctx)
         return
 
+    # Clear confirmation flow
+    if await handle_clear_confirm(update, ctx):
+        return
+
     # Skip reschedule flow
     from tasks.handlers import handle_skip_response
     if await handle_skip_response(update, ctx):
@@ -255,6 +259,88 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
             await update.message.reply_text(reply)
         except Exception:
             await update.message.reply_text("I'm here! Use /help to see what I can do.")
+
+
+async def cmd_info(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.message.reply_text(
+        "🤖 *Learnix — Your AI Life OS*\n\n"
+        "Just talk to me naturally — or use commands.\n\n"
+
+        "━━━━━━━━━━━━━━━━━━\n"
+        "📚 *STUDY*\n"
+        "/goal — Create a learning goal\n"
+        "/goals — See all your goals\n"
+        "/addtopic — Add a topic to a goal\n"
+        "/study — Start a study session\n"
+        "/progress — See how far you've come\n\n"
+
+        "━━━━━━━━━━━━━━━━━━\n"
+        "✅ *HABITS & TASKS*\n"
+        "Just say it — _'I want to run every day'_ and I'll add it\n"
+        "/newtask — Add a habit or reminder\n"
+        "/tasks — See all active tasks\n"
+        "/timesheet — Plan today: _'workout at 7am, reading at 10pm'_\n"
+        "/schedule — Full day view with times\n\n"
+
+        "━━━━━━━━━━━━━━━━━━\n"
+        "⏰ *REMINDERS*\n"
+        "Each habit gets 2 reminders/day — tap ✅ Done or ⏭ Skip\n"
+        "Skip → reschedule to any time, or just skip for today\n"
+        "No response → auto-skipped after 2nd reminder\n"
+        "_'remind me to drink water every hour'_ → repeating reminder\n"
+        "_'remind me to call mom in 30 mins'_ → one-time reminder\n\n"
+
+        "━━━━━━━━━━━━━━━━━━\n"
+        "📊 *INSIGHTS*\n"
+        "/graph — Activity over last 30 days\n"
+        "/skipgraph — Skip patterns + completion rate\n\n"
+
+        "━━━━━━━━━━━━━━━━━━\n"
+        "⚙️ *SETTINGS*\n"
+        "/settings — View your times\n"
+        "/setmorning — Morning brief time\n"
+        "/settime — Daily study session time\n"
+        "/seteod — Evening check-in time\n\n"
+
+        "━━━━━━━━━━━━━━━━━━\n"
+        "🗑 *DATA*\n"
+        "/clear — Delete all your data and start fresh\n\n"
+
+        "_Tip: Just talk naturally — I understand plain English!_",
+        parse_mode=ParseMode.MARKDOWN,
+    )
+
+
+async def cmd_clear(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    ctx.user_data["pending_clear"] = True
+    await update.message.reply_text(
+        "⚠️ *This will delete ALL your data:*\n"
+        "goals, topics, tasks, skips, settings, activity history.\n\n"
+        "Type `confirm delete` to proceed, or anything else to cancel.",
+        parse_mode=ParseMode.MARKDOWN,
+    )
+
+
+async def handle_clear_confirm(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> bool:
+    """Called from handle_text. Returns True if consumed."""
+    if not ctx.user_data.get("pending_clear"):
+        return False
+    ctx.user_data.pop("pending_clear")
+    if update.message.text.strip().lower() != "confirm delete":
+        await update.message.reply_text("Cancelled. Your data is safe.")
+        return True
+    uid = update.effective_user.id
+    sb = __import__("supabase_svc").get_client()
+    tables = ["task_skips", "activity_log", "tasks", "topics", "goals", "motivation_log", "settings"]
+    for table in tables:
+        try:
+            sb.table(table).delete().eq("user_id", uid).execute()
+        except Exception:
+            pass
+    await update.message.reply_text(
+        "🗑 All your data has been cleared.\n\nUse /start to begin fresh!",
+    )
+    return True
 
 
 async def cmd_schedule(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
@@ -361,6 +447,8 @@ def main() -> None:
     app.add_handler(CommandHandler("graph", cmd_graph))
     app.add_handler(CommandHandler("skipgraph", cmd_skipgraph))
     app.add_handler(CommandHandler("schedule", cmd_schedule))
+    app.add_handler(CommandHandler("info", cmd_info))
+    app.add_handler(CommandHandler("clear", cmd_clear))
     app.add_handler(CommandHandler("cancel", lambda u, c: None))
 
     # Study handlers
@@ -380,6 +468,27 @@ def main() -> None:
 
     async def on_startup(application: Application) -> None:
         register_jobs(application)
+        from telegram import BotCommand
+        await application.bot.set_my_commands([
+            BotCommand("info",       "How everything works"),
+            BotCommand("schedule",   "Your full day at a glance"),
+            BotCommand("timesheet",  "Plan today's habits with times"),
+            BotCommand("tasks",      "List all active tasks"),
+            BotCommand("newtask",    "Add a new habit or reminder"),
+            BotCommand("graph",      "Activity graph (30 days)"),
+            BotCommand("skipgraph",  "Skip patterns + completion rate"),
+            BotCommand("goal",       "Add a study goal"),
+            BotCommand("goals",      "List study goals"),
+            BotCommand("study",      "Start a study session"),
+            BotCommand("progress",   "Study progress"),
+            BotCommand("settings",   "View reminder times"),
+            BotCommand("setmorning", "Set morning brief time"),
+            BotCommand("settime",    "Set daily study time"),
+            BotCommand("seteod",     "Set EOD check-in time"),
+            BotCommand("clear",      "Delete all your data"),
+            BotCommand("help",       "Command list"),
+            BotCommand("cancel",     "Cancel current action"),
+        ])
         logger.info("Learnix bot started — all jobs registered.")
 
     app.post_init = on_startup
