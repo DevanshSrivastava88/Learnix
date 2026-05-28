@@ -230,6 +230,7 @@ async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     import claude_svc
     from tasks.handlers import _parse_and_respond
+    from telegram.constants import ChatAction
     text = update.message.text.strip()
 
     # Pre-check: ignore emoji-only messages and bare dismissal phrases
@@ -243,6 +244,7 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
         await update.message.reply_text("Nothing to cancel. Use /help to see what I can do.")
         return
 
+    await update.message.chat.send_action(ChatAction.TYPING)
     try:
         intent = claude_svc.classify_intent(text)
     except Exception:
@@ -476,24 +478,14 @@ def main() -> None:
         register_jobs(application)
         from telegram import BotCommand
         await application.bot.set_my_commands([
-            BotCommand("info",       "How everything works"),
-            BotCommand("schedule",   "Your full day at a glance"),
-            BotCommand("timesheet",  "Plan today's habits with times"),
-            BotCommand("tasks",      "List all active tasks"),
-            BotCommand("newtask",    "Add a new habit or reminder"),
-            BotCommand("graph",      "Activity graph (30 days)"),
-            BotCommand("skipgraph",  "Skip patterns + completion rate"),
-            BotCommand("goal",       "Add a study goal"),
-            BotCommand("goals",      "List study goals"),
-            BotCommand("study",      "Start a study session"),
-            BotCommand("progress",   "Study progress"),
-            BotCommand("settings",   "View reminder times"),
-            BotCommand("setmorning", "Set morning brief time"),
-            BotCommand("settime",    "Set daily study time"),
-            BotCommand("seteod",     "Set EOD check-in time"),
-            BotCommand("clear",      "Delete all your data"),
-            BotCommand("help",       "Command list"),
-            BotCommand("cancel",     "Cancel current action"),
+            BotCommand("info",      "How everything works"),
+            BotCommand("schedule",  "Your full day at a glance"),
+            BotCommand("timesheet", "Plan today with times"),
+            BotCommand("tasks",     "List active tasks"),
+            BotCommand("graph",     "Activity graph"),
+            BotCommand("skipgraph", "Skip patterns graph"),
+            BotCommand("settings",  "View & update settings"),
+            BotCommand("clear",     "Delete all your data"),
         ])
         logger.info("Learnix bot started — all jobs registered.")
 

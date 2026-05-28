@@ -194,10 +194,15 @@ async def handle_done(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         return
     db.mark_done(task["id"])
     import analytics_svc
+    import settings_svc
     analytics_svc.log_activity(uid, "habit", note=task["title"])
+    settings_svc.update_streak(uid, __import__("datetime").date.today())
+    settings = settings_svc.get_settings(uid)
+    streak = settings.get("streak", 0) or 0
     recur = task.get("recurrence_days", 1)
+    streak_line = f"🔥 {streak} day streak!" if streak > 1 else "Keep it up!"
     await update.message.reply_text(
-        f"✅ *{task['title']}* done! Next reminder in {recur} day(s).",
+        f"✅ *{task['title']}* done!  {streak_line}\nNext reminder in {recur} day(s).",
         parse_mode=ParseMode.MARKDOWN,
     )
 
