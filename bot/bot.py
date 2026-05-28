@@ -181,6 +181,21 @@ async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         await study_handlers.handle_quiz_answer(update, ctx)
         return
 
+    # Pending task confirm/re-describe from free-text flow
+    freetext_state = ctx.user_data.get("freetext_task_state")
+    if freetext_state == "confirm":
+        from tasks.handlers import nt_confirm, NT_DESCRIBE
+        result = await nt_confirm(update, ctx)
+        if result == NT_DESCRIBE:
+            ctx.user_data["freetext_task_state"] = "describe"
+        return
+    if freetext_state == "describe":
+        import claude_svc as _cs
+        from tasks.handlers import _parse_and_respond
+        ctx.user_data.pop("freetext_task_state", None)
+        await _parse_and_respond(update, ctx, update.message.text.strip(), _cs)
+        return
+
     # Free-form intent routing
     await handle_free_text(update, ctx)
 

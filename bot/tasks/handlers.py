@@ -80,6 +80,7 @@ async def _parse_and_respond(update, ctx, text: str, claude_svc) -> int:
 
     # Habit
     ctx.user_data["parsed_task"] = parsed
+    ctx.user_data["freetext_task_state"] = "confirm"
     recur = parsed.get("recurrence_days", 1)
     freq = "every day" if recur == 1 else f"every {recur} days"
     summary = f"*{title}* — {freq}"
