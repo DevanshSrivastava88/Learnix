@@ -9,6 +9,7 @@ _Auto-agent: enabled_
 - [ ] **Test new features live** — skip flow, /timesheet, /skipgraph in Telegram
 - [ ] **Fix "Cancel" pre-check bug** — bare "Cancel" text gets Gemini-classified as a task; needs string check before hitting Gemini in `handle_free_text`
 - [ ] **Deploy to Railway** — still failing: "Failed to read app source directory" from nixpacks. Railway incident not resolved. Retry later.
+- [ ] **Twilio missed call feature** — optional per-user toggle (on/off via /settings). Use Twilio creds from talking-agent project. User number: +918004844144
 
 ## 📋 Short-term
 
@@ -23,6 +24,14 @@ _Auto-agent: enabled_
 - [ ] Multi-user data view with new schema (goals, habits, skips, motivation log)
 - [ ] Activity graph embed
 - [ ] Skip analytics embed
+
+## ✅ Done (2026-05-29)
+
+- Twilio missed-call webhook design + Flask endpoint (`bot/missed_call_webhook.py`)
+  - Twilio status callback → Flask → Telegram message
+  - Signature validation, IST timestamp, no-answer / busy / failed detection
+  - Ready to deploy on Railway as a separate service or ngrok for dev
+  - Env vars needed: TWILIO_AUTH_TOKEN, TELEGRAM_CHAT_ID (+ existing BOT_TOKEN)
 
 ## ✅ Done (2026-05-28)
 

@@ -12,6 +12,7 @@ from telegram.constants import ParseMode
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 
 import settings_svc
+import twilio_svc
 import study.handlers as study_handlers
 import tasks.handlers as tasks_handlers
 import tasks.timesheet_handlers as timesheet_handlers
@@ -71,7 +72,8 @@ async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         "/graph — Activity graph (last 30 days)\n\n"
         "*Settings:*\n"
         "/settings — View settings\n"
-        "/settime, /setmorning, /seteod — Set reminder times\n\n"
+        "/settime, /setmorning, /seteod — Set reminder times\n"
+        "/twilio — Missed call notifications\n\n"
         "/cancel — Cancel anything",
         parse_mode=ParseMode.MARKDOWN,
     )
@@ -311,7 +313,8 @@ async def cmd_info(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         "/settings — View your times\n"
         "/setmorning — Morning brief time\n"
         "/settime — Daily study session time\n"
-        "/seteod — Evening check-in time\n\n"
+        "/seteod — Evening check-in time\n"
+        "/twilio on|off — Missed call notifications\n\n"
 
         "━━━━━━━━━━━━━━━━━━\n"
         "🗑 *DATA*\n"
@@ -352,6 +355,55 @@ async def handle_clear_confirm(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -
         "🗑 All your data has been cleared.\n\nUse /start to begin fresh!",
     )
     return True
+
+
+_TWILIO_SETUP = (
+    "📞 <b>Twilio Missed Call Setup:</b>\n\n"
+    "1. Get a Twilio number at twilio.com\n"
+    "2. In your Twilio number settings → Voice → set webhook to your server URL\n"
+    "3. Set <b>CallStatus callback URL</b> to:\n"
+    "   <code>https://your-url/twilio/missed-call</code>\n"
+    "4. Add to your <code>.env</code>: <code>TWILIO_AUTH_TOKEN=xxx</code>\n"
+    "5. Run: <code>python run_all.py</code>\n\n"
+    "When someone calls and you don't answer → I'll notify you here!"
+)
+
+
+async def cmd_twilio(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    uid  = update.effective_user.id
+    args = ctx.args
+
+    if not args:
+        enabled = twilio_svc.is_twilio_enabled(uid)
+        status  = "ON ✅" if enabled else "OFF ⏸"
+        await update.message.reply_text(
+            f"📞 Missed call notifications: <b>{status}</b>\n\n"
+            f"Use <code>/twilio on</code> or <code>/twilio off</code> to change.\n\n"
+            + _TWILIO_SETUP,
+            parse_mode="HTML",
+        )
+        return
+
+    arg = args[0].lower()
+    if arg == "on":
+        twilio_svc.set_twilio_enabled(uid, True)
+        await update.message.reply_text(
+            "✅ Missed call notifications <b>enabled!</b>\n\n"
+            "Forward your calls through your Twilio number and I'll ping you here whenever you miss one.\n\n"
+            + _TWILIO_SETUP,
+            parse_mode="HTML",
+        )
+    elif arg == "off":
+        twilio_svc.set_twilio_enabled(uid, False)
+        await update.message.reply_text(
+            "⏸ Missed call notifications <b>disabled</b>.\n\nUse <code>/twilio on</code> to re-enable.",
+            parse_mode="HTML",
+        )
+    else:
+        await update.message.reply_text(
+            "Usage: <code>/twilio on</code> | <code>/twilio off</code> | <code>/twilio</code> (status)",
+            parse_mode="HTML",
+        )
 
 
 async def cmd_schedule(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
@@ -460,6 +512,7 @@ def main() -> None:
     app.add_handler(CommandHandler("schedule", cmd_schedule))
     app.add_handler(CommandHandler("info", cmd_info))
     app.add_handler(CommandHandler("clear", cmd_clear))
+    app.add_handler(CommandHandler("twilio", cmd_twilio))
     app.add_handler(CommandHandler("cancel", lambda u, c: None))
 
     # Study handlers
@@ -489,6 +542,7 @@ def main() -> None:
             BotCommand("skipgraph", "Skip patterns graph"),
             BotCommand("settings",  "View & update settings"),
             BotCommand("clear",     "Delete all your data"),
+            BotCommand("twilio",    "Missed call notifications"),
         ])
         logger.info("Learnix bot started — all jobs registered.")
 
