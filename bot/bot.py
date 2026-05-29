@@ -7,7 +7,7 @@ import os
 import logging
 
 from dotenv import load_dotenv
-from telegram import Update
+from telegram import Update, KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.constants import ParseMode
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 
@@ -229,6 +229,22 @@ async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     await handle_free_text(update, ctx)
 
 
+async def handle_contact(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    """Save phone number when user shares contact via /twilio on."""
+    contact = update.message.contact
+    if not contact:
+        return
+    uid = update.effective_user.id
+    phone = contact.phone_number
+    if not phone.startswith("+"):
+        phone = "+" + phone
+    twilio_svc.set_phone_number(uid, phone)
+    await update.message.reply_text(
+        f"✅ Got it! I'll call {phone} for reminders.",
+        reply_markup=ReplyKeyboardRemove(),
+    )
+
+
 async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     import claude_svc
     from tasks.handlers import _parse_and_respond
@@ -386,11 +402,20 @@ async def cmd_twilio(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     arg = args[0].lower()
     if arg == "on":
         twilio_svc.set_twilio_enabled(uid, True)
-        await update.message.reply_text(
-            "✅ Missed call notifications <b>enabled!</b>\n\n"
-            "I'll ping you here whenever you miss a call.",
-            parse_mode="HTML",
-        )
+        # Ask for phone number if not already set
+        if not twilio_svc.get_phone_number(uid):
+            btn = KeyboardButton("📱 Share my number", request_contact=True)
+            await update.message.reply_text(
+                "✅ Call reminders <b>enabled!</b>\n\nShare your number so I can call you:",
+                parse_mode="HTML",
+                reply_markup=ReplyKeyboardMarkup([[btn]], one_time_keyboard=True, resize_keyboard=True),
+            )
+        else:
+            await update.message.reply_text(
+                "✅ Call reminders <b>enabled!</b>\n\nI'll call you when it's time for your habits.",
+                parse_mode="HTML",
+                reply_markup=ReplyKeyboardRemove(),
+            )
     elif arg == "off":
         twilio_svc.set_twilio_enabled(uid, False)
         await update.message.reply_text(
@@ -524,6 +549,9 @@ def main() -> None:
     # Timesheet handlers
     for h in timesheet_handlers.get_handlers():
         app.add_handler(h)
+
+    # Contact sharing handler (for /twilio on phone number collection)
+    app.add_handler(MessageHandler(filters.CONTACT, handle_contact))
 
     # Global text handler (lowest priority)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))

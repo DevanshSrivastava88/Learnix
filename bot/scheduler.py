@@ -249,13 +249,22 @@ async def reminder_poller(ctx: ContextTypes.DEFAULT_TYPE) -> None:
                     )
                     continue
 
-                # Send reminder and advance next_reminder_at by 8 hours
+                # Send Telegram reminder and advance next_reminder_at by 8 hours
                 msg = (
                     f"⏰ Habit reminder: *{title}*\n\n"
                     f"✅ Done → /done_{short}\n"
                     f"⏭ Skip → /skip_{short}"
                 )
                 await ctx.bot.send_message(uid, msg, parse_mode=ParseMode.MARKDOWN)
+
+                # Also call user's phone if Twilio is enabled
+                import twilio_svc
+                if twilio_svc.is_twilio_enabled(uid):
+                    import asyncio
+                    await asyncio.get_event_loop().run_in_executor(
+                        None, twilio_svc.make_reminder_call, uid, title
+                    )
+
                 from datetime import timezone as _tz, timedelta
                 next_utc = datetime.now(_tz.utc) + timedelta(hours=8)
                 tasks_svc.reschedule_task(task_id, next_utc)
