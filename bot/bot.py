@@ -7,7 +7,7 @@ import os
 import logging
 
 from dotenv import load_dotenv
-from telegram import Update
+from telegram import Update, ReplyKeyboardRemove
 from telegram.constants import ParseMode
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 
@@ -215,6 +215,10 @@ async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if freetext_state == "describe":
         import claude_svc as _cs
         from tasks.handlers import _parse_and_respond
+        if text in {"cancel", "back", "stop", "exit", "no", "nope", "nah"}:
+            ctx.user_data.clear()
+            await update.message.reply_text("Cancelled.", reply_markup=ReplyKeyboardRemove())
+            return
         ctx.user_data.pop("freetext_task_state", None)
         await _parse_and_respond(update, ctx, update.message.text.strip(), _cs)
         return

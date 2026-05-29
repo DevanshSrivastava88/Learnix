@@ -1,13 +1,13 @@
 # Learnix Backlog
 
-_Last updated: 2026-05-28_
+_Last updated: 2026-05-29_
 _Project status: workInProgress_
 _Auto-agent: enabled_
 
 ## 🔥 Immediate (next session)
 
 - [ ] **Test new features live** — skip flow, /timesheet, /skipgraph in Telegram
-- [ ] **Fix "Cancel" pre-check bug** — bare "Cancel" text gets Gemini-classified as a task; needs string check before hitting Gemini in `handle_free_text`
+- [x] **Fix "Cancel" pre-check bug** — bare "Cancel" text gets Gemini-classified as a task; needs string check before hitting Gemini in `handle_free_text`
 - [ ] **Deploy to Railway** — still failing: "Failed to read app source directory" from nixpacks. Railway incident not resolved. Retry later.
 
 ## 📋 Short-term
