@@ -493,12 +493,12 @@ async def cmd_pausegoal(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not all_goals:
         await update.message.reply_text("No goals found.")
         return
-    lines = ["*Your goals:*\n"]
+    lines = ["<b>Your goals:</b>\n"]
     for g in all_goals:
         status_icon = "▶️" if g["status"] == "in_progress" else "⏸️"
         lines.append(f"{status_icon} /togglegoal_{g['id'][:8]} — {g['name']}")
     lines.append("\nTap a command to toggle pause/resume.")
-    await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.MARKDOWN)
+    await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.HTML)
 
 
 async def handle_togglegoal(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:

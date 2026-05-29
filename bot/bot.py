@@ -536,7 +536,8 @@ def main() -> None:
     app.add_handler(CommandHandler("info", cmd_info))
     app.add_handler(CommandHandler("clear", cmd_clear))
     app.add_handler(CommandHandler("twilio", cmd_twilio))
-    app.add_handler(CommandHandler("cancel", lambda u, c: None))
+    async def _noop_cancel(u, c): pass
+    app.add_handler(CommandHandler("cancel", _noop_cancel))
 
     # Study handlers
     for h in study_handlers.get_handlers():
