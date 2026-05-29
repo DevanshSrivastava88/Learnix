@@ -378,8 +378,7 @@ async def cmd_twilio(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         status  = "ON ✅" if enabled else "OFF ⏸"
         await update.message.reply_text(
             f"📞 Missed call notifications: <b>{status}</b>\n\n"
-            f"Use <code>/twilio on</code> or <code>/twilio off</code> to change.\n\n"
-            + _TWILIO_SETUP,
+            f"Use <code>/twilio on</code> or <code>/twilio off</code> to change.",
             parse_mode="HTML",
         )
         return
@@ -389,19 +388,18 @@ async def cmd_twilio(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         twilio_svc.set_twilio_enabled(uid, True)
         await update.message.reply_text(
             "✅ Missed call notifications <b>enabled!</b>\n\n"
-            "Forward your calls through your Twilio number and I'll ping you here whenever you miss one.\n\n"
-            + _TWILIO_SETUP,
+            "I'll ping you here whenever you miss a call.",
             parse_mode="HTML",
         )
     elif arg == "off":
         twilio_svc.set_twilio_enabled(uid, False)
         await update.message.reply_text(
-            "⏸ Missed call notifications <b>disabled</b>.\n\nUse <code>/twilio on</code> to re-enable.",
+            "⏸ Missed call notifications <b>disabled</b>.",
             parse_mode="HTML",
         )
     else:
         await update.message.reply_text(
-            "Usage: <code>/twilio on</code> | <code>/twilio off</code> | <code>/twilio</code> (status)",
+            "Usage: <code>/twilio on</code> | <code>/twilio off</code>",
             parse_mode="HTML",
         )
 
