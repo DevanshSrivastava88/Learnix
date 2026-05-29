@@ -273,9 +273,23 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
 
     if intent == "task":
         await _parse_and_respond(update, ctx, text, claude_svc)
+    elif intent == "show_tasks":
+        await tasks_handlers.cmd_tasks(update, ctx)
+    elif intent == "show_schedule":
+        await cmd_schedule(update, ctx)
+    elif intent == "show_progress":
+        await study_handlers.cmd_progress(update, ctx)
+    elif intent == "show_goals":
+        await study_handlers.cmd_goals(update, ctx)
+    elif intent == "show_graph":
+        await cmd_graph(update, ctx)
+    elif intent == "show_skipgraph":
+        await cmd_skipgraph(update, ctx)
+    elif intent == "start_study":
+        await study_handlers.cmd_study(update, ctx)
     elif intent == "study":
         await update.message.reply_text(
-            "Sounds like you want to study something! 📚\n\n"
+            "Sounds like you want to learn something! 📚\n\n"
             "Use /goal to set up a learning goal, then /study to start a session.",
         )
     else:

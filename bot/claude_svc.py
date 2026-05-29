@@ -83,17 +83,26 @@ def score_answer(question: str, expected_answer: str, user_answer: str) -> dict:
 
 
 def classify_intent(text: str) -> str:
-    """Classify free-form message as: task | study | chat"""
+    """Classify free-form message into one of: task | show_tasks | show_schedule |
+    show_progress | show_goals | show_graph | show_skipgraph | start_study | study | chat"""
     result = _ask_json(
-        f'Classify this message into exactly one category. Default to "task" when unsure.\n'
+        f'Classify this message into exactly one category.\n'
         f'Message: "{text}"\n\n'
         f'Categories:\n'
-        f'- "task": user wants to add a reminder, habit, todo, or track something — use this as the default\n'
-        f'- "study": user explicitly wants to learn a topic or asks an educational question\n'
-        f'- "chat": clearly just a greeting or small talk with no action implied\n\n'
-        f'Return: {{"intent": "task" | "study" | "chat"}}'
+        f'- "task": user wants to ADD/CREATE a reminder, habit, or todo\n'
+        f'- "show_tasks": user wants to SEE their tasks/habits list (e.g. "show my tasks", "what do I have to do", "my habits")\n'
+        f'- "show_schedule": user wants to see today\'s schedule or day plan (e.g. "what\'s my day", "my schedule", "today\'s plan")\n'
+        f'- "show_progress": user wants to see study progress or stats (e.g. "how am I doing", "my progress", "study stats")\n'
+        f'- "show_goals": user wants to see their study goals (e.g. "my goals", "what am I studying", "learning goals")\n'
+        f'- "show_graph": user wants to see activity graph or stats (e.g. "my activity", "show stats", "how active am I")\n'
+        f'- "show_skipgraph": user wants to see skip patterns (e.g. "how many times did I skip", "my skip stats")\n'
+        f'- "start_study": user wants to start a study session now (e.g. "let\'s study", "start studying", "teach me")\n'
+        f'- "study": user asks an educational question or wants to learn a specific topic\n'
+        f'- "chat": clearly just greeting, small talk, joke, feelings, general question\n\n'
+        f'Default to "chat" when genuinely unsure (not "task"). Only use "task" when user clearly wants to CREATE something.\n'
+        f'Return: {{"intent": "..."}}'
     )
-    return result.get("intent", "task")
+    return result.get("intent", "chat")
 
 
 def parse_task(text: str) -> dict:
