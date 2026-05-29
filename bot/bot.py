@@ -233,15 +233,18 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
     from telegram.constants import ChatAction
     text = update.message.text.strip()
 
-    # Pre-check: ignore emoji-only messages and bare dismissal phrases
+    # Pre-check: ignore emoji-only messages and bare dismissal/reaction phrases
     ascii_text = text.encode("ascii", errors="ignore").decode().strip()
     if not ascii_text:  # emoji-only or symbols with no text
         return
-    if text.lower() in {
+    # Use ascii_text for word check so "❌Cancel" → "Cancel" → caught
+    if ascii_text.lower() in {
         "cancel", "back", "stop", "exit", "no", "nope", "nah",
         "never mind", "nevermind", "nm", "forget it", "nothing",
+        "wtf", "lol", "lmao", "omg", "damn", "hmm", "hm", "ok",
+        "okay", "k", "kk", "fine", "cool", "nice", "great",
     }:
-        await update.message.reply_text("Nothing to cancel. Use /help to see what I can do.")
+        await update.message.reply_text("Hey! 👋 Just tell me what you want to track, or use /help.")
         return
 
     await update.message.chat.send_action(ChatAction.TYPING)
