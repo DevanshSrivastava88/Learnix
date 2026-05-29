@@ -170,13 +170,13 @@ async def cmd_tasks(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not all_tasks:
         await update.message.reply_text("No tasks yet. Just tell me what you want to track!")
         return
-    lines = ["*Your tasks:*\n"]
+    lines = ["<b>Your tasks:</b>\n"]
     for t in all_tasks:
         recur = t.get("recurrence_days", 1)
         freq = "daily" if recur == 1 else f"every {recur}d"
         lines.append(f"  • {t['title']} ({freq}) — /done_{t['id'][:8]}")
     lines.append("\n/deletetask or /pause to manage.")
-    await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.MARKDOWN)
+    await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.HTML)
 
 
 # ---------------------------------------------------------------------------
@@ -269,10 +269,10 @@ async def cmd_pause(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not tasks:
         await update.message.reply_text("No active tasks.")
         return
-    lines = ["*Active tasks — tap to pause:*\n"]
+    lines = ["<b>Active tasks — tap to pause:</b>\n"]
     for t in tasks:
         lines.append(f"⏸ /pause_{t['id'][:8]} — {t['title']}")
-    await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.MARKDOWN)
+    await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.HTML)
 
 
 async def handle_pause_task(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
@@ -294,10 +294,10 @@ async def cmd_resume(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not tasks:
         await update.message.reply_text("No paused tasks.")
         return
-    lines = ["*Paused tasks — tap to resume:*\n"]
+    lines = ["<b>Paused tasks — tap to resume:</b>\n"]
     for t in tasks:
         lines.append(f"▶️ /resume_{t['id'][:8]} — {t['title']}")
-    await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.MARKDOWN)
+    await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.HTML)
 
 
 async def handle_resume_task(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
@@ -323,10 +323,10 @@ async def cmd_complete(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not milestones:
         await update.message.reply_text("No active milestones.")
         return
-    lines = ["*Milestones — tap to mark complete:*\n"]
+    lines = ["<b>Milestones — tap to mark complete:</b>\n"]
     for m in milestones:
         lines.append(f"✅ /complete_{m['id'][:8]} — {m['title']}")
-    await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.MARKDOWN)
+    await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.HTML)
 
 
 async def handle_complete_task(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
