@@ -374,16 +374,22 @@ async def handle_clear_confirm(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -
         await update.message.reply_text("Cancelled. Your data is safe.")
         return True
     uid = update.effective_user.id
+    import logging as _log
+    _logger = _log.getLogger(__name__)
     sb = __import__("supabase_svc").get_client()
-    tables = ["task_skips", "activity_log", "tasks", "topics", "goals", "motivation_log", "settings"]
+    # topics has no user_id — cascades when goals are deleted
+    tables = ["task_skips", "activity_log", "tasks", "goals", "motivation_log", "settings"]
+    errors = []
     for table in tables:
         try:
             sb.table(table).delete().eq("user_id", uid).execute()
-        except Exception:
-            pass
-    await update.message.reply_text(
-        "🗑 All your data has been cleared.\n\nUse /start to begin fresh!",
-    )
+        except Exception as e:
+            errors.append(table)
+            _logger.error(f"Clear failed on {table} for {uid}: {e}")
+    if errors:
+        await update.message.reply_text(f"⚠️ Partial clear — errors on: {', '.join(errors)}. Try again.")
+    else:
+        await update.message.reply_text("🗑 All your data has been cleared.\n\nUse /start to begin fresh!")
     return True
 
 
