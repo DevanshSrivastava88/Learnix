@@ -1,6 +1,6 @@
 # Learnix Backlog
 
-_Last updated: 2026-05-29_
+_Last updated: 2026-05-30_
 _Project status: workInProgress_
 _Auto-agent: enabled_
 
@@ -23,6 +23,10 @@ _Auto-agent: enabled_
 - [ ] Multi-user data view with new schema (goals, habits, skips, motivation log)
 - [ ] Activity graph embed
 - [ ] Skip analytics embed
+
+## ✅ Done (2026-05-30)
+
+- Fix claude_svc lazy Gemini init — module-level genai.configure() blocked test collection; deferred to first call so all 17 tests pass
 
 ## ✅ Done (2026-05-28)
 

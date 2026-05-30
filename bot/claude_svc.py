@@ -6,9 +6,16 @@ import google.generativeai as genai
 
 load_dotenv()
 
-genai.configure(api_key=os.environ["GEMINI_API_KEY"])
 MODEL = "gemini-2.5-flash"
-_model = genai.GenerativeModel(MODEL)
+_model = None
+
+
+def _get_model() -> genai.GenerativeModel:
+    global _model
+    if _model is None:
+        genai.configure(api_key=os.environ["GEMINI_API_KEY"])
+        _model = genai.GenerativeModel(MODEL)
+    return _model
 
 SYSTEM = (
     "You are Learnix, a sharp and friendly study coach. "
@@ -18,7 +25,7 @@ SYSTEM = (
 
 
 def _ask(prompt: str, max_tokens: int = 1024) -> str:
-    resp = _model.generate_content(
+    resp = _get_model().generate_content(
         prompt,
         generation_config=genai.types.GenerationConfig(max_output_tokens=max_tokens),
     )
@@ -27,7 +34,7 @@ def _ask(prompt: str, max_tokens: int = 1024) -> str:
 
 def _ask_json(prompt: str) -> dict | list:
     """Call Gemini with JSON mode — forces clean JSON output, no markdown."""
-    resp = _model.generate_content(
+    resp = _get_model().generate_content(
         prompt,
         generation_config=genai.types.GenerationConfig(
             response_mime_type="application/json",
