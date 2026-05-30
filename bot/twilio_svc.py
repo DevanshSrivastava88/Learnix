@@ -57,49 +57,41 @@ def get_all_twilio_users() -> list:
     return res.data or []
 
 
-async def send_voice_reminder(bot, user_id: int, task_title: str) -> bool:
+def make_reminder_call(user_id: int, task_title: str) -> bool:
     """
-    Send a Telegram voice message with TTS saying the task name.
-    Uses gTTS (Google TTS, free) — no phone call needed, plays in Telegram.
-    Falls back to Twilio call if TWILIO_ACCOUNT_SID is set.
+    Phase 1: call user's phone, ring for 20s then hang up → they see a missed call.
+    Phase 2 (later): swap twiml to <Say> the task name.
+    Returns True if call was placed successfully.
     """
-    # Try gTTS voice note first (free, works in Telegram)
+    account_sid  = os.environ.get("TWILIO_ACCOUNT_SID")
+    auth_token   = os.environ.get("TWILIO_AUTH_TOKEN")
+    from_number  = os.environ.get("TWILIO_PHONE_NUMBER")
+
+    if not all([account_sid, auth_token, from_number]):
+        logger.error("Twilio env vars not set — skipping call")
+        return False
+
+    to_number = get_phone_number(user_id)
+    if not to_number:
+        logger.warning(f"No phone number for user {user_id} — skipping call")
+        return False
+
     try:
-        import io
-        from gtts import gTTS
-        text = f"Hey! Time to {task_title}. Don't forget!"
-        tts = gTTS(text=text, lang="en")
-        buf = io.BytesIO()
-        tts.write_to_fp(buf)
-        buf.seek(0)
-        buf.name = "reminder.mp3"
-        await bot.send_voice(chat_id=user_id, voice=buf, caption=f"⏰ *{task_title}*")
-        logger.info(f"Voice reminder sent to {user_id} for '{task_title}'")
+        from twilio.rest import Client
+        client = Client(account_sid, auth_token)
+
+        # Phase 1: ring and hang up (user sees missed call)
+        # Phase 2: replace twiml with <Say> to speak the task name
+        twiml = f"<Response><Say>Hey! Time to {task_title}. Don't forget!</Say><Pause length='2'/></Response>"
+
+        call = client.calls.create(
+            to=to_number,
+            from_=from_number,
+            twiml=twiml,
+            timeout=20,  # ring for 20 seconds max
+        )
+        logger.info(f"Twilio call placed to {to_number} for '{task_title}' — SID: {call.sid}")
         return True
     except Exception as e:
-        logger.error(f"gTTS voice reminder failed for {user_id}: {e}")
-
-    # Fallback: Twilio call (if configured)
-    account_sid = os.environ.get("TWILIO_ACCOUNT_SID")
-    auth_token  = os.environ.get("TWILIO_AUTH_TOKEN")
-    from_number = os.environ.get("TWILIO_PHONE_NUMBER")
-    to_number   = get_phone_number(user_id)
-
-    if all([account_sid, auth_token, from_number, to_number]):
-        try:
-            from twilio.rest import Client
-            twiml = f"<Response><Say>Hey! Time to {task_title}. Don't forget!</Say></Response>"
-            call = Client(account_sid, auth_token).calls.create(
-                to=to_number, from_=from_number, twiml=twiml, timeout=20
-            )
-            logger.info(f"Twilio fallback call placed: {call.sid}")
-            return True
-        except Exception as e:
-            logger.error(f"Twilio fallback failed: {e}")
-
-    return False
-
-
-def make_reminder_call(user_id: int, task_title: str) -> bool:
-    """Sync wrapper kept for backwards compat — prefer send_voice_reminder."""
-    return False
+        logger.error(f"Twilio call failed for user {user_id}: {e}")
+        return False
