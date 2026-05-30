@@ -257,13 +257,10 @@ async def reminder_poller(ctx: ContextTypes.DEFAULT_TYPE) -> None:
                 )
                 await ctx.bot.send_message(uid, msg, parse_mode=ParseMode.MARKDOWN)
 
-                # Also call user's phone if Twilio is enabled
+                # Send voice reminder if enabled (gTTS voice note → Twilio fallback)
                 import twilio_svc
                 if twilio_svc.is_twilio_enabled(uid):
-                    import asyncio
-                    await asyncio.get_event_loop().run_in_executor(
-                        None, twilio_svc.make_reminder_call, uid, title
-                    )
+                    await twilio_svc.send_voice_reminder(ctx.bot, uid, title)
 
                 from datetime import timezone as _tz, timedelta
                 next_utc = datetime.now(_tz.utc) + timedelta(hours=8)
