@@ -33,11 +33,11 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
         f"👋 Hey *{first_name}*! I'm your AI life OS — just talk to me naturally.\n\n"
         f"📚 *Study* — /goal, /study\n"
-        f"✅ *Tasks* — just say what you want to track\n"
+        f"✅ *Tasks* — just say what you want to track, or use /newtask\n"
         f"⏰ *Reminders* — say 'remind me to X in Y mins'\n"
         f"📅 /schedule — your full day view + plan habit times\n"
         f"📊 /tasks — see everything\n"
-        f"📈 /graph — activity + skip analytics\n"
+        f"📈 /graph — activity graph  |  /skipgraph — skip analytics\n"
         f"⚙️ /settings — tweak reminder times",
         parse_mode=ParseMode.MARKDOWN,
     )
@@ -58,14 +58,15 @@ async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         "/progress — Progress view\n"
         "/editgoal, /deletegoal, /pausegoal — Manage goals\n\n"
         "*Tasks & Reminders:*\n"
-        "Just talk naturally — 'workout every day', 'remind me at 9pm'\n"
+        "Just talk naturally — or use /newtask\n"
         "/schedule — Full day view; reply with times to plan habits\n"
         "/tasks — List all tasks\n"
+        "/skipgraph — Skip patterns graph\n"
         "/done\\_<id> — Mark task done\n"
         "/deletetask — Delete a task\n"
         "/pause, /resume — Pause or resume\n\n"
         "*Analytics:*\n"
-        "/graph — Activity + skip patterns (last 30 days)\n\n"
+        "/graph — Activity graph (last 30 days)\n\n"
         "*Settings:*\n"
         "/settings — View settings\n"
         "/settime, /setmorning, /seteod — Set reminder times\n"
@@ -134,25 +135,31 @@ async def handle_time_input(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> b
 
 
 # ---------------------------------------------------------------------------
-# /graph — Activity trend graph + skip analytics in one place
+# /graph — Activity trend graph
 # ---------------------------------------------------------------------------
 
-async def cmd_graph(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+async def cmd_skipgraph(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     uid = update.effective_user.id
-    await update.message.reply_text("Generating your graphs... 📊")
-    import analytics_svc
+    await update.message.reply_text("Generating your skip analytics... 📊")
     try:
-        buf = analytics_svc.build_graph(uid)
-        await update.message.reply_photo(buf, caption="Your activity over the last 30 days 📈")
-    except Exception as e:
-        logger.error(f"Graph failed for {uid}: {e}")
-        await update.message.reply_text(f"Couldn't generate activity graph: {e}")
-    try:
+        import analytics_svc
         buf = analytics_svc.build_skip_graph(uid)
         await update.message.reply_photo(buf, caption="Your skip patterns — last 30 days 📉\nRed bars = most-skipped days. Green line = completion rate.")
     except Exception as e:
         logger.error(f"Skip graph failed for {uid}: {e}")
-        await update.message.reply_text(f"Couldn't generate skip graph: {e}")
+        await update.message.reply_text(f"Couldn't generate the graph right now: {e}")
+
+
+async def cmd_graph(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    uid = update.effective_user.id
+    await update.message.reply_text("Generating your activity graph... 📊")
+    try:
+        import analytics_svc
+        buf = analytics_svc.build_graph(uid)
+        await update.message.reply_photo(buf, caption="Your activity over the last 30 days 📈")
+    except Exception as e:
+        logger.error(f"Graph failed for {uid}: {e}")
+        await update.message.reply_text(f"Couldn't generate the graph right now: {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -279,8 +286,10 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
         await study_handlers.cmd_progress(update, ctx)
     elif intent == "show_goals":
         await study_handlers.cmd_goals(update, ctx)
-    elif intent in ("show_graph", "show_skipgraph"):
+    elif intent == "show_graph":
         await cmd_graph(update, ctx)
+    elif intent == "show_skipgraph":
+        await cmd_skipgraph(update, ctx)
     elif intent == "start_study":
         await study_handlers.cmd_study(update, ctx)
     elif intent == "study":
@@ -316,6 +325,7 @@ async def cmd_info(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         "━━━━━━━━━━━━━━━━━━\n"
         "✅ *HABITS & TASKS*\n"
         "Just say it — _'I want to run every day'_ and I'll add it\n"
+        "/newtask — Add a habit or reminder\n"
         "/tasks — See all active tasks\n"
         "/schedule — Full day view; reply with times to plan habits today\n\n"
 
@@ -329,7 +339,8 @@ async def cmd_info(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
         "━━━━━━━━━━━━━━━━━━\n"
         "📊 *INSIGHTS*\n"
-        "/graph — Activity + skip patterns (last 30 days)\n\n"
+        "/graph — Activity over last 30 days\n"
+        "/skipgraph — Skip patterns + completion rate\n\n"
 
         "━━━━━━━━━━━━━━━━━━\n"
         "⚙️ *SETTINGS*\n"
@@ -614,6 +625,7 @@ def main() -> None:
     app.add_handler(CommandHandler("setmorning", cmd_setmorning))
     app.add_handler(CommandHandler("seteod", cmd_seteod))
     app.add_handler(CommandHandler("graph", cmd_graph))
+    app.add_handler(CommandHandler("skipgraph", cmd_skipgraph))
     app.add_handler(CommandHandler("schedule", cmd_schedule))
     app.add_handler(CommandHandler("info", cmd_info))
     app.add_handler(CommandHandler("clear", cmd_clear))
@@ -640,9 +652,10 @@ def main() -> None:
         from telegram import BotCommand
         await application.bot.set_my_commands([
             BotCommand("info",      "How everything works"),
-            BotCommand("schedule",  "Your full day + plan habit times"),
+            BotCommand("schedule",  "Your full day at a glance"),
             BotCommand("tasks",     "List active tasks"),
-            BotCommand("graph",     "Activity + skip patterns graph"),
+            BotCommand("graph",     "Activity graph"),
+            BotCommand("skipgraph", "Skip patterns graph"),
             BotCommand("settings",  "View & update settings"),
             BotCommand("clear",     "Delete all your data"),
             BotCommand("twilio",    "Missed call notifications"),

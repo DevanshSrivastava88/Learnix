@@ -1,4 +1,4 @@
-"""Task handlers: /tasks, /done_<id>, /deletetask, /pause, /resume, /complete"""
+"""Task handlers: /newtask, /tasks, /done_<id>, /edittask, /deletetask, /pause, /resume, /complete"""
 
 import logging
 
@@ -18,6 +18,29 @@ IST = pytz.timezone("Asia/Kolkata")
 NT_DESCRIBE, NT_CONFIRM = range(20, 22)
 DT_SELECT, DT_CONFIRM = range(30, 32)
 
+
+# ---------------------------------------------------------------------------
+# /newtask — create habit or milestone
+# ---------------------------------------------------------------------------
+
+async def cmd_newtask(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
+    import claude_svc
+    text = update.message.text.strip()
+    inline = text.replace("/newtask", "").strip()
+    if inline:
+        return await _parse_and_respond(update, ctx, inline, claude_svc)
+    await update.message.reply_text(
+        "What do you want to track? Just say it naturally.\n\n"
+        "_e.g. 'remind me to game in 20 mins' or 'workout every day'_",
+        parse_mode=ParseMode.MARKDOWN,
+        reply_markup=ReplyKeyboardRemove(),
+    )
+    return NT_DESCRIBE
+
+
+async def nt_describe(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
+    import claude_svc
+    return await _parse_and_respond(update, ctx, update.message.text.strip(), claude_svc)
 
 
 async def _parse_and_respond(update, ctx, text: str, claude_svc) -> int:
@@ -341,6 +364,15 @@ async def cmd_settings(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 def get_handlers():
     cancel_handler = MessageHandler(filters.Regex(r"^Cancel$"), _cancel)
 
+    newtask_conv = ConversationHandler(
+        entry_points=[CommandHandler("newtask", cmd_newtask)],
+        states={
+            NT_DESCRIBE: [MessageHandler(filters.TEXT & ~filters.COMMAND, nt_describe)],
+            NT_CONFIRM:  [MessageHandler(filters.TEXT & ~filters.COMMAND, nt_confirm)],
+        },
+        fallbacks=[CommandHandler("cancel", _cancel), cancel_handler],
+    )
+
     deletetask_conv = ConversationHandler(
         entry_points=[CommandHandler("deletetask", cmd_deletetask)],
         states={
@@ -351,6 +383,7 @@ def get_handlers():
     )
 
     return [
+        newtask_conv,
         deletetask_conv,
         CommandHandler("tasks", cmd_tasks),
         CommandHandler("pause", cmd_pause),
