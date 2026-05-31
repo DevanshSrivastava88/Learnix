@@ -86,7 +86,7 @@ async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 async def cmd_settime(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     ctx.user_data["setting_time_for"] = "study"
     await update.message.reply_text(
-        "Send daily study time in HH:MM format (IST). Example: `09:00`",
+        "What time should I ping you for study? (HH:MM IST, e.g. `09:00`)",
         parse_mode=ParseMode.MARKDOWN,
     )
 
@@ -94,7 +94,7 @@ async def cmd_settime(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 async def cmd_setmorning(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     ctx.user_data["setting_time_for"] = "morning"
     await update.message.reply_text(
-        "Send morning brief time in HH:MM format (IST). Example: `08:00`",
+        "When do you want your morning brief? (HH:MM IST, e.g. `08:00`)",
         parse_mode=ParseMode.MARKDOWN,
     )
 
@@ -102,7 +102,7 @@ async def cmd_setmorning(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None
 async def cmd_seteod(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     ctx.user_data["setting_time_for"] = "eod"
     await update.message.reply_text(
-        "Send EOD check-in time in HH:MM format (IST). Example: `21:00`",
+        "When should I do the EOD check-in? (HH:MM IST, e.g. `21:00`)",
         parse_mode=ParseMode.MARKDOWN,
     )
 
@@ -117,12 +117,12 @@ async def handle_time_input(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> b
         h, m = map(int, time_str.split(":"))
         assert 0 <= h < 24 and 0 <= m < 60
     except Exception:
-        await update.message.reply_text("Invalid format. Use HH:MM (e.g. 09:00):")
+        await update.message.reply_text("Hmm, that doesn't look right. Try HH:MM — like `09:00`:", parse_mode=ParseMode.MARKDOWN)
         return True
     uid = update.effective_user.id
     if setting_for == "study":
         settings_svc.set_daily_time(uid, time_str)
-        label = "Daily study"
+        label = "Study time"
     elif setting_for == "morning":
         settings_svc.set_morning_brief_time(uid, time_str)
         label = "Morning brief"
@@ -131,7 +131,7 @@ async def handle_time_input(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> b
         label = "EOD check-in"
     ctx.user_data.pop("setting_time_for")
     await update.message.reply_text(
-        f"✅ {label} time set to *{time_str}* IST.",
+        f"Done! {label} set to *{time_str}* IST. 🕐",
         parse_mode=ParseMode.MARKDOWN,
     )
     return True
@@ -150,7 +150,7 @@ async def cmd_skipgraph(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_photo(buf, caption="Your skip patterns — last 30 days 📉\nRed bars = most-skipped days. Green line = completion rate.")
     except Exception as e:
         logger.error(f"Skip graph failed for {uid}: {e}")
-        await update.message.reply_text(f"Could not generate graph: {e}")
+        await update.message.reply_text(f"Couldn't generate the graph right now: {e}")
 
 
 async def cmd_graph(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
@@ -162,7 +162,7 @@ async def cmd_graph(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_photo(buf, caption="Your activity over the last 30 days 📈")
     except Exception as e:
         logger.error(f"Graph failed for {uid}: {e}")
-        await update.message.reply_text(f"❌ Could not generate graph: {e}")
+        await update.message.reply_text(f"Couldn't generate the graph right now: {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -188,7 +188,7 @@ async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
                 await study_handlers._run_study_session(update, ctx, topic)
         elif text == "later":
             pending.pop(uid, None)
-            await update.message.reply_text("No problem! I'll remind you in 2 hours. 😴")
+            await update.message.reply_text("No worries! I'll nudge you again in 2 hours. 😴")
             ctx.job_queue.run_once(
                 _reminder_job, when=7200,
                 data={"user_id": uid, "topic_id": topic_id},
@@ -266,7 +266,7 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
         "yeah, add it", "edit", "yes, delete it",
         "none (root topic)", "name", "description", "target date",
     }:
-        await update.message.reply_text("Hey! 👋 Just tell me what you want to track, or use /help.")
+        await update.message.reply_text("Hey! 👋 What do you want to track? Or /help to see what I can do.")
         return
 
     await update.message.chat.send_action(ChatAction.TYPING)
@@ -305,7 +305,7 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
             )
             await update.message.reply_text(reply)
         except Exception:
-            await update.message.reply_text("I'm here! Use /help to see what I can do.")
+            await update.message.reply_text("I'm here! Try /help to see what I can do.")
 
 
 async def cmd_info(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
@@ -362,9 +362,9 @@ async def cmd_info(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 async def cmd_clear(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     ctx.user_data["pending_clear"] = True
     await update.message.reply_text(
-        "⚠️ *This will delete ALL your data:*\n"
+        "⚠️ *Heads up — this deletes everything:*\n"
         "goals, topics, tasks, skips, settings, activity history.\n\n"
-        "Type `confirm delete` to proceed, or anything else to cancel.",
+        "Type `confirm delete` to wipe it all, or anything else to back out.",
         parse_mode=ParseMode.MARKDOWN,
     )
 
@@ -375,7 +375,7 @@ async def handle_clear_confirm(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -
         return False
     ctx.user_data.pop("pending_clear")
     if update.message.text.strip().lower() != "confirm delete":
-        await update.message.reply_text("Cancelled. Your data is safe.")
+        await update.message.reply_text("All good, nothing was deleted. 👍")
         return True
     uid = update.effective_user.id
     import logging as _log
@@ -391,9 +391,9 @@ async def handle_clear_confirm(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -
             errors.append(table)
             _logger.error(f"Clear failed on {table} for {uid}: {e}")
     if errors:
-        await update.message.reply_text(f"⚠️ Partial clear — errors on: {', '.join(errors)}. Try again.")
+        await update.message.reply_text(f"⚠️ Partial clear — hit some errors on: {', '.join(errors)}. Try again.")
     else:
-        await update.message.reply_text("🗑 All your data has been cleared.\n\nUse /start to begin fresh!")
+        await update.message.reply_text("🗑 Done! Everything's wiped.\n\nUse /start to start fresh!")
     return True
 
 
@@ -418,7 +418,7 @@ async def cmd_twilio(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         status  = "ON ✅" if enabled else "OFF ⏸"
         await update.message.reply_text(
             f"📞 Missed call notifications: <b>{status}</b>\n\n"
-            f"Use <code>/twilio on</code> or <code>/twilio off</code> to change.",
+            f"<code>/twilio on</code> or <code>/twilio off</code> to change.",
             parse_mode="HTML",
         )
         return
@@ -430,25 +430,25 @@ async def cmd_twilio(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         if not twilio_svc.get_phone_number(uid):
             btn = KeyboardButton("📱 Share my number", request_contact=True)
             await update.message.reply_text(
-                "✅ Call reminders <b>enabled!</b>\n\nShare your number so I can call you:",
+                "Call reminders <b>on!</b> 📞\n\nShare your number so I know where to call:",
                 parse_mode="HTML",
                 reply_markup=ReplyKeyboardMarkup([[btn]], one_time_keyboard=True, resize_keyboard=True),
             )
         else:
             await update.message.reply_text(
-                "✅ Call reminders <b>enabled!</b>\n\nI'll call you when it's time for your habits.",
+                "Call reminders <b>on!</b> 📞 I'll ring you when it's habit time.",
                 parse_mode="HTML",
                 reply_markup=ReplyKeyboardRemove(),
             )
     elif arg == "off":
         twilio_svc.set_twilio_enabled(uid, False)
         await update.message.reply_text(
-            "⏸ Missed call notifications <b>disabled</b>.",
+            "Got it — call reminders <b>off</b>. ⏸",
             parse_mode="HTML",
         )
     else:
         await update.message.reply_text(
-            "Usage: <code>/twilio on</code> | <code>/twilio off</code>",
+            "Try <code>/twilio on</code> or <code>/twilio off</code>.",
             parse_mode="HTML",
         )
 
@@ -534,7 +534,7 @@ async def _reminder_job(ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if topic:
         await ctx.bot.send_message(
             uid,
-            f"⏰ Reminder: Ready to study *{topic['title']}* now?\n\nReply *yes* to start.",
+            f"⏰ Hey! Ready to study *{topic['title']}*? Reply *yes* to jump in, or *later* to snooze.",
             parse_mode=ParseMode.MARKDOWN,
         )
         ctx.bot_data.setdefault("pending_sessions", {})[uid] = topic_id

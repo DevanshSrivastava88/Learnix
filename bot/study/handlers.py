@@ -64,9 +64,9 @@ async def cmd_goals(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     uid = update.effective_user.id
     goals = db.list_goals(uid)
     if not goals:
-        await update.message.reply_text("No active study goals. Use /goal to create one.")
+        await update.message.reply_text("No study goals yet. Use /goal to set one up!")
         return
-    lines = ["*📚 Study Goals*\n"]
+    lines = ["*📚 Your study goals*\n"]
     for g in goals:
         lines.append(_format_goal_status(g))
         lines.append("")
@@ -79,7 +79,7 @@ async def cmd_goals(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def cmd_goal(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text(
-        "Let's create a new study goal! 🎯\n\nWhat's the name of your goal?",
+        "Let's set up a study goal! 🎯\n\nWhat do you want to learn? Give it a name:",
         reply_markup=ReplyKeyboardRemove(),
     )
     return GOAL_NAME
@@ -87,7 +87,7 @@ async def cmd_goal(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
 
 async def goal_get_name(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     ctx.user_data["goal_name"] = update.message.text.strip()
-    await update.message.reply_text("Great! Give a short description (or send '-' to skip):")
+    await update.message.reply_text("Nice! Give it a short description — or '-' to skip:")
     return GOAL_DESC
 
 
@@ -95,7 +95,7 @@ async def goal_get_desc(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     desc = update.message.text.strip()
     ctx.user_data["goal_desc"] = "" if desc == "-" else desc
     await update.message.reply_text(
-        "Target completion date? (YYYY-MM-DD, e.g. 2026-12-01)\nOr send '-' to skip:"
+        "Target date? (YYYY-MM-DD, e.g. 2026-12-01) Or '-' to skip:"
     )
     return GOAL_DEADLINE
 
@@ -106,7 +106,7 @@ async def goal_get_deadline(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> i
         try:
             datetime.fromisoformat(deadline)
         except ValueError:
-            await update.message.reply_text("Invalid date. Use YYYY-MM-DD or send '-' to skip:")
+            await update.message.reply_text("Hmm, that date doesn't look right. Use YYYY-MM-DD or '-' to skip:")
             return GOAL_DEADLINE
     else:
         deadline = None
@@ -115,7 +115,7 @@ async def goal_get_deadline(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> i
     desc = ctx.user_data.get("goal_desc", "")
     db.create_goal(uid, name, desc, deadline)
     await update.message.reply_text(
-        f"✅ Study goal *{name}* created!\n\nUse /addtopic to add topics.",
+        f"Goal created! 🎯 *{name}* is on the list.\n\nUse /addtopic to add topics to it.",
         parse_mode=ParseMode.MARKDOWN,
     )
     ctx.user_data.clear()
@@ -130,12 +130,12 @@ async def cmd_addtopic(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     uid = update.effective_user.id
     goals = db.list_goals(uid)
     if not goals:
-        await update.message.reply_text("No active goals. Create one with /goal first.")
+        await update.message.reply_text("You don't have any goals yet. Create one with /goal first!")
         return ConversationHandler.END
     ctx.user_data["goals_list"] = goals
     buttons = [[g["name"]] for g in goals] + [["Cancel"]]
     await update.message.reply_text(
-        "Which goal is this topic for?",
+        "Which goal is this topic under?",
         reply_markup=ReplyKeyboardMarkup(buttons, one_time_keyboard=True, resize_keyboard=True),
     )
     return AT_GOAL_SELECT
@@ -146,7 +146,7 @@ async def at_goal_select(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     goals = ctx.user_data.get("goals_list", [])
     goal = next((g for g in goals if g["name"] == chosen), None)
     if not goal:
-        await update.message.reply_text("Goal not found. Try /addtopic again.")
+        await update.message.reply_text("Hmm, can't find that goal. Try /addtopic again.")
         return ConversationHandler.END
     ctx.user_data["selected_goal"] = goal
     topics = db.list_topics_for_goal(goal["id"])
@@ -155,12 +155,12 @@ async def at_goal_select(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
         buttons = [["None (root topic)"]] + [[t["title"]] for t in root_topics] + [["Cancel"]]
         ctx.user_data["root_topics"] = root_topics
         await update.message.reply_text(
-            "Is this a subtopic? Select a parent, or 'None' for root:",
+            "Is this a subtopic of something? Pick a parent, or 'None' if it's top-level:",
             reply_markup=ReplyKeyboardMarkup(buttons, one_time_keyboard=True, resize_keyboard=True),
         )
         return AT_PARENT_SELECT
     ctx.user_data["parent_topic"] = None
-    await update.message.reply_text("What's the topic title?", reply_markup=ReplyKeyboardRemove())
+    await update.message.reply_text("What's the topic called?", reply_markup=ReplyKeyboardRemove())
     return AT_TITLE
 
 
@@ -171,7 +171,7 @@ async def at_parent_select(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> in
     else:
         root_topics = ctx.user_data.get("root_topics", [])
         ctx.user_data["parent_topic"] = next((t for t in root_topics if t["title"] == chosen), None)
-    await update.message.reply_text("What's the topic title?", reply_markup=ReplyKeyboardRemove())
+    await update.message.reply_text("What's the topic called?", reply_markup=ReplyKeyboardRemove())
     return AT_TITLE
 
 
@@ -185,7 +185,8 @@ async def at_get_desc(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     desc = update.message.text.strip()
     ctx.user_data["topic_desc"] = "" if desc == "-" else desc
     await update.message.reply_text(
-        "Any notes for this topic? (or '-' to skip)\nTip: Gemini uses these when teaching."
+        "Any notes for this topic? (or '-' to skip)\n_Tip: Claude uses these when teaching you._",
+        parse_mode=ParseMode.MARKDOWN,
     )
     return AT_NOTES
 
@@ -208,7 +209,7 @@ async def at_get_notes(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     )
     parent_str = f" (under *{parent['title']}*)" if parent else ""
     await update.message.reply_text(
-        f"✅ Topic *{title}*{parent_str} added to *{goal['name']}*!",
+        f"Added! 📌 *{title}*{parent_str} is in *{goal['name']}*.",
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=ReplyKeyboardRemove(),
     )
@@ -225,17 +226,17 @@ async def cmd_study(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     goals = db.list_goals(uid)
     if not goals:
         await update.message.reply_text(
-            "You don't have any study goals yet.\n\nUse /goal to create one first!"
+            "No study goals yet! Use /goal to set one up first."
         )
         return
     topic = db.get_next_pending_topic(uid)
     if not topic:
-        await update.message.reply_text("🎉 All topics done! Add more with /addtopic.")
+        await update.message.reply_text("🎉 You've done all your topics! Add more with /addtopic.")
         return
     goal = db.get_goal(topic["goal_id"])
     pos = db.get_topic_position(topic)
     await update.message.reply_text(
-        f"Starting session...\nGoal: *{goal['name'] if goal else '?'}*  |  Topic {pos['position']}/{pos['total']}",
+        f"Let's go! 📖 *{goal['name'] if goal else '?'}*  |  Topic {pos['position']}/{pos['total']}",
         parse_mode=ParseMode.MARKDOWN,
     )
     await _run_study_session(update, ctx, topic)
@@ -248,14 +249,14 @@ async def _run_study_session(update: Update, ctx: ContextTypes.DEFAULT_TYPE, top
     try:
         lesson = claude.teach_topic(topic["title"], topic.get("notes", "") or "")
     except Exception as e:
-        await ctx.bot.send_message(chat_id, f"❌ Error: {e}")
+        await ctx.bot.send_message(chat_id, f"Couldn't load the lesson right now: {e}")
         return
     await ctx.bot.send_message(chat_id, lesson)
-    await ctx.bot.send_message(chat_id, "Now let's test your understanding! 🧠")
+    await ctx.bot.send_message(chat_id, "Alright, quiz time! 🧠 Let's see what stuck.")
     try:
         questions = claude.generate_quiz(topic["title"], topic.get("notes", "") or "")
     except Exception as e:
-        await ctx.bot.send_message(chat_id, f"❌ Quiz error: {e}")
+        await ctx.bot.send_message(chat_id, f"Couldn't generate the quiz: {e}")
         return
     ctx.bot_data.setdefault("quiz_state", {})[uid] = {
         "topic_id": topic["id"], "topic": topic,
@@ -323,7 +324,7 @@ async def handle_quiz_answer(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> 
         correct = result.get("correct", False)
         explanation = result.get("explanation", "")
     except Exception as e:
-        await update.message.reply_text(f"⚠️ Scoring error: {e}")
+        await update.message.reply_text(f"Hmm, scoring glitch — {e}")
         return
     if correct:
         state["score"] += 1
@@ -343,9 +344,9 @@ async def cmd_progress(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     uid = update.effective_user.id
     goals = db.list_goals(uid)
     if not goals:
-        await update.message.reply_text("No active goals. Use /goal to create one.")
+        await update.message.reply_text("No goals yet! Use /goal to create one.")
         return
-    lines = ["*📊 Full Progress*\n"]
+    lines = ["*📊 Your progress*\n"]
     for goal in goals:
         lines.append(_format_goal_status(goal))
         topics = db.list_topics_for_goal(goal["id"])
@@ -368,7 +369,7 @@ async def cmd_editgoal(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     uid = update.effective_user.id
     goals = db.list_goals(uid)
     if not goals:
-        await update.message.reply_text("No active goals to edit.")
+        await update.message.reply_text("Nothing to edit — you don't have any goals yet.")
         return ConversationHandler.END
     ctx.user_data["goals_list"] = goals
     buttons = [[g["name"]] for g in goals] + [["Cancel"]]
@@ -384,12 +385,12 @@ async def editgoal_select(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int
     goals = ctx.user_data.get("goals_list", [])
     goal = next((g for g in goals if g["name"] == chosen), None)
     if not goal:
-        await update.message.reply_text("Goal not found. Try /editgoal again.")
+        await update.message.reply_text("Hmm, couldn't find that goal. Try /editgoal again.")
         return ConversationHandler.END
     ctx.user_data["editing_goal"] = goal
     buttons = [["Name"], ["Description"], ["Target date"], ["Cancel"]]
     await update.message.reply_text(
-        f"Editing *{goal['name']}*. What do you want to change?",
+        f"Editing *{goal['name']}* — what do you want to change?",
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=ReplyKeyboardMarkup(buttons, one_time_keyboard=True, resize_keyboard=True),
     )
@@ -399,15 +400,15 @@ async def editgoal_select(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int
 async def editgoal_field(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     field = update.message.text.strip()
     if field == "Cancel":
-        await update.message.reply_text("Cancelled.", reply_markup=ReplyKeyboardRemove())
+        await update.message.reply_text("No changes made. 👍", reply_markup=ReplyKeyboardRemove())
         return ConversationHandler.END
     ctx.user_data["editing_field"] = field
     prompts = {
-        "Name": "Enter the new name:",
-        "Description": "Enter the new description:",
-        "Target date": "Enter new date (YYYY-MM-DD):",
+        "Name": "What's the new name?",
+        "Description": "What's the new description?",
+        "Target date": "What's the new date? (YYYY-MM-DD):",
     }
-    await update.message.reply_text(prompts.get(field, "Enter new value:"), reply_markup=ReplyKeyboardRemove())
+    await update.message.reply_text(prompts.get(field, "What's the new value?"), reply_markup=ReplyKeyboardRemove())
     return EDIT_GOAL_VALUE
 
 
@@ -421,10 +422,10 @@ async def editgoal_value(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
         try:
             datetime.fromisoformat(value)
         except ValueError:
-            await update.message.reply_text("Invalid date format (YYYY-MM-DD). Try again:")
+            await update.message.reply_text("That date doesn't look right — use YYYY-MM-DD:")
             return EDIT_GOAL_VALUE
     db.update_goal(goal["id"], **{db_field: value})
-    await update.message.reply_text(f"✅ {field} updated!", reply_markup=ReplyKeyboardRemove())
+    await update.message.reply_text(f"Updated! ✅ {field} is set.", reply_markup=ReplyKeyboardRemove())
     ctx.user_data.clear()
     return ConversationHandler.END
 
@@ -437,12 +438,12 @@ async def cmd_deletegoal(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     uid = update.effective_user.id
     goals = db.list_goals(uid)
     if not goals:
-        await update.message.reply_text("No goals to delete.")
+        await update.message.reply_text("No goals to delete — you're all clear!")
         return ConversationHandler.END
     ctx.user_data["goals_list"] = goals
     buttons = [[g["name"]] for g in goals] + [["Cancel"]]
     await update.message.reply_text(
-        "Which goal do you want to delete? (This deletes all its topics too!)",
+        "Which goal do you want to delete? This removes all its topics too.",
         reply_markup=ReplyKeyboardMarkup(buttons, one_time_keyboard=True, resize_keyboard=True),
     )
     return DELETE_GOAL_SELECT
@@ -453,12 +454,12 @@ async def deletegoal_select(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> i
     goals = ctx.user_data.get("goals_list", [])
     goal = next((g for g in goals if g["name"] == chosen), None)
     if not goal:
-        await update.message.reply_text("Goal not found.")
+        await update.message.reply_text("Hmm, couldn't find that goal.")
         return ConversationHandler.END
     ctx.user_data["deleting_goal"] = goal
     buttons = [["Yes, delete it"], ["Cancel"]]
     await update.message.reply_text(
-        f"⚠️ Delete *{goal['name']}* and ALL its topics? This cannot be undone.",
+        f"⚠️ Delete *{goal['name']}* and all its topics? Can't undo this.",
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=ReplyKeyboardMarkup(buttons, one_time_keyboard=True, resize_keyboard=True),
     )
@@ -471,12 +472,12 @@ async def deletegoal_confirm(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> 
         goal = ctx.user_data["deleting_goal"]
         db.delete_goal(goal["id"])
         await update.message.reply_text(
-            f"🗑️ *{goal['name']}* deleted.",
+            f"Gone! 🗑️ *{goal['name']}* deleted.",
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=ReplyKeyboardRemove(),
         )
     else:
-        await update.message.reply_text("Cancelled.", reply_markup=ReplyKeyboardRemove())
+        await update.message.reply_text("Kept it! 👍", reply_markup=ReplyKeyboardRemove())
     ctx.user_data.clear()
     return ConversationHandler.END
 
@@ -491,13 +492,12 @@ async def cmd_pausegoal(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     paused = db.list_goals(uid, status="paused")
     all_goals = goals + paused
     if not all_goals:
-        await update.message.reply_text("No goals found.")
+        await update.message.reply_text("No goals yet! Use /goal to create one.")
         return
-    lines = ["<b>Your goals:</b>\n"]
+    lines = ["<b>Tap a goal to pause or resume it:</b>\n"]
     for g in all_goals:
         status_icon = "▶️" if g["status"] == "in_progress" else "⏸️"
         lines.append(f"{status_icon} /togglegoal_{g['id'][:8]} — {g['name']}")
-    lines.append("\nTap a command to toggle pause/resume.")
     await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.HTML)
 
 
@@ -508,7 +508,7 @@ async def handle_togglegoal(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> N
     goals = db.list_goals(uid) + db.list_goals(uid, status="paused")
     goal = next((g for g in goals if g["id"].startswith(short_id)), None)
     if not goal:
-        await update.message.reply_text("Goal not found.")
+        await update.message.reply_text("Hmm, couldn't find that goal.")
         return
     new_status = "paused" if goal["status"] == "in_progress" else "in_progress"
     db.update_goal_status(goal["id"], new_status)
@@ -576,5 +576,5 @@ def get_handlers():
 
 async def _cancel(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     ctx.user_data.clear()
-    await update.message.reply_text("Cancelled.", reply_markup=ReplyKeyboardRemove())
+    await update.message.reply_text("Cancelled! 👋", reply_markup=ReplyKeyboardRemove())
     return ConversationHandler.END

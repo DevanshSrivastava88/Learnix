@@ -37,11 +37,11 @@ def format_morning_brief(user_id: int) -> str:
     milestones = [t for t in all_tasks if t["task_type"] == "milestone"]
     next_topic = study_svc.get_next_pending_topic(user_id)
 
-    lines = ["🌅 *Good morning!* Here's your day:\n"]
+    lines = ["🌅 *Morning!* Here's what's on today:\n"]
 
-    lines.append("📚 *STUDY*")
+    lines.append("📚 *Study*")
     if not goals:
-        lines.append("No active study goals. Use /goal to create one.")
+        lines.append("No study goals yet — /goal to set one up.")
     else:
         for g in goals:
             counts = study_svc.count_topics_for_goal(g["id"])
@@ -52,12 +52,12 @@ def format_morning_brief(user_id: int) -> str:
         if next_topic:
             goal = study_svc.get_goal(next_topic["goal_id"])
             goal_name = goal["name"] if goal else ""
-            lines.append(f"\n▶️ Next up: *{next_topic['title']}* ({goal_name})")
-            lines.append("Reply /study to start your session.")
+            lines.append(f"\n▶️ Up next: *{next_topic['title']}* ({goal_name})")
+            lines.append("Tap /study when you're ready.")
 
-    lines.append("\n✅ *HABITS*")
+    lines.append("\n✅ *Habits*")
     if not habits:
-        lines.append("No habits yet. Use /newtask to add one.")
+        lines.append("No habits yet — /newtask to add one.")
     else:
         now = datetime.now(IST)
         for h in habits:
@@ -74,9 +74,9 @@ def format_morning_brief(user_id: int) -> str:
             else:
                 lines.append(f"• {h['title']}")
 
-    lines.append("\n📋 *MILESTONES*")
+    lines.append("\n📋 *Milestones*")
     if not milestones:
-        lines.append("No milestones. Use /newtask to add one.")
+        lines.append("No milestones — /newtask to add one.")
     else:
         for m in milestones:
             counts = tasks_svc.count_milestones(m["id"])
@@ -98,7 +98,7 @@ def format_morning_brief(user_id: int) -> str:
                     pass
             lines.append(f"• {m['title']} — {done}/{total}{deadline_str}")
 
-    lines.append(f"\n🔥 Streak: {streak} day(s)")
+    lines.append(f"\n🔥 Streak: {streak} day(s) — let's keep it going!")
     return "\n".join(lines)
 
 
@@ -107,7 +107,7 @@ def format_eod(user_id: int) -> str:
     streak = settings.get("streak", 0) or 0
     today = date.today()
 
-    lines = ["🌙 *Day wrap-up!*\n"]
+    lines = ["🌙 *Day done — let's wrap up!*\n"]
 
     goals = study_svc.list_goals(user_id)
     studied_today = []
@@ -127,7 +127,7 @@ def format_eod(user_id: int) -> str:
         for title in studied_today:
             lines.append(f"  ✅ {title}")
     else:
-        lines.append("📚 No study sessions today — catch up tomorrow!")
+        lines.append("📚 No study sessions today — no worries, tomorrow's a fresh start!")
 
     all_tasks = tasks_svc.list_tasks(user_id)
     habits = [t for t in all_tasks if t["task_type"] == "habit"]
@@ -141,12 +141,12 @@ def format_eod(user_id: int) -> str:
                     if next_dt.date() > today:
                         lines.append(f"  ✅ {h['title']}")
                     else:
-                        lines.append(f"  ❌ {h['title']} (not done)")
+                        lines.append(f"  ❌ {h['title']} (not done today)")
                 except Exception:
                     lines.append(f"  • {h['title']}")
 
-    lines.append(f"\n🔥 Streak: {streak} day(s) — keep it up!")
-    lines.append("\nSee you tomorrow! 👋")
+    lines.append(f"\n🔥 Streak: {streak} day(s)")
+    lines.append("\nCatch you tomorrow! 👋")
     return "\n".join(lines)
 
 
@@ -165,16 +165,16 @@ async def study_poller(ctx: ContextTypes.DEFAULT_TYPE) -> None:
         uid = user["user_id"]
         topic = study_svc.get_next_pending_topic(uid)
         if not topic:
-            await ctx.bot.send_message(uid, "🎉 All topics done! Add more with /addtopic.")
+            await ctx.bot.send_message(uid, "🎉 You've done all your topics! Add more with /addtopic.")
             continue
         goal = study_svc.get_goal(topic["goal_id"])
         goal_name = goal["name"] if goal else "?"
         pos = study_svc.get_topic_position(topic)
         msg = (
-            f"📖 Time to study!\n\n"
+            f"📖 Study time!\n\n"
             f"*{topic['title']}* — {goal_name} "
             f"(Topic {pos['position']}/{pos['total']})\n\n"
-            f"Reply *yes* to start now, or *later* to skip."
+            f"Reply *yes* to jump in, or *later* to snooze."
         )
         await ctx.bot.send_message(uid, msg, parse_mode=ParseMode.MARKDOWN)
         ctx.bot_data.setdefault("pending_sessions", {})[uid] = topic["id"]
@@ -241,14 +241,14 @@ async def reminder_poller(ctx: ContextTypes.DEFAULT_TYPE) -> None:
                     analytics_svc.log_activity(uid, "habit", note=f"auto_skip:{title}")
                     await ctx.bot.send_message(
                         uid,
-                        f"⏭ Auto-skipped *{title}* — no response after 2 reminders. See you tomorrow!",
+                        f"⏭ Auto-skipped *{title}* — no response after 2 reminders. Catch you tomorrow!",
                         parse_mode=ParseMode.MARKDOWN,
                     )
                     continue
 
                 # Send Telegram reminder and advance next_reminder_at by 8 hours
                 msg = (
-                    f"⏰ Habit reminder: *{title}*\n\n"
+                    f"⏰ *{title}*\n\n"
                     f"✅ Done → /done_{short}\n"
                     f"⏭ Skip → /skip_{short}"
                 )
@@ -272,10 +272,10 @@ async def reminder_poller(ctx: ContextTypes.DEFAULT_TYPE) -> None:
                 done = counts["done"]
                 target = task.get("target_date", "")
                 msg = (
-                    f"📋 Milestone reminder: *{title}*\n"
-                    f"Progress: {done}/{total}\n"
-                    f"Deadline: {target}\n\n"
-                    f"Use /tasks to update progress."
+                    f"📋 *{title}*\n"
+                    f"Progress: {done}/{total}"
+                    + (f"\nDeadline: {target}" if target else "")
+                    + f"\n\nUse /tasks to update."
                 )
                 await ctx.bot.send_message(uid, msg, parse_mode=ParseMode.MARKDOWN)
         except Exception as e:

@@ -14,8 +14,8 @@ def test_format_morning_brief_no_data():
          patch('scheduler.study_svc.get_next_pending_topic', return_value=None), \
          patch('scheduler.settings_svc.get_settings', return_value={'streak': 0}):
         msg = scheduler.format_morning_brief(123)
-        assert 'Good morning' in msg
-        assert 'No active' in msg or 'nothing' in msg.lower() or 'no ' in msg.lower()
+        assert 'morning' in msg.lower() or 'Morning' in msg
+        assert 'No ' in msg or 'no ' in msg.lower()
 
 def test_format_morning_brief_with_study_goal():
     goal = make_goal()

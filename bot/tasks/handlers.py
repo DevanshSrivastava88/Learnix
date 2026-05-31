@@ -30,7 +30,7 @@ async def cmd_newtask(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     if inline:
         return await _parse_and_respond(update, ctx, inline, claude_svc)
     await update.message.reply_text(
-        "What do you want to track? Just say it.\n\n"
+        "What do you want to track? Just say it naturally.\n\n"
         "_e.g. 'remind me to game in 20 mins' or 'workout every day'_",
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=ReplyKeyboardRemove(),
@@ -48,7 +48,7 @@ async def _parse_and_respond(update, ctx, text: str, claude_svc) -> int:
         parsed = claude_svc.parse_task(text)
     except Exception as e:
         logger.error(f"parse_task failed: {e}")
-        await update.message.reply_text("Didn't catch that, say it again?")
+        await update.message.reply_text("Hmm, didn't catch that — say it again?")
         return NT_DESCRIBE
 
     if parsed.get("clarify"):
@@ -64,7 +64,7 @@ async def _parse_and_respond(update, ctx, text: str, claude_svc) -> int:
     if task_type == "reminder":
         delay = parsed.get("delay_minutes") or 0
         if delay <= 0:
-            await update.message.reply_text("How many minutes from now?")
+            await update.message.reply_text("How many minutes from now should I remind you?")
             ctx.user_data["partial_task"] = parsed
             return NT_DESCRIBE
         uid = update.effective_user.id
@@ -129,13 +129,13 @@ async def nt_confirm(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     parsed = ctx.user_data.get("parsed_task", {})
 
     if "Cancel" in text or text.lower() == "cancel":
-        await update.message.reply_text("Cancelled.", reply_markup=ReplyKeyboardRemove())
+        await update.message.reply_text("No worries, cancelled! 👋", reply_markup=ReplyKeyboardRemove())
         ctx.user_data.clear()
         return ConversationHandler.END
 
     if "Edit" in text:
         await update.message.reply_text(
-            "Describe it again with corrections:",
+            "Sure! Describe it again and I'll re-parse it:",
             reply_markup=ReplyKeyboardRemove(),
         )
         return NT_DESCRIBE
@@ -152,7 +152,7 @@ async def nt_confirm(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     )
     freq = "every day" if recur == 1 else f"every {recur} days"
     await update.message.reply_text(
-        f"✅ *{task['title']}* added! I'll remind you {freq}.",
+        f"Added! 🎉 I'll remind you about *{task['title']}* {freq}.",
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=ReplyKeyboardRemove(),
     )
@@ -168,9 +168,9 @@ async def cmd_tasks(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     uid = update.effective_user.id
     all_tasks = db.list_tasks(uid)
     if not all_tasks:
-        await update.message.reply_text("No tasks yet. Just tell me what you want to track!")
+        await update.message.reply_text("No tasks yet! Just tell me what you want to track.")
         return
-    lines = ["<b>Your tasks:</b>\n"]
+    lines = ["<b>Here's what you're tracking:</b>\n"]
     for t in all_tasks:
         recur = t.get("recurrence_days", 1)
         freq = "daily" if recur == 1 else f"every {recur}d"
@@ -190,7 +190,7 @@ async def handle_done(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     tasks = db.list_tasks(uid)
     task = next((t for t in tasks if t["id"].startswith(short_id)), None)
     if not task:
-        await update.message.reply_text("Task not found. Use /tasks to see your tasks.")
+        await update.message.reply_text("Hmm, can't find that task. Try /tasks to see what's active.")
         return
     db.mark_done(task["id"])
     import analytics_svc
@@ -200,9 +200,9 @@ async def handle_done(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     settings = settings_svc.get_settings(uid)
     streak = settings.get("streak", 0) or 0
     recur = task.get("recurrence_days", 1)
-    streak_line = f"🔥 {streak} day streak!" if streak > 1 else "Keep it up!"
+    streak_line = f"🔥 {streak} day streak!" if streak > 1 else "Nice, keep it up!"
     await update.message.reply_text(
-        f"✅ *{task['title']}* done!  {streak_line}\nNext reminder in {recur} day(s).",
+        f"Done! ✅ *{task['title']}*  {streak_line}\nI'll remind you again in {recur} day(s).",
         parse_mode=ParseMode.MARKDOWN,
     )
 
@@ -215,12 +215,12 @@ async def cmd_deletetask(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     uid = update.effective_user.id
     tasks = db.list_tasks(uid)
     if not tasks:
-        await update.message.reply_text("No tasks to delete.")
+        await update.message.reply_text("Nothing to delete — you've got no tasks right now.")
         return ConversationHandler.END
     ctx.user_data["tasks_list"] = tasks
     buttons = [[t["title"]] for t in tasks] + [["Cancel"]]
     await update.message.reply_text(
-        "Which task do you want to delete?",
+        "Which one do you want to delete?",
         reply_markup=ReplyKeyboardMarkup(buttons, one_time_keyboard=True, resize_keyboard=True),
     )
     return DT_SELECT
@@ -231,12 +231,12 @@ async def deletetask_select(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> i
     tasks = ctx.user_data.get("tasks_list", [])
     task = next((t for t in tasks if t["title"] == chosen), None)
     if not task:
-        await update.message.reply_text("Task not found.")
+        await update.message.reply_text("Hmm, couldn't find that task.")
         return ConversationHandler.END
     ctx.user_data["deleting_task"] = task
     buttons = [["Yes, delete it"], ["Cancel"]]
     await update.message.reply_text(
-        f"⚠️ Delete *{task['title']}*?",
+        f"⚠️ Delete *{task['title']}*? This can't be undone.",
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=ReplyKeyboardMarkup(buttons, one_time_keyboard=True, resize_keyboard=True),
     )
@@ -249,12 +249,12 @@ async def deletetask_confirm(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> 
         task = ctx.user_data["deleting_task"]
         db.delete_task(task["id"])
         await update.message.reply_text(
-            f"🗑️ *{task['title']}* deleted.",
+            f"Gone! 🗑️ *{task['title']}* deleted.",
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=ReplyKeyboardRemove(),
         )
     else:
-        await update.message.reply_text("Cancelled.", reply_markup=ReplyKeyboardRemove())
+        await update.message.reply_text("No worries, kept it! 👍", reply_markup=ReplyKeyboardRemove())
     ctx.user_data.clear()
     return ConversationHandler.END
 
@@ -267,9 +267,9 @@ async def cmd_pause(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     uid = update.effective_user.id
     tasks = db.list_tasks(uid, status="active")
     if not tasks:
-        await update.message.reply_text("No active tasks.")
+        await update.message.reply_text("No active tasks to pause right now.")
         return
-    lines = ["<b>Active tasks — tap to pause:</b>\n"]
+    lines = ["<b>Which one do you want to pause?</b>\n"]
     for t in tasks:
         lines.append(f"⏸ /pause_{t['id'][:8]} — {t['title']}")
     await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.HTML)
@@ -282,19 +282,19 @@ async def handle_pause_task(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> N
     tasks = db.list_tasks(uid)
     task = next((t for t in tasks if t["id"].startswith(short_id)), None)
     if not task:
-        await update.message.reply_text("Task not found.")
+        await update.message.reply_text("Hmm, can't find that task.")
         return
     db.update_task(task["id"], status="paused")
-    await update.message.reply_text(f"⏸️ *{task['title']}* paused.", parse_mode=ParseMode.MARKDOWN)
+    await update.message.reply_text(f"Paused ⏸️ *{task['title']}*. Resume it whenever you're ready.", parse_mode=ParseMode.MARKDOWN)
 
 
 async def cmd_resume(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     uid = update.effective_user.id
     tasks = db.list_tasks(uid, status="paused")
     if not tasks:
-        await update.message.reply_text("No paused tasks.")
+        await update.message.reply_text("Nothing's paused right now!")
         return
-    lines = ["<b>Paused tasks — tap to resume:</b>\n"]
+    lines = ["<b>Which one do you want to resume?</b>\n"]
     for t in tasks:
         lines.append(f"▶️ /resume_{t['id'][:8]} — {t['title']}")
     await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.HTML)
@@ -307,10 +307,10 @@ async def handle_resume_task(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> 
     tasks = db.list_tasks(uid, status="paused")
     task = next((t for t in tasks if t["id"].startswith(short_id)), None)
     if not task:
-        await update.message.reply_text("Task not found.")
+        await update.message.reply_text("Hmm, can't find that task.")
         return
     db.update_task(task["id"], status="active")
-    await update.message.reply_text(f"▶️ *{task['title']}* resumed.", parse_mode=ParseMode.MARKDOWN)
+    await update.message.reply_text(f"Back on! ▶️ *{task['title']}* is active again.", parse_mode=ParseMode.MARKDOWN)
 
 
 # ---------------------------------------------------------------------------
@@ -321,9 +321,9 @@ async def cmd_complete(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     uid = update.effective_user.id
     milestones = [t for t in db.list_tasks(uid) if t["task_type"] == "milestone"]
     if not milestones:
-        await update.message.reply_text("No active milestones.")
+        await update.message.reply_text("No active milestones to complete right now.")
         return
-    lines = ["<b>Milestones — tap to mark complete:</b>\n"]
+    lines = ["<b>Which milestone did you knock out?</b>\n"]
     for m in milestones:
         lines.append(f"✅ /complete_{m['id'][:8]} — {m['title']}")
     await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.HTML)
@@ -336,12 +336,12 @@ async def handle_complete_task(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -
     tasks = db.list_tasks(uid)
     task = next((t for t in tasks if t["id"].startswith(short_id)), None)
     if not task:
-        await update.message.reply_text("Task not found.")
+        await update.message.reply_text("Hmm, can't find that task.")
         return
     db.update_task(task["id"], status="completed")
     import analytics_svc
     analytics_svc.log_activity(uid, "milestone", note=task["title"])
-    await update.message.reply_text(f"🎉 *{task['title']}* completed!", parse_mode=ParseMode.MARKDOWN)
+    await update.message.reply_text(f"Let's go! 🎉 *{task['title']}* — done!", parse_mode=ParseMode.MARKDOWN)
 
 
 # ---------------------------------------------------------------------------
@@ -353,8 +353,8 @@ async def cmd_settings(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     uid = update.effective_user.id
     s = settings_svc.get_settings(uid)
     await update.message.reply_text(
-        f"*⚙️ Your Settings*\n\n"
-        f"📖 Daily study: *{s['daily_session_time']}* IST — /settime\n"
+        f"*⚙️ Your settings*\n\n"
+        f"📖 Study time: *{s['daily_session_time']}* IST — /settime\n"
         f"🌅 Morning brief: *{s['morning_brief_time']}* IST — /setmorning\n"
         f"🌙 EOD check-in: *{s['eod_time']}* IST — /seteod",
         parse_mode=ParseMode.MARKDOWN,
@@ -406,13 +406,12 @@ async def handle_skip_task(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
     tasks = db.list_tasks(uid)
     task = next((t for t in tasks if t["id"].startswith(short_id)), None)
     if not task:
-        await update.message.reply_text("Task not found.")
+        await update.message.reply_text("Hmm, can't find that task.")
         return
     ctx.user_data["pending_skip"] = task
     await update.message.reply_text(
-        f"Want to reschedule *{task['title']}*?\n\n"
-        "Reply with a time (e.g. `3pm`, `in 2 hours`, `tomorrow 9am`) "
-        "or just say `skip` to log it and move on.",
+        f"Reschedule *{task['title']}*? When should I remind you?\n\n"
+        "Try `3pm`, `in 2 hours`, `tomorrow 9am` — or just say `skip` to log it and move on.",
         parse_mode=ParseMode.MARKDOWN,
     )
 
@@ -433,7 +432,7 @@ async def handle_skip_response(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -
         next_at = datetime.now(timezone.utc) + timedelta(days=task.get("recurrence_days", 1))
         db.reschedule_task(task["id"], next_at)
         await update.message.reply_text(
-            f"Logged. *{task['title']}* will remind you again in {task.get('recurrence_days', 1)} day(s).",
+            f"Logged! I'll remind you about *{task['title']}* again in {task.get('recurrence_days', 1)} day(s).",
             parse_mode=ParseMode.MARKDOWN,
         )
         return True
@@ -442,7 +441,7 @@ async def handle_skip_response(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -
     parsed_dt = stp.parse_time_expression(text)
     if parsed_dt is None:
         await update.message.reply_text(
-            "Didn't catch that time. Try `3pm`, `in 2 hours`, or just say `skip`.",
+            "Hmm, didn't get that. Try `3pm`, `in 2 hours`, or just say `skip`.",
             parse_mode=ParseMode.MARKDOWN,
         )
         ctx.user_data["pending_skip"] = task
@@ -452,7 +451,7 @@ async def handle_skip_response(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -
     db.log_skip(uid, task["id"], note=f"rescheduled_to:{parsed_dt.isoformat()}")
     time_str = parsed_dt.astimezone(IST).strftime("%I:%M %p IST")
     await update.message.reply_text(
-        f"Rescheduled! I'll remind you about *{task['title']}* at {time_str}.",
+        f"Done! I'll remind you about *{task['title']}* at {time_str}. 🕐",
         parse_mode=ParseMode.MARKDOWN,
     )
     return True
@@ -460,5 +459,5 @@ async def handle_skip_response(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -
 
 async def _cancel(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     ctx.user_data.clear()
-    await update.message.reply_text("Cancelled.", reply_markup=ReplyKeyboardRemove())
+    await update.message.reply_text("Cancelled! 👋", reply_markup=ReplyKeyboardRemove())
     return ConversationHandler.END
