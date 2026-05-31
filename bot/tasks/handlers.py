@@ -167,11 +167,13 @@ async def nt_confirm(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
 async def cmd_tasks(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     uid = update.effective_user.id
     all_tasks = db.list_tasks(uid)
-    if not all_tasks:
+    # Filter out breakdown step tasks — they clutter the tasks view
+    tasks = [t for t in all_tasks if " — Step " not in t.get("title", "")]
+    if not tasks:
         await update.message.reply_text("No tasks yet! Just tell me what you want to track.")
         return
     lines = ["<b>Here's what you're tracking:</b>\n"]
-    for t in all_tasks:
+    for t in tasks:
         recur = t.get("recurrence_days", 1)
         freq = "daily" if recur == 1 else f"every {recur}d"
         lines.append(f"  • {t['title']} ({freq}) — /done_{t['id'][:8]}")

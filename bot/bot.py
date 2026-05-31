@@ -544,7 +544,9 @@ async def cmd_schedule(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     now_ist = now_utc.astimezone(IST)
 
     settings = settings_svc.get_settings(uid)
-    habits = task_db.list_tasks(uid)
+    all_habits = task_db.list_tasks(uid)
+    # Filter out breakdown step tasks — they clutter the schedule view
+    habits = [t for t in all_habits if " — Step " not in t.get("title", "")]
 
     lines = [f"📅 *Your Day — {now_ist.strftime('%a, %d %b')}*\n"]
 
@@ -621,9 +623,21 @@ async def handle_schedule_timesheet(update: Update, ctx: ContextTypes.DEFAULT_TY
     uid = update.effective_user.id
 
     # Only consume if the message looks like it contains time-scheduling language.
-    # We check for common time keywords so random messages don't get swallowed.
-    time_keywords = ("at ", "am", "pm", "in ", "mins", "min", "hour", "tonight", "morning", "noon", "midnight")
-    if not any(kw in text.lower() for kw in time_keywords):
+    # We check for specific patterns so random messages (e.g. "how am I doing") don't
+    # get swallowed.  "am"/"pm" are only treated as time markers when preceded by a digit.
+    import re
+    time_patterns = [
+        r"\d\s*am\b", r"\d\s*pm\b",          # digit + am/pm  e.g. "8am", "10 pm"
+        r"\bat\s+\d",                          # "at 8", "at 10"
+        r"\bin\s+\d",                          # "in 30 mins", "in 2 hours"
+        r"\bmins?\b", r"\bhours?\b",           # "mins", "hours"
+        r"\bmorning\b", r"\bevening\b",
+        r"\bnight\b", r"\bnoon\b",
+        r"\bmidnight\b", r"\bo'clock\b",
+    ]
+    lower = text.lower()
+    is_time_reply = any(re.search(p, lower) for p in time_patterns)
+    if not is_time_reply:
         # Not a scheduling reply — clear the state and let the message fall through.
         ctx.user_data.pop("schedule_timesheet_habits", None)
         return False
