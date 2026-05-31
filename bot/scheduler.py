@@ -234,10 +234,7 @@ async def reminder_poller(ctx: ContextTypes.DEFAULT_TYPE) -> None:
                     # Auto-skip after 2 reminders with no response
                     import analytics_svc
                     tasks_svc.log_skip(uid, task_id, note="auto_skip_no_response")
-                    from datetime import timedelta
-                    next_at = datetime.now(IST).replace(tzinfo=None)
-                    import pytz as _pytz
-                    from datetime import timezone as _tz
+                    from datetime import timedelta, timezone as _tz
                     next_utc = datetime.now(_tz.utc) + timedelta(days=task.get("recurrence_days", 1))
                     tasks_svc.reschedule_task(task_id, next_utc)
                     ctx.bot_data[count_key] = 0
@@ -261,7 +258,7 @@ async def reminder_poller(ctx: ContextTypes.DEFAULT_TYPE) -> None:
                 import twilio_svc
                 if twilio_svc.is_twilio_enabled(uid):
                     import asyncio
-                    await asyncio.get_event_loop().run_in_executor(
+                    await asyncio.get_running_loop().run_in_executor(
                         None, twilio_svc.make_reminder_call, uid, title
                     )
 

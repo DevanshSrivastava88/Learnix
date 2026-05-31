@@ -255,12 +255,16 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
     ascii_text = text.encode("ascii", errors="ignore").decode().strip()
     if not ascii_text:  # emoji-only or symbols with no text
         return
-    # Use ascii_text for word check so "❌Cancel" → "Cancel" → caught
+    # Use ascii_text for word check so "❌ Cancel" → "Cancel" → caught
+    # Also catches stale keyboard button replies that arrive outside an active flow
     if ascii_text.lower() in {
         "cancel", "back", "stop", "exit", "no", "nope", "nah",
         "never mind", "nevermind", "nm", "forget it", "nothing",
         "wtf", "lol", "lmao", "omg", "damn", "hmm", "hm", "ok",
         "okay", "k", "kk", "fine", "cool", "nice", "great",
+        # keyboard button replies that should never reach Gemini
+        "yeah, add it", "edit", "yes, delete it",
+        "none (root topic)", "name", "description", "target date",
     }:
         await update.message.reply_text("Hey! 👋 Just tell me what you want to track, or use /help.")
         return
