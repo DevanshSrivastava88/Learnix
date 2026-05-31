@@ -176,8 +176,8 @@ async def cmd_tasks(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     for t in tasks:
         recur = t.get("recurrence_days", 1)
         freq = "daily" if recur == 1 else f"every {recur}d"
-        lines.append(f"  • {t['title']} ({freq}) — /done_{t['id'][:8]}")
-    lines.append("\n/deletetask or /pause to manage.")
+        lines.append(f"  • {t['title']} ({freq})")
+    lines.append('\nSay "done with [task]" or "skip [task]" — or use /deletetask, /pause to manage.')
     await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.HTML)
 
 

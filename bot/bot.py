@@ -320,28 +320,77 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
             await update.message.reply_text("I'm here! Try /help to see what I can do.")
 
 
+_STEM_MAP = {
+    "reading": "read",
+    "running": "run",
+    "pushups": "pushup",
+    "pushup": "push",
+    "doing": "do",
+    "writing": "write",
+    "studying": "study",
+    "working": "work",
+    "sleeping": "sleep",
+    "walking": "walk",
+    "drinking": "drink",
+    "eating": "eat",
+    "meditating": "meditate",
+    "stretching": "stretch",
+    "exercising": "exercise",
+}
+
+
+def _stem_words(words: set[str]) -> set[str]:
+    """Return words expanded with their stems (original words kept too)."""
+    stemmed = set(words)
+    for w in words:
+        if w in _STEM_MAP:
+            stemmed.add(_STEM_MAP[w])
+    return stemmed
+
+
 def _fuzzy_match_task(task_name: str, tasks: list[dict]) -> list[dict]:
-    """Return tasks whose title contains task_name (case-insensitive), or vice versa."""
+    """Return tasks that best match task_name using progressively looser strategies."""
+    import difflib
+
     needle = task_name.lower().strip()
     if not needle:
         return []
+
+    # Try 1: substring match (original or reversed)
     matches = []
     for t in tasks:
         haystack = t["title"].lower()
         if needle in haystack or haystack in needle:
             matches.append(t)
-    # If no substring match, fall back to word-overlap scoring
-    if not matches:
-        needle_words = set(needle.split())
-        scored = []
-        for t in tasks:
-            words = set(t["title"].lower().split())
-            overlap = len(needle_words & words)
-            if overlap:
-                scored.append((overlap, t))
-        scored.sort(key=lambda x: -x[0])
-        matches = [t for _, t in scored[:3]]
-    return matches
+    if matches:
+        return matches
+
+    # Try 2: any needle word appears in any task title word (with stemming)
+    needle_words = _stem_words(set(needle.split()))
+    for t in tasks:
+        title_words = _stem_words(set(t["title"].lower().split()))
+        if needle_words & title_words:
+            matches.append(t)
+    if matches:
+        return matches
+
+    # Try 3: any task title word appears in the needle (reverse word overlap)
+    for t in tasks:
+        title_words = _stem_words(set(t["title"].lower().split()))
+        if title_words & needle_words:
+            if t not in matches:
+                matches.append(t)
+    if matches:
+        return matches
+
+    # Try 4: difflib ratio > 0.4 between needle and each title
+    scored = []
+    for t in tasks:
+        ratio = difflib.SequenceMatcher(None, needle, t["title"].lower()).ratio()
+        if ratio > 0.4:
+            scored.append((ratio, t))
+    scored.sort(key=lambda x: -x[0])
+    return [t for _, t in scored[:3]]
 
 
 async def handle_last_reminded_action(
