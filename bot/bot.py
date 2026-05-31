@@ -300,6 +300,13 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
             "Use /goal to set up a learning goal, then /study to start a session.",
         )
     elif intent in ("done", "skip_task", "delete_task", "pause_task"):
+        # Bare "done"/"skip" with no task name — check last reminded task first
+        if intent in ("done", "skip_task") and text.lower().strip() in ("done", "skip"):
+            uid2 = update.effective_user.id
+            last_id = ctx.bot_data.get("last_reminded", {}).get(uid2)
+            if last_id:
+                await handle_last_reminded_action(update, ctx, last_id, intent)
+                return
         await handle_task_action_freetext(update, ctx, text, intent, claude_svc)
     else:
         # General chat — Learnix responds naturally
@@ -337,6 +344,51 @@ def _fuzzy_match_task(task_name: str, tasks: list[dict]) -> list[dict]:
     return matches
 
 
+async def handle_last_reminded_action(
+    update: Update,
+    ctx: ContextTypes.DEFAULT_TYPE,
+    task_id: str,
+    intent: str,
+) -> None:
+    """Act on the last-reminded task directly without fuzzy matching."""
+    import tasks.svc as task_db
+    import analytics_svc
+    import settings_svc as settings_db
+
+    uid = update.effective_user.id
+    # Clear last_reminded so it doesn't fire twice
+    ctx.bot_data.get("last_reminded", {}).pop(uid, None)
+
+    # Fetch the task to get its title/recurrence
+    all_tasks = task_db.list_tasks(uid)
+    task = next((t for t in all_tasks if t["id"] == task_id), None)
+    if not task:
+        await update.message.reply_text("Couldn't find that task. Try /tasks to see your list.")
+        return
+
+    if intent == "done":
+        task_db.mark_done(task["id"])
+        analytics_svc.log_activity(uid, "habit", note=task["title"])
+        settings_db.update_streak(uid, __import__("datetime").date.today())
+        settings = settings_db.get_settings(uid)
+        streak = settings.get("streak", 0) or 0
+        streak_line = f"🔥 {streak} day streak!" if streak > 1 else "Nice, keep it up!"
+        recur = task.get("recurrence_days", 1)
+        await update.message.reply_text(
+            f"Done! ✅ *{task['title']}*  {streak_line}\nI'll remind you again in {recur} day(s).",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+    elif intent == "skip_task":
+        from datetime import datetime, timezone, timedelta
+        task_db.log_skip(uid, task["id"], note="outright")
+        next_at = datetime.now(timezone.utc) + timedelta(days=task.get("recurrence_days", 1))
+        task_db.reschedule_task(task["id"], next_at)
+        await update.message.reply_text(
+            f"Skipped! I'll remind you about *{task['title']}* again in {task.get('recurrence_days', 1)} day(s).",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+
+
 async def handle_task_action_freetext(
     update: Update,
     ctx: ContextTypes.DEFAULT_TYPE,
@@ -354,6 +406,19 @@ async def handle_task_action_freetext(
     if not tasks:
         await update.message.reply_text("You don't have any active tasks right now.")
         return
+
+    # For done/skip_task: check if a task was recently reminded — use it directly
+    if intent in ("done", "skip_task"):
+        last_id = ctx.bot_data.get("last_reminded", {}).get(uid)
+        if last_id:
+            # Extract task name to see if user is referring to something specific
+            try:
+                task_name = claude_svc.extract_task_name_from_message(text)
+            except Exception:
+                task_name = ""
+            if not task_name:
+                await handle_last_reminded_action(update, ctx, last_id, intent)
+                return
 
     # Extract task name from message
     try:

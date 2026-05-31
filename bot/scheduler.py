@@ -220,13 +220,15 @@ async def reminder_poller(ctx: ContextTypes.DEFAULT_TYPE) -> None:
     today = datetime.now(IST).date().isoformat()
 
     for task in due:
+        # Skip breakdown step tasks — users mark steps done manually
+        if " — Step " in task.get("title", ""):
+            continue
         uid = task["user_id"]
         title = task["title"]
         task_id = task["id"]
         task_type = task["task_type"]
         try:
             if task_type == "habit":
-                short = task_id[:8]
                 count_key = f"reminded_{task_id}_{today}"
                 reminded_today = ctx.bot_data.get(count_key, 0)
 
@@ -248,11 +250,11 @@ async def reminder_poller(ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
                 # Send Telegram reminder and advance next_reminder_at by 8 hours
                 msg = (
-                    f"⏰ *{title}*\n\n"
-                    f"✅ Done → /done_{short}\n"
-                    f"⏭ Skip → /skip_{short}"
+                    f"⏰ Time for *{title}*!\n\n"
+                    f"Reply 'done' or 'skip' 👇"
                 )
                 await ctx.bot.send_message(uid, msg, parse_mode=ParseMode.MARKDOWN)
+                ctx.bot_data.setdefault("last_reminded", {})[uid] = task_id
 
                 # Also call user's phone if Twilio is enabled
                 import twilio_svc
