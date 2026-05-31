@@ -84,7 +84,8 @@ def score_answer(question: str, expected_answer: str, user_answer: str) -> dict:
 
 def classify_intent(text: str) -> str:
     """Classify free-form message into one of: task | show_tasks | show_schedule |
-    show_progress | show_goals | show_graph | show_skipgraph | start_study | study | chat"""
+    show_progress | show_goals | show_graph | show_skipgraph | start_study | study |
+    breakdown | chat"""
     result = _ask_json(
         f'Classify this message into exactly one category.\n'
         f'Message: "{text}"\n\n'
@@ -98,11 +99,59 @@ def classify_intent(text: str) -> str:
         f'- "show_skipgraph": user wants to see skip patterns (e.g. "how many times did I skip", "my skip stats")\n'
         f'- "start_study": user wants to start a study session now (e.g. "let\'s study", "start studying", "teach me")\n'
         f'- "study": user asks an educational question or wants to learn a specific topic\n'
+        f'- "breakdown": user wants to break a task or learning goal into steps/subtopics '
+        f'(e.g. "break down X", "steps for X", "break X into steps", "learning path for X", "subtopics for X")\n'
         f'- "chat": clearly just greeting, small talk, joke, feelings, general question\n\n'
         f'Default to "chat" when genuinely unsure (not "task"). Only use "task" when user clearly wants to CREATE something.\n'
         f'Return: {{"intent": "..."}}'
     )
     return result.get("intent", "chat")
+
+
+def extract_breakdown_subject(text: str) -> str:
+    """Extract the subject from a breakdown request (e.g. 'break down morning workout' -> 'morning workout')."""
+    result = _ask_json(
+        f'Extract the thing the user wants to break down from this message.\n'
+        f'Message: "{text}"\n\n'
+        f'Return: {{"subject": "the thing to break down"}}\n'
+        f'Example: "break down morning workout" -> {{"subject": "morning workout"}}\n'
+        f'Example: "steps for Learn Python" -> {{"subject": "Learn Python"}}\n'
+        f'Just return the subject as a clean string, nothing else.'
+    )
+    return result.get("subject", text).strip()
+
+
+def breakdown_task(task_name: str) -> list[str]:
+    """Returns list of 3-7 concrete step strings for a given task."""
+    result = _ask_json(
+        f'Generate 3 to 7 concrete, actionable steps to complete this task: "{task_name}"\n\n'
+        f'Rules:\n'
+        f'- Each step should be a short, action-oriented phrase (3-8 words)\n'
+        f'- Steps should be ordered logically\n'
+        f'- Do NOT number them — just the text\n'
+        f'- Return a JSON array of strings: ["step 1", "step 2", ...]\n'
+        f'Example for "Morning workout": ["Warmup stretches", "5-minute jog", "Push-ups 3x15", "Cool down"]'
+    )
+    if isinstance(result, list):
+        return [str(s).strip() for s in result if str(s).strip()]
+    raise ValueError("breakdown_task: expected JSON array")
+
+
+def breakdown_study_goal(goal_name: str) -> list[str]:
+    """Returns list of 5-8 ordered topic strings for a given learning goal."""
+    result = _ask_json(
+        f'Generate an ordered learning path of 5 to 8 subtopics for this learning goal: "{goal_name}"\n\n'
+        f'Rules:\n'
+        f'- Order them from foundational to advanced\n'
+        f'- Each subtopic should be a clear, concise phrase (2-6 words)\n'
+        f'- Cover the most important aspects of the topic\n'
+        f'- Do NOT number them — just the text\n'
+        f'- Return a JSON array of strings: ["topic 1", "topic 2", ...]\n'
+        f'Example for "Learn Python": ["Variables & Data Types", "Control Flow", "Functions", "Lists & Dicts", "File I/O", "OOP Basics"]'
+    )
+    if isinstance(result, list):
+        return [str(s).strip() for s in result if str(s).strip()]
+    raise ValueError("breakdown_study_goal: expected JSON array")
 
 
 def parse_task(text: str) -> dict:

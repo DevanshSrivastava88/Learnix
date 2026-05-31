@@ -278,6 +278,8 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
 
     if intent == "task":
         await _parse_and_respond(update, ctx, text, claude_svc)
+    elif intent == "breakdown":
+        await handle_breakdown(update, ctx, text)
     elif intent == "show_tasks":
         await tasks_handlers.cmd_tasks(update, ctx)
     elif intent == "show_schedule":
@@ -307,6 +309,83 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
             await update.message.reply_text(reply)
         except Exception:
             await update.message.reply_text("I'm here! Try /help to see what I can do.")
+
+
+async def handle_breakdown(update: Update, ctx: ContextTypes.DEFAULT_TYPE, text: str) -> None:
+    """Handle breakdown intent: break a task or study goal into steps."""
+    import claude_svc
+    import study.svc as study_svc
+    import tasks.svc as tasks_svc
+
+    uid = update.effective_user.id
+
+    subject = claude_svc.extract_breakdown_subject(text)
+
+    # Check if subject matches an existing study goal
+    goals = study_svc.list_goals(uid, "in_progress")
+    matched_goal = None
+    subject_lower = subject.lower()
+    for g in goals:
+        if subject_lower in g["name"].lower() or g["name"].lower() in subject_lower:
+            matched_goal = g
+            break
+
+    if matched_goal:
+        # Study goal breakdown — generate subtopics
+        await update.message.reply_text(f"Breaking down *{matched_goal['name']}* into subtopics... 📚", parse_mode=ParseMode.MARKDOWN)
+        try:
+            subtopics = claude_svc.breakdown_study_goal(matched_goal["name"])
+        except Exception as e:
+            logger.error(f"breakdown_study_goal failed: {e}")
+            await update.message.reply_text("Couldn't generate subtopics right now. Try again in a moment.")
+            return
+
+        # Get current max order_index so new topics don't collide
+        existing = study_svc.list_topics_for_goal(matched_goal["id"])
+        base_order = max((t["order_index"] for t in existing), default=-1) + 1
+
+        created = []
+        for i, subtopic in enumerate(subtopics):
+            study_svc.create_topic(
+                goal_id=matched_goal["id"],
+                title=subtopic,
+                order_index=base_order + i,
+            )
+            created.append(subtopic)
+
+        numbered = "\n".join(f"{i+1}. {t}" for i, t in enumerate(created))
+        await update.message.reply_text(
+            f"Added {len(created)} topics to *{matched_goal['name']}* 📚\n\n{numbered}\n\n"
+            f"Use /study to go through them in order.",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+    else:
+        # Task breakdown — generate steps as habit tasks
+        await update.message.reply_text(f"Breaking *{subject}* into steps... ⚡", parse_mode=ParseMode.MARKDOWN)
+        try:
+            steps = claude_svc.breakdown_task(subject)
+        except Exception as e:
+            logger.error(f"breakdown_task failed: {e}")
+            await update.message.reply_text("Couldn't generate steps right now. Try again in a moment.")
+            return
+
+        created = []
+        for i, step in enumerate(steps, start=1):
+            title = f"{subject} — Step {i}: {step}"
+            tasks_svc.create_task(
+                user_id=uid,
+                title=title,
+                task_type="habit",
+                recurrence_days=1,
+            )
+            created.append(step)
+
+        bullet_lines = "\n".join(f"• Step {i+1}: {s}" for i, s in enumerate(created))
+        await update.message.reply_text(
+            f"Done! Created {len(created)} steps for *{subject}* 👇\n\n{bullet_lines}\n\n"
+            f"They're now in your /tasks and you'll get reminders like any habit.",
+            parse_mode=ParseMode.MARKDOWN,
+        )
 
 
 async def cmd_info(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
