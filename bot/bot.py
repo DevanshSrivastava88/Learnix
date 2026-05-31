@@ -1013,8 +1013,17 @@ def main() -> None:
     app.add_handler(CommandHandler("info", cmd_info))
     app.add_handler(CommandHandler("clear", cmd_clear))
     app.add_handler(CommandHandler("twilio", cmd_twilio))
-    async def _noop_cancel(u, c): pass
-    app.add_handler(CommandHandler("cancel", _noop_cancel))
+    async def _global_cancel(u, c):
+        uid = u.effective_user.id
+        # If user is mid-quiz, clean up quiz state
+        if uid in c.bot_data.get("quiz_state", {}):
+            c.bot_data["quiz_state"].pop(uid, None)
+            await u.message.reply_text(
+                "Quiz cancelled. Come back whenever you're ready!",
+            )
+        else:
+            await u.message.reply_text("Nothing to cancel. 👍")
+    app.add_handler(CommandHandler("cancel", _global_cancel))
 
     # Study handlers
     for h in study_handlers.get_handlers():

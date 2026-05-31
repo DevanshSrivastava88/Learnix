@@ -476,6 +476,29 @@ async def handle_quiz_answer(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> 
     if not state:
         return
     user_answer = update.message.text.strip()
+
+    # Bug 1: /cancel (or bare "cancel") exits the quiz cleanly
+    if user_answer.startswith("/") or user_answer.lower() == "cancel":
+        ctx.bot_data.get("quiz_state", {}).pop(uid, None)
+        await update.message.reply_text(
+            "Quiz cancelled. Come back whenever you're ready!",
+            reply_markup=ReplyKeyboardRemove(),
+        )
+        return
+
+    # Bug 2: "skip <topic>" or "study <topic>" escape mid-quiz without scoring
+    lower_answer = user_answer.lower()
+    if lower_answer.startswith("skip "):
+        ctx.bot_data.get("quiz_state", {}).pop(uid, None)
+        topic_name = user_answer[5:].strip()
+        await handle_skip_topic_request(update, ctx, topic_name)
+        return
+    if lower_answer.startswith("study "):
+        ctx.bot_data.get("quiz_state", {}).pop(uid, None)
+        topic_name = user_answer[6:].strip()
+        await handle_study_topic(update, ctx, topic_name)
+        return
+
     idx = state["q_index"]
     q = state["questions"][idx]
     try:
