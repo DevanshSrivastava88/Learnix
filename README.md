@@ -1,148 +1,160 @@
-# Learnix
+# Learnix — AI Life OS Bot
 
-A personal learning system powered by Claude. Study any topic broken into modules, take quizzes, track your progress — all from a simple chat.
+Telegram bot for study tracking, habit management, and daily planning. Talk to it naturally — no slash commands needed.
+
+**Bot:** @Quest3131Bot | **Stack:** Python + Gemini 2.5 Flash + Supabase + Railway
 
 ---
 
-## Quick Start in 5 Steps
+## Just Talk — No Commands Needed
 
-**Step 1** — Install [Claude Desktop](https://claude.ai/download)
+| What you want | Say |
+|---|---|
+| See your tasks | "show me my tasks", "what do I have to do", "my habits" |
+| Today's schedule | "what's my schedule", "plan my day", "what's today look like" |
+| Add a habit | "I want to run every morning", "add meditation every day" |
+| One-time reminder | "remind me to call dad at 6pm", "remind me in 20 mins to drink water" |
+| Repeating reminder | "remind me to drink water every hour" |
+| Mark task done | "I just did my pushups", "done with workout", "finished meditation" |
+| Skip a task | "skip reading today", "skipping pushups" |
+| Delete a task | "delete my running habit", "remove meditation" |
+| Pause reminders | "pause workout reminders" |
+| Study progress | "how am I doing", "am I on track", "how's my Python going" |
+| See goals | "what am I learning", "my goals" |
+| Start studying | "let's study", "quiz me", "let's do some Python" |
+| Activity stats | "how active have I been", "show my stats", "how lazy have I been" |
+| Skip analytics | "what did I skip most", "my skip patterns" |
+| Break into steps | "break down morning workout", "give me a roadmap for ML" |
 
-**Step 2** — Install [Node.js](https://nodejs.org) (LTS version)
+---
 
-**Step 3** — Clone this repo
+## Commands
+
+### Tasks & Habits
+| Command | What it does |
+|---|---|
+| `/newtask` | Add a habit or reminder (guided) |
+| `/tasks` | List all active habits |
+| `/skip_<id>` | Skip a habit — reschedule or log |
+| `/deletetask` | Delete a habit |
+| `/pause` / `/resume` | Pause or resume reminders |
+| `/complete` | Mark a habit permanently done |
+
+### Planning
+| Command | What it does |
+|---|---|
+| `/schedule` | Day view — automatics + habits with next-due times. Reply with times to plan ("workout at 8am, reading at 10pm") |
+
+### Study
+| Command | What it does |
+|---|---|
+| `/goal` | Create a learning goal |
+| `/goals` | See all goals |
+| `/addtopic` | Add a topic to a goal |
+| `/study` | Start a study session (teach + quiz) |
+| `/progress` | Progress per topic |
+| `/editgoal` / `/deletegoal` / `/pausegoal` | Manage goals |
+
+### Analytics
+| Command | What it does |
+|---|---|
+| `/graph` | Activity chart — last 30 days |
+| `/skipgraph` | Skip patterns — which days/habits you bail on |
+
+### Settings
+| Command | What it does |
+|---|---|
+| `/settings` | View current reminder times |
+| `/setmorning` | Morning brief time |
+| `/settime` | Daily study session time |
+| `/seteod` | EOD check-in time |
+| `/twilio on\|off` | Toggle missed-call notifications |
+
+### Other
+| Command | What it does |
+|---|---|
+| `/start` | Welcome + overview |
+| `/help` | Full command list |
+| `/clear` | Delete all your data |
+| `/cancel` | Cancel any active flow |
+
+---
+
+## Reminders
+
+- Each habit gets 2 reminders/day automatically
+- When a reminder fires, just reply **"done"** or **"skip"** — bot knows which task
+- Interval reminders: "every hour", "every 30 mins"
+- Auto-skipped after 2nd reminder with no response
+
+---
+
+## Break Into Steps
+
+```
+You:  break down morning workout
+Bot:  Created 6 steps as daily habits
+      • Wake up, hydrate
+      • Dynamic warm-up
+      • 20-minute cardio
+      • Strength training circuit
+      • Cool-down stretches
+      • Shower and refuel
+
+You:  break down Learn Python
+Bot:  Added 7 topics to Learn Python
+      1. Variables & Data Types
+      2. Control Flow & Loops
+      ...
+      Use /study to go through them in order.
+```
+
+---
+
+## Known Issues / Bugs (from testing)
+
+- **Fuzzy match too strict**: "skip reading" doesn't match "Read 10 pages" — needs looser matching
+- **Duplicate task disambiguation**: if two tasks have the same name, bot lists both with no way to distinguish
+- **Tasks list shows /done_id links**: planned to remove in favour of natural language
+
+---
+
+## Run Locally
+
 ```bash
-git clone https://github.com/DevanshSrivastava88/Learnix.git
+cd bot
+python -m pytest tests/ -v   # run tests
+python bot.py                 # start bot
 ```
 
-**Step 4** — Open Claude Desktop → **Settings → Developer → Edit Config**
+## Deploy to Railway
 
-This opens the config file in your text editor. Paste this in:
-
-```json
-{
-  "mcpServers": {
-    "filesystem": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "@modelcontextprotocol/server-filesystem",
-        "/absolute/path/to/Learnix"
-      ]
-    }
-  }
-}
-```
-
-> Replace `/absolute/path/to/Learnix` with the actual folder path.
-> On Windows use double backslashes: `C:\\Users\\YourName\\Documents\\Learnix`
-
-> **If the config file already has content**, don't replace it — just add the `mcpServers` block alongside the existing keys.
-
-**Step 5** — Restart Claude Desktop, then say:
-> **"Read the CLAUDE.md file in my Learnix folder"**
-
-You're in.
-
----
-
-## How It Works
-
-- You pick a topic (e.g. Gen AI, Python, System Design)
-- Claude breaks it into modules and teaches them one by one
-- A 5-question quiz at the end of each module (pass mark: 3/5)
-- Progress is saved in `status.json` — pick up exactly where you left off anytime
-
----
-
-## Setup
-
-### 1. Install Node.js
-
-The filesystem MCP server requires Node.js.
-Download from: https://nodejs.org (LTS version)
-
-Verify install:
 ```bash
-node -v
-npm -v
+cd bot
+railway up
 ```
 
----
-
-### 2. Configure Claude Desktop
-
-Claude Desktop needs the **filesystem MCP server** so it can read and write files in this folder.
-
-Open Claude Desktop → **Settings → Developer → Edit Config**
-
-This opens the config file directly in your text editor. Add this:
-
-```json
-{
-  "mcpServers": {
-    "filesystem": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "@modelcontextprotocol/server-filesystem",
-        "/absolute/path/to/Learnix"
-      ]
-    }
-  }
-}
+Check logs:
+```bash
+railway logs --service learnix-bot
 ```
 
-Replace `/absolute/path/to/Learnix` with the actual path to this folder.
-
-**Examples:**
-- Windows: `C:\\Users\\YourName\\Documents\\Learnix`
-- macOS: `/Users/yourname/Documents/Learnix`
-
-> Note: On Windows, use double backslashes `\\` in the path.
-
----
-
-### 3. Restart Claude Desktop
-
-Fully quit and reopen Claude Desktop after saving the config.
-
-You should see a hammer icon (🔨) in the chat input — that means MCP is active.
-
----
-
-## Start Learning
-
-Once Claude Desktop is running with MCP enabled, just say:
-
-> **"Read the CLAUDE.md file in my Learnix folder"**
-
-Claude will:
-- Check your progress in `status.json`
-- Start fresh if nothing exists (asks you what to learn)
-- Resume from where you left off if progress exists
-
-That's it.
-
----
-
-## Folder Structure
+## Project Structure
 
 ```
-Learnix/
-├── README.md          ← you are here
-├── CLAUDE.md          ← instructions Claude follows
-├── status.json        ← your progress tracker
-└── <topic>/
-    ├── 01_<module>.md
-    ├── 02_<module>.md
-    └── summary.md     ← generated when topic is complete
+learnix/
+├── bot/
+│   ├── bot.py              # main router + all cmd handlers
+│   ├── claude_svc.py       # Gemini calls (teach, quiz, classify, parse)
+│   ├── scheduler.py        # APScheduler jobs (morning brief, reminders, EOD)
+│   ├── analytics_svc.py    # matplotlib graph generator
+│   ├── tasks/
+│   │   ├── handlers.py     # task CRUD conversation flows
+│   │   └── svc.py          # Supabase task DB ops
+│   ├── study/
+│   │   ├── handlers.py     # goal/topic/quiz flows
+│   │   └── svc.py          # Supabase study DB ops
+│   └── tests/
+├── supabase/migrations/    # DB migrations
+└── BACKLOG.md
 ```
-
----
-
-## Tips
-
-- You can have multiple topics — Claude handles all of them from one `status.json`
-- If you want to restart a topic, set all its module statuses back to `not_started` in `status.json`
-- The `summary.md` generated at the end of each topic is a great revision cheat sheet
