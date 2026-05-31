@@ -4,14 +4,41 @@ from supabase_svc import get_client
 
 
 # ---------------------------------------------------------------------------
+# Difficulty helpers (encoded in goal description as |diff:<level>)
+# ---------------------------------------------------------------------------
+
+_DIFF_PREFIX = "|diff:"
+
+
+def _set_difficulty(description: str, difficulty: str) -> str:
+    """Append difficulty marker to description string."""
+    base = description.split(_DIFF_PREFIX)[0].rstrip()
+    return f"{base}{_DIFF_PREFIX}{difficulty}" if difficulty else base
+
+
+def _get_difficulty(description: str) -> str:
+    """Extract difficulty from description string. Returns 'medium' if not found."""
+    if _DIFF_PREFIX in (description or ""):
+        return description.split(_DIFF_PREFIX, 1)[1].strip()
+    return "medium"
+
+
+def get_goal_difficulty(goal: dict) -> str:
+    """Return difficulty from a goal dict."""
+    return _get_difficulty(goal.get("description") or "")
+
+
+# ---------------------------------------------------------------------------
 # Goals
 # ---------------------------------------------------------------------------
 
-def create_goal(user_id: int, name: str, description: str, target_date: str) -> dict:
+def create_goal(user_id: int, name: str, description: str, target_date: str,
+                difficulty: str = "medium") -> dict:
+    encoded_desc = _set_difficulty(description or "", difficulty)
     res = get_client().table("goals").insert({
         "user_id": user_id,
         "name": name,
-        "description": description,
+        "description": encoded_desc,
         "target_date": target_date,
         "status": "in_progress",
     }).execute()
@@ -142,6 +169,87 @@ def get_topic_position(topic: dict) -> dict:
     ids = [s["id"] for s in siblings]
     position = ids.index(topic["id"]) + 1 if topic["id"] in ids else 1
     return {"position": position, "total": len(ids)}
+
+
+def fuzzy_match_topic(name: str, topics: list[dict]) -> Optional[dict]:
+    """Return best-matching topic dict or None. Uses substring then difflib."""
+    import difflib
+    needle = name.lower().strip()
+    if not needle:
+        return None
+    # Exact or substring match
+    for t in topics:
+        if needle == t["title"].lower() or needle in t["title"].lower() or t["title"].lower() in needle:
+            return t
+    # Word overlap
+    needle_words = set(needle.split())
+    for t in topics:
+        title_words = set(t["title"].lower().split())
+        if needle_words & title_words:
+            return t
+    # difflib
+    scored = []
+    for t in topics:
+        ratio = difflib.SequenceMatcher(None, needle, t["title"].lower()).ratio()
+        if ratio > 0.4:
+            scored.append((ratio, t))
+    if scored:
+        scored.sort(key=lambda x: -x[0])
+        return scored[0][1]
+    return None
+
+
+def skip_topic(topic_id: str) -> None:
+    """Mark a topic as skipped."""
+    get_client().table("topics").update({"status": "skipped"}).eq("id", topic_id).execute()
+
+
+def bulk_create_topics(goal_id: str, titles: list[str]) -> list[dict]:
+    """Create multiple topics in order, appended after existing ones."""
+    existing = list_topics_for_goal(goal_id)
+    base_order = max((t["order_index"] for t in existing), default=-1) + 1
+    created = []
+    for i, title in enumerate(titles):
+        topic = create_topic(goal_id=goal_id, title=title, order_index=base_order + i)
+        created.append(topic)
+    return created
+
+
+def get_study_progress(user_id: int) -> Optional[dict]:
+    """Return progress summary dict for the user's current active goal.
+    Returns None if no goals or no topics.
+    Dict keys: goal_name, goal_id, pct, position, total, current_topic_title, current_topic_id
+    """
+    goals = list_goals(user_id, "in_progress")
+    if not goals:
+        return None
+    goal = goals[0]
+    topics = list_topics_for_goal(goal["id"])
+    root_topics = [t for t in topics if not t.get("parent_id")]
+    if not root_topics:
+        return None
+    total = len(root_topics)
+    completed = sum(1 for t in root_topics if t["status"] == "completed")
+    pct = int(completed / total * 100) if total else 0
+    next_topic = get_next_pending_topic(user_id)
+    if next_topic:
+        root_ids = [t["id"] for t in sorted(root_topics, key=lambda x: x["order_index"])]
+        position = root_ids.index(next_topic["id"]) + 1 if next_topic["id"] in root_ids else completed + 1
+        current_title = next_topic["title"]
+        current_id = next_topic["id"]
+    else:
+        position = total
+        current_title = root_topics[-1]["title"] if root_topics else ""
+        current_id = root_topics[-1]["id"] if root_topics else None
+    return {
+        "goal_name": goal["name"],
+        "goal_id": goal["id"],
+        "pct": pct,
+        "position": position,
+        "total": total,
+        "current_topic_title": current_title,
+        "current_topic_id": current_id,
+    }
 
 
 # ---------------------------------------------------------------------------

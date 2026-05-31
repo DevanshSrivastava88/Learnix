@@ -2,6 +2,7 @@
 
 import logging
 from datetime import datetime
+from typing import Optional
 
 import pytz
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
@@ -18,7 +19,7 @@ logger = logging.getLogger(__name__)
 IST = pytz.timezone("Asia/Kolkata")
 
 # Conversation states
-GOAL_NAME, GOAL_DESC, GOAL_DEADLINE = range(3)
+GOAL_NAME, GOAL_DESC, GOAL_DEADLINE, GOAL_DIFFICULTY = range(4)
 AT_GOAL_SELECT, AT_PARENT_SELECT, AT_TITLE, AT_DESC, AT_NOTES = range(5, 10)
 EDIT_GOAL_SELECT, EDIT_GOAL_FIELD, EDIT_GOAL_VALUE = range(10, 13)
 DELETE_GOAL_SELECT, DELETE_GOAL_CONFIRM = range(13, 15)
@@ -74,6 +75,136 @@ async def cmd_goals(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 # ---------------------------------------------------------------------------
+# /topics — numbered topic status list
+# ---------------------------------------------------------------------------
+
+_STATUS_ICONS = {
+    "completed":      "✅",
+    "in_progress":    "🔄",
+    "skipped":        "⏭",
+    "not_started":    "⬜",
+    "needs_revision": "🔁",
+}
+
+
+def _format_topics_list(goal: dict, topics: list[dict], current_topic_id: Optional[str] = None) -> str:
+    """Return a numbered topic list with status icons."""
+    counts = db.count_topics_for_goal(goal["id"])
+    total = counts["total"]
+    completed = counts["completed"]
+    pct = int(completed / total * 100) if total else 0
+
+    root_topics = sorted(
+        [t for t in topics if not t.get("parent_id")],
+        key=lambda x: x["order_index"],
+    )
+    lines = [f"📚 *{goal['name']}* — {pct}% complete"]
+
+    if current_topic_id:
+        current = next((t for t in root_topics if t["id"] == current_topic_id), None)
+        if current:
+            pos = root_topics.index(current) + 1
+            lines.append(f"Currently on: Topic {pos}")
+
+    lines.append("")
+    for i, t in enumerate(root_topics, 1):
+        icon = _STATUS_ICONS.get(t["status"], "⬜")
+        marker = " ← you're here" if t["id"] == current_topic_id else ""
+        score_hint = ""
+        if t["status"] == "in_progress" and t.get("score"):
+            score_hint = f" ({t['score']} questions done)"
+        lines.append(f"{i}. {icon} {t['title']}{score_hint}{marker}")
+    return "\n".join(lines)
+
+
+async def cmd_topics(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    uid = update.effective_user.id
+    goals = db.list_goals(uid)
+    if not goals:
+        await update.message.reply_text("No study goals yet. Use /goal to set one up!")
+        return
+    progress = db.get_study_progress(uid)
+    for goal in goals:
+        topics = db.list_topics_for_goal(goal["id"])
+        current_id = progress["current_topic_id"] if progress and progress["goal_id"] == goal["id"] else None
+        text = _format_topics_list(goal, topics, current_topic_id=current_id)
+        await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
+
+
+async def handle_study_topic(update: Update, ctx: ContextTypes.DEFAULT_TYPE, topic_name: str) -> None:
+    """Jump to a specific topic by name."""
+    uid = update.effective_user.id
+    goals = db.list_goals(uid)
+    if not goals:
+        await update.message.reply_text("No study goals yet. Use /goal to set one up!")
+        return
+    all_topics = []
+    for goal in goals:
+        for t in db.list_topics_for_goal(goal["id"]):
+            all_topics.append(t)
+    matched = db.fuzzy_match_topic(topic_name, all_topics)
+    if not matched:
+        await update.message.reply_text(
+            f"Couldn't find a topic matching *{topic_name}*. Use /topics to see your list.",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+        return
+    pos = db.get_topic_position(matched)
+    await update.message.reply_text(
+        f"📖 Jumping to *{matched['title']}* (Topic {pos['position']}/{pos['total']})",
+        parse_mode=ParseMode.MARKDOWN,
+    )
+    await _run_study_session(update, ctx, matched)
+
+
+async def handle_skip_topic_request(update: Update, ctx: ContextTypes.DEFAULT_TYPE, topic_name: str) -> None:
+    """Ask confirmation before marking a topic as skipped."""
+    uid = update.effective_user.id
+    goals = db.list_goals(uid)
+    if not goals:
+        await update.message.reply_text("No study goals yet.")
+        return
+    all_topics = []
+    for goal in goals:
+        for t in db.list_topics_for_goal(goal["id"]):
+            all_topics.append(t)
+    matched = db.fuzzy_match_topic(topic_name, all_topics)
+    if not matched:
+        await update.message.reply_text(
+            f"Couldn't find a topic matching *{topic_name}*. Use /topics to see your list.",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+        return
+    ctx.user_data["pending_skip_topic_id"] = matched["id"]
+    ctx.user_data["pending_skip_topic_title"] = matched["title"]
+    buttons = [["Yes, skip it"], ["No, keep it"]]
+    await update.message.reply_text(
+        f"Skip *{matched['title']}*? This will mark it as skipped and move to the next topic.",
+        parse_mode=ParseMode.MARKDOWN,
+        reply_markup=ReplyKeyboardMarkup(buttons, one_time_keyboard=True, resize_keyboard=True),
+    )
+
+
+async def handle_skip_topic_confirm(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> bool:
+    """Called from handle_text. Returns True if consumed."""
+    if "pending_skip_topic_id" not in ctx.user_data:
+        return False
+    choice = update.message.text.strip()
+    topic_id = ctx.user_data.pop("pending_skip_topic_id")
+    topic_title = ctx.user_data.pop("pending_skip_topic_title", "")
+    if choice == "Yes, skip it":
+        db.skip_topic(topic_id)
+        await update.message.reply_text(
+            f"⏭ Skipped *{topic_title}*. It won't appear in your study sessions.",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=ReplyKeyboardRemove(),
+        )
+    else:
+        await update.message.reply_text("Kept it! 👍", reply_markup=ReplyKeyboardRemove())
+    return True
+
+
+# ---------------------------------------------------------------------------
 # /goal — create goal
 # ---------------------------------------------------------------------------
 
@@ -94,8 +225,27 @@ async def goal_get_name(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
 async def goal_get_desc(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     desc = update.message.text.strip()
     ctx.user_data["goal_desc"] = "" if desc == "-" else desc
+    buttons = [["Easy"], ["Medium"], ["Hard"]]
     await update.message.reply_text(
-        "Target date? (YYYY-MM-DD, e.g. 2026-12-01) Or '-' to skip:"
+        "What difficulty? 🎯\n• Easy — broad overview, fewer topics\n• Medium — balanced\n• Hard — deep dive, comprehensive topic list",
+        reply_markup=ReplyKeyboardMarkup(buttons, one_time_keyboard=True, resize_keyboard=True),
+    )
+    return GOAL_DIFFICULTY
+
+
+async def goal_get_difficulty(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
+    choice = update.message.text.strip().lower()
+    if choice not in ("easy", "medium", "hard"):
+        buttons = [["Easy"], ["Medium"], ["Hard"]]
+        await update.message.reply_text(
+            "Please pick Easy, Medium, or Hard:",
+            reply_markup=ReplyKeyboardMarkup(buttons, one_time_keyboard=True, resize_keyboard=True),
+        )
+        return GOAL_DIFFICULTY
+    ctx.user_data["goal_difficulty"] = choice
+    await update.message.reply_text(
+        "Target date? (YYYY-MM-DD, e.g. 2026-12-01) Or '-' to skip:",
+        reply_markup=ReplyKeyboardRemove(),
     )
     return GOAL_DEADLINE
 
@@ -113,9 +263,11 @@ async def goal_get_deadline(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> i
     uid = update.effective_user.id
     name = ctx.user_data["goal_name"]
     desc = ctx.user_data.get("goal_desc", "")
-    db.create_goal(uid, name, desc, deadline)
+    difficulty = ctx.user_data.get("goal_difficulty", "medium")
+    db.create_goal(uid, name, desc, deadline, difficulty=difficulty)
+    diff_label = {"easy": "Easy 🟢", "medium": "Medium 🟡", "hard": "Hard 🔴"}.get(difficulty, "Medium 🟡")
     await update.message.reply_text(
-        f"Goal created! 🎯 *{name}* is on the list.\n\nUse /addtopic to add topics to it.",
+        f"Goal created! 🎯 *{name}* ({diff_label}) is on the list.\n\nUse /addtopic to add topics, or say 'break down {name}' to auto-generate them.",
         parse_mode=ParseMode.MARKDOWN,
     )
     ctx.user_data.clear()
@@ -235,8 +387,15 @@ async def cmd_study(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         return
     goal = db.get_goal(topic["goal_id"])
     pos = db.get_topic_position(topic)
+    counts = db.count_topics_for_goal(topic["goal_id"])
+    total_root = pos["total"]
+    completed_root = counts["completed"]
+    pct = int(completed_root / total_root * 100) if total_root else 0
+    goal_name = goal["name"] if goal else "?"
     await update.message.reply_text(
-        f"Let's go! 📖 *{goal['name'] if goal else '?'}*  |  Topic {pos['position']}/{pos['total']}",
+        f"📖 *Continuing {goal_name}*\n"
+        f"Topic {pos['position']}/{pos['total']}: *{topic['title']}*\n"
+        f"Progress: {pct}% overall",
         parse_mode=ParseMode.MARKDOWN,
     )
     await _run_study_session(update, ctx, topic)
@@ -526,9 +685,10 @@ def get_handlers():
     goal_conv = ConversationHandler(
         entry_points=[CommandHandler("goal", cmd_goal)],
         states={
-            GOAL_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, goal_get_name)],
-            GOAL_DESC: [MessageHandler(filters.TEXT & ~filters.COMMAND, goal_get_desc)],
-            GOAL_DEADLINE: [MessageHandler(filters.TEXT & ~filters.COMMAND, goal_get_deadline)],
+            GOAL_NAME:       [MessageHandler(filters.TEXT & ~filters.COMMAND, goal_get_name)],
+            GOAL_DESC:       [MessageHandler(filters.TEXT & ~filters.COMMAND, goal_get_desc)],
+            GOAL_DIFFICULTY: [MessageHandler(filters.TEXT & ~filters.COMMAND, goal_get_difficulty)],
+            GOAL_DEADLINE:   [MessageHandler(filters.TEXT & ~filters.COMMAND, goal_get_deadline)],
         },
         fallbacks=[CommandHandler("cancel", _cancel), cancel_handler],
     )
@@ -567,6 +727,7 @@ def get_handlers():
     return [
         goal_conv, addtopic_conv, editgoal_conv, deletegoal_conv,
         CommandHandler("goals", cmd_goals),
+        CommandHandler("topics", cmd_topics),
         CommandHandler("study", cmd_study),
         CommandHandler("progress", cmd_progress),
         CommandHandler("pausegoal", cmd_pausegoal),

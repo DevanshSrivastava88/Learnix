@@ -193,6 +193,10 @@ async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
             )
         return
 
+    # Skip topic confirmation
+    if await study_handlers.handle_skip_topic_confirm(update, ctx):
+        return
+
     # Quiz answers
     if uid in ctx.bot_data.get("quiz_state", {}):
         await study_handlers.handle_quiz_answer(update, ctx)
@@ -252,6 +256,21 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
     from telegram.constants import ChatAction
     text = update.message.text.strip()
 
+    # Bulk topic import — numbered/bulleted list while user has an active goal
+    parsed_list = _parse_bullet_list(text)
+    if parsed_list:
+        import study.svc as study_svc_bulk
+        goals = study_svc_bulk.list_goals(update.effective_user.id)
+        if goals:
+            goal = goals[0]
+            created = study_svc_bulk.bulk_create_topics(goal["id"], parsed_list)
+            numbered = "\n".join(f"{i+1}. {t['title']}" for i, t in enumerate(created))
+            await update.message.reply_text(
+                f"Added {len(created)} topics to *{goal['name']}* 📚\n\n{numbered}\n\nUse /study to go through them.",
+                parse_mode=ParseMode.MARKDOWN,
+            )
+            return
+
     # Pre-check: ignore emoji-only messages and bare dismissal/reaction phrases
     ascii_text = text.encode("ascii", errors="ignore").decode().strip()
     if not ascii_text:  # emoji-only or symbols with no text
@@ -292,6 +311,32 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
         await cmd_graph(update, ctx)
     elif intent == "show_skipgraph":
         await cmd_skipgraph(update, ctx)
+    elif intent == "show_topics":
+        await study_handlers.cmd_topics(update, ctx)
+    elif intent == "study_topic":
+        topic_name = ""
+        try:
+            topic_name = claude_svc.extract_topic_name(text)
+        except Exception:
+            pass
+        if topic_name:
+            await study_handlers.handle_study_topic(update, ctx, topic_name)
+        else:
+            await update.message.reply_text(
+                "Which topic did you want to study? Try: 'study OOP Basics' or use /topics to see your list."
+            )
+    elif intent == "skip_topic":
+        topic_name = ""
+        try:
+            topic_name = claude_svc.extract_topic_name(text)
+        except Exception:
+            pass
+        if topic_name:
+            await study_handlers.handle_skip_topic_request(update, ctx, topic_name)
+        else:
+            await update.message.reply_text(
+                "Which topic did you want to skip? Try: 'skip OOP Basics' or use /topics to see your list."
+            )
     elif intent == "start_study":
         await study_handlers.cmd_study(update, ctx)
     elif intent == "study":
@@ -318,6 +363,22 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
             await update.message.reply_text(reply)
         except Exception:
             await update.message.reply_text("I'm here! Try /help to see what I can do.")
+
+
+import re as _re
+
+
+def _parse_bullet_list(text: str) -> list[str] | None:
+    """If text looks like a numbered or bulleted list with >=2 items, return the items.
+    Returns None otherwise."""
+    lines = [l.strip() for l in text.strip().splitlines() if l.strip()]
+    items = []
+    for line in lines:
+        # Match: "1. X", "1) X", "- X", "• X", "* X"
+        m = _re.match(r'^(?:\d+[.)]\s*|[-•*]\s+)(.+)$', line)
+        if m:
+            items.append(m.group(1).strip())
+    return items if len(items) >= 2 else None
 
 
 _STEM_MAP = {
@@ -562,7 +623,8 @@ async def handle_breakdown(update: Update, ctx: ContextTypes.DEFAULT_TYPE, text:
         # Study goal breakdown — generate subtopics
         await update.message.reply_text(f"Breaking down *{matched_goal['name']}* into subtopics... 📚", parse_mode=ParseMode.MARKDOWN)
         try:
-            subtopics = claude_svc.breakdown_study_goal(matched_goal["name"])
+            difficulty = study_svc.get_goal_difficulty(matched_goal)
+            subtopics = claude_svc.breakdown_study_goal(matched_goal["name"], difficulty=difficulty)
         except Exception as e:
             logger.error(f"breakdown_study_goal failed: {e}")
             await update.message.reply_text("Couldn't generate subtopics right now. Try again in a moment.")

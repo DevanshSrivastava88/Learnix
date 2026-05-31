@@ -85,6 +85,7 @@ def score_answer(question: str, expected_answer: str, user_answer: str) -> dict:
 def classify_intent(text: str) -> str:
     """Classify free-form message into one of: task | show_tasks | show_schedule |
     show_progress | show_goals | show_graph | show_skipgraph | start_study | study |
+    show_topics | study_topic | skip_topic |
     breakdown | done | skip_task | delete_task | pause_task | chat"""
     result = _ask_json(
         f'Classify this message into exactly one category.\n'
@@ -113,6 +114,12 @@ def classify_intent(text: str) -> str:
         f'(e.g. "let\'s study", "start studying", "teach me", "let\'s do some Python", '
         f'"teach me something", "quiz me", "I want to study", "continue studying")\n'
         f'- "study": user asks an educational question or wants to learn a specific topic\n'
+        f'- "show_topics": user wants to see the numbered list of topics for a goal '
+        f'(e.g. "show my topics", "list topics", "what topics do I have", "show topics for Python", "my topic list")\n'
+        f'- "study_topic": user wants to study or jump to a specific named topic '
+        f'(e.g. "study OOP Basics", "start Functions", "jump to File I/O", "do Error Handling now")\n'
+        f'- "skip_topic": user wants to skip a specific named topic '
+        f'(e.g. "skip OOP", "skip File I/O topic", "I don\'t need Error Handling", "skip Functions")\n'
         f'- "breakdown": user wants to break a task OR learning goal into steps/subtopics. '
         f'ALWAYS use this when message contains "break down", "break ... into steps", "steps for", '
         f'"learning path", "subtopics for", "how do I approach", "plan for", "give me a roadmap for", '
@@ -130,6 +137,7 @@ def classify_intent(text: str) -> str:
         f'- "chat": clearly just greeting, small talk, joke, feelings, general question\n\n'
         f'IMPORTANT RULES:\n'
         f'- "breakdown" takes priority over "study" when the message contains "break down" or "steps for".\n'
+        f'- "study_topic" and "skip_topic" take priority when user mentions a SPECIFIC NAMED topic with study/skip/jump action words.\n'
         f'- "done"/"skip_task"/"delete_task"/"pause_task" take priority when user mentions a specific task name with those action words.\n'
         f'- Default to "chat" when genuinely unsure (not "task"). Only use "task" when user clearly wants to CREATE something.\n'
         f'Return: {{"intent": "..."}}'
@@ -152,6 +160,22 @@ def extract_task_name_from_message(text: str) -> str:
         f'Return: {{"task_name": "..."}}'
     )
     return result.get("task_name", "").strip()
+
+
+def extract_topic_name(text: str) -> str:
+    """Extract the topic name from a study/skip/jump message."""
+    result = _ask_json(
+        f'Extract the study topic name the user is referring to from this message.\n'
+        f'Message: "{text}"\n\n'
+        f'Examples:\n'
+        f'  "study OOP Basics" -> {{"topic_name": "OOP Basics"}}\n'
+        f'  "jump to File I/O" -> {{"topic_name": "File I/O"}}\n'
+        f'  "skip Error Handling topic" -> {{"topic_name": "Error Handling"}}\n'
+        f'  "do Functions now" -> {{"topic_name": "Functions"}}\n\n'
+        f'Return just the topic name as a short clean string.\n'
+        f'Return: {{"topic_name": "..."}}'
+    )
+    return result.get("topic_name", "").strip()
 
 
 def extract_breakdown_subject(text: str) -> str:
@@ -183,10 +207,17 @@ def breakdown_task(task_name: str) -> list[str]:
     raise ValueError("breakdown_task: expected JSON array")
 
 
-def breakdown_study_goal(goal_name: str) -> list[str]:
-    """Returns list of 5-8 ordered topic strings for a given learning goal."""
+def breakdown_study_goal(goal_name: str, difficulty: str = "medium") -> list[str]:
+    """Returns ordered topic list. Difficulty controls depth."""
+    _DIFFICULTY_SPECS = {
+        "easy":   ("4 to 5",  "broad overview topics, surface-level — skip advanced concepts"),
+        "medium": ("6 to 8",  "balanced coverage from foundational to intermediate"),
+        "hard":   ("10 to 14", "thorough and comprehensive, include advanced and edge-case topics"),
+    }
+    count_range, depth_hint = _DIFFICULTY_SPECS.get(difficulty, _DIFFICULTY_SPECS["medium"])
     result = _ask_json(
-        f'Generate an ordered learning path of 5 to 8 subtopics for this learning goal: "{goal_name}"\n\n'
+        f'Generate an ordered learning path of {count_range} subtopics for this learning goal: "{goal_name}"\n\n'
+        f'Depth: {depth_hint}\n'
         f'Rules:\n'
         f'- Order them from foundational to advanced\n'
         f'- Each subtopic should be a clear, concise phrase (2-6 words)\n'

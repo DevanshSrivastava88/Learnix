@@ -150,3 +150,62 @@ def test_create_topic_for_breakdown():
     assert result["title"] == "Variables & Data Types"
     assert result["goal_id"] == "goal-1"
     assert result["order_index"] == 0
+
+
+# ---------------------------------------------------------------------------
+# breakdown_study_goal with difficulty
+# ---------------------------------------------------------------------------
+
+def test_breakdown_study_goal_easy_prompts_fewer_topics():
+    """Easy difficulty should request 4-5 topics in prompt."""
+    captured = {}
+    def fake_ask_json(prompt):
+        captured['prompt'] = prompt
+        return ["Topic A", "Topic B", "Topic C", "Topic D"]
+    with patch.object(claude_svc, '_ask_json', side_effect=fake_ask_json):
+        result = claude_svc.breakdown_study_goal("Learn CSS", difficulty="easy")
+    assert "4" in captured['prompt'] or "5" in captured['prompt']
+    assert len(result) == 4
+
+def test_breakdown_study_goal_hard_prompts_more_topics():
+    """Hard difficulty should request 10-14 topics in prompt."""
+    captured = {}
+    def fake_ask_json(prompt):
+        captured['prompt'] = prompt
+        return [f"Topic {i}" for i in range(12)]
+    with patch.object(claude_svc, '_ask_json', side_effect=fake_ask_json):
+        result = claude_svc.breakdown_study_goal("Learn ML", difficulty="hard")
+    assert "10" in captured['prompt'] or "14" in captured['prompt']
+    assert len(result) == 12
+
+
+# ---------------------------------------------------------------------------
+# extract_topic_name
+# ---------------------------------------------------------------------------
+
+def test_extract_topic_name_returns_name():
+    with patch.object(claude_svc, '_ask_json', return_value={"topic_name": "OOP Basics"}):
+        result = claude_svc.extract_topic_name("study OOP Basics now")
+    assert result == "OOP Basics"
+
+def test_extract_topic_name_falls_back_to_empty():
+    with patch.object(claude_svc, '_ask_json', return_value={}):
+        result = claude_svc.extract_topic_name("jump somewhere")
+    assert result == ""
+
+
+# ---------------------------------------------------------------------------
+# classify_intent new intents
+# ---------------------------------------------------------------------------
+
+def test_classify_intent_show_topics():
+    with patch.object(claude_svc, '_ask_json', return_value={"intent": "show_topics"}):
+        assert claude_svc.classify_intent("show my topics") == "show_topics"
+
+def test_classify_intent_study_topic():
+    with patch.object(claude_svc, '_ask_json', return_value={"intent": "study_topic"}):
+        assert claude_svc.classify_intent("study OOP Basics") == "study_topic"
+
+def test_classify_intent_skip_topic():
+    with patch.object(claude_svc, '_ask_json', return_value={"intent": "skip_topic"}):
+        assert claude_svc.classify_intent("skip File I/O") == "skip_topic"
