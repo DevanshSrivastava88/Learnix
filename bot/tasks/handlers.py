@@ -1,6 +1,8 @@
 """Task handlers: /newtask, /tasks, /done_<id>, /edittask, /deletetask, /pause, /resume, /complete"""
 
+import asyncio
 import logging
+import os
 
 import pytz
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
@@ -73,7 +75,7 @@ async def _parse_and_respond(update, ctx, text: str, claude_svc) -> int:
         ctx.job_queue.run_once(
             _reminder_fire,
             when=delay * 60,
-            data={"user_id": uid, "title": title},
+            data={"user_id": uid, "title": title, "task_id": ""},
             name=f"onetime_{uid}_{title}",
         )
         time_str = f"{delay} min" if delay < 60 else f"{delay // 60}h {delay % 60}m".replace(" 0m", "")
@@ -88,7 +90,7 @@ async def _parse_and_respond(update, ctx, text: str, claude_svc) -> int:
             _reminder_fire,
             interval=interval * 60,
             first=interval * 60,
-            data={"user_id": uid, "title": title, "interval_minutes": interval},
+            data={"user_id": uid, "title": title, "task_id": "", "interval_minutes": interval},
             name=f"interval_{uid}_{title[:20]}",
         )
         if interval < 60:
@@ -124,6 +126,14 @@ async def _parse_and_respond(update, ctx, text: str, claude_svc) -> int:
 async def _reminder_fire(ctx: ContextTypes.DEFAULT_TYPE) -> None:
     data = ctx.job.data
     await ctx.bot.send_message(data["user_id"], f"⏰ Hey! Don't forget: *{data['title']}*", parse_mode=ParseMode.MARKDOWN)
+    import twilio_svc
+    if twilio_svc.is_twilio_enabled(data["user_id"]):
+        railway_url = os.environ.get("RAILWAY_URL", "")
+        task_id = data.get("task_id", "")
+        asyncio.get_running_loop().run_in_executor(
+            None, twilio_svc.make_reminder_call,
+            data["user_id"], task_id, data["title"], railway_url
+        )
 
 
 async def nt_confirm(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:

@@ -1371,13 +1371,13 @@ async def cmd_twilio(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         if not twilio_svc.get_phone_number(uid):
             btn = KeyboardButton("📱 Share my number", request_contact=True)
             await update.message.reply_text(
-                "Call reminders <b>on!</b> 📞\n\nShare your number so I know where to call:",
+                "Call reminders on! 📞 I'll call you for ALL reminders — habits, one-time reminders, everything. Share your number:",
                 parse_mode="HTML",
                 reply_markup=ReplyKeyboardMarkup([[btn]], one_time_keyboard=True, resize_keyboard=True),
             )
         else:
             await update.message.reply_text(
-                "Call reminders <b>on!</b> 📞 I'll ring you when it's habit time.",
+                "Call reminders on for all reminders! 📞",
                 parse_mode="HTML",
                 reply_markup=ReplyKeyboardRemove(),
             )

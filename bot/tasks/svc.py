@@ -124,6 +124,37 @@ def mark_important(task_id: str) -> None:
     update_task(task_id, description=new_desc)
 
 
+def get_reminder_count(task: dict) -> int:
+    """Return how many times this task has been reminded today (stored in description)."""
+    desc = task.get("description", "") or ""
+    import re
+    m = re.search(r"reminded:(\d+)", desc)
+    return int(m.group(1)) if m else 0
+
+
+def increment_reminder_count(task_id: str, task: dict) -> int:
+    """Increment the reminded:N counter in description. Returns new count."""
+    import re
+    desc = task.get("description", "") or ""
+    current = get_reminder_count(task)
+    new_count = current + 1
+    if re.search(r"reminded:\d+", desc):
+        new_desc = re.sub(r"reminded:\d+", f"reminded:{new_count}", desc)
+    else:
+        # Append counter to existing description
+        new_desc = desc.rstrip("|") + f"|reminded:{new_count}" if desc else f"reminded:{new_count}"
+    update_task(task_id, description=new_desc)
+    return new_count
+
+
+def reset_reminder_count(task_id: str, task: dict) -> None:
+    """Reset reminded:N counter in description back to 0 (or remove it)."""
+    import re
+    desc = task.get("description", "") or ""
+    new_desc = re.sub(r"\|?reminded:\d+", "", desc).rstrip("|")
+    update_task(task_id, description=new_desc)
+
+
 def unmark_important(task_id: str) -> None:
     """Remove important flag from task description."""
     task = get_task(task_id)
