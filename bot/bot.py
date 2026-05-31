@@ -262,11 +262,40 @@ async def handle_contact(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None
     )
 
 
+async def _check_and_onboard_new_user(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> bool:
+    """Returns True if user is new and was shown onboarding (caller should return early)."""
+    uid = update.effective_user.id
+    # Check cache to avoid hitting DB on every message
+    if ctx.user_data.get("onboarded"):
+        return False
+    # Check Supabase settings table
+    sb = __import__("supabase_svc").get_client()
+    res = sb.table("settings").select("user_id").eq("user_id", uid).execute()
+    if res.data:
+        ctx.user_data["onboarded"] = True
+        return False
+    # New user — create settings row and send onboarding
+    settings_svc.get_settings(uid)  # creates defaults
+    ctx.user_data["onboarded"] = True
+    first_name = update.effective_user.first_name or "there"
+    await update.message.reply_text(
+        f"Hey {first_name}! 👋 I'm disrupto — your AI life OS.\n\n"
+        "I help you track habits, study smarter, and stay on top of your day. "
+        "Just talk to me naturally — no commands needed.\n\n"
+        "Ready to get started? Tell me one thing you want to track or learn. 🚀"
+    )
+    return True
+
+
 async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     import claude_svc
     from tasks.handlers import _parse_and_respond
     from telegram.constants import ChatAction
     text = update.message.text.strip()
+
+    # New user onboarding — check before anything else
+    if await _check_and_onboard_new_user(update, ctx):
+        return
 
     # Pre-check cancel words BEFORE classify_intent — instant response, no API call
     ascii_text = text.encode("ascii", errors="ignore").decode().strip()
@@ -374,6 +403,8 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
             "Sounds like you want to learn something! 📚\n\n"
             "Say 'I want to learn X' to create a goal, then say 'study' to start a session.",
         )
+    elif intent == "reschedule_task":
+        await handle_reschedule_task_freetext(update, ctx, text, claude_svc)
     elif intent == "set_time":
         await handle_set_time_freetext(update, ctx, text, claude_svc)
     elif intent == "add_topic":
@@ -405,6 +436,75 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
             await update.message.reply_text(reply)
         except Exception:
             await update.message.reply_text("I'm here! Say 'help' to see what I can do.")
+
+
+async def handle_voice(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    """Transcribe a Telegram voice note and route to free-text handler."""
+    import tempfile
+    from pathlib import Path
+    import claude_svc
+
+    voice = update.message.voice
+    if not voice:
+        return
+
+    await update.message.chat.send_action(__import__("telegram").constants.ChatAction.TYPING)
+
+    # Download voice file to a temp path
+    tmp_path = None
+    try:
+        file = await ctx.bot.get_file(voice.file_id)
+        suffix = ".oga"
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            tmp_path = tmp.name
+        await file.download_to_drive(tmp_path)
+
+        # Transcribe via Gemini
+        try:
+            transcribed = claude_svc.transcribe_voice(tmp_path)
+        except Exception as e:
+            logger.error(f"Voice transcription failed: {e}")
+            await update.message.reply_text(
+                "Sorry, I couldn't understand that voice note. Try typing instead!"
+            )
+            return
+    finally:
+        if tmp_path:
+            try:
+                Path(tmp_path).unlink(missing_ok=True)
+            except Exception:
+                pass
+
+    if not transcribed:
+        await update.message.reply_text("I heard something but couldn't make it out. Try again!")
+        return
+
+    # Echo transcription header, then process as free text
+    # We reuse handle_free_text by patching update.message.text temporarily
+    # Instead, create a synthetic text routing call
+    echo_prefix = f"🎤 I heard: _{transcribed}_\n\n"
+
+    # Route through the same free-text intent system
+    # We can't easily monkey-patch update, so we call the core logic directly
+    original_reply = update.message.reply_text
+
+    _prefix_sent = False
+
+    async def prefixed_reply(msg, **kwargs):
+        nonlocal _prefix_sent
+        if not _prefix_sent:
+            _prefix_sent = True
+            combined = echo_prefix + msg
+            return await original_reply(combined, **kwargs)
+        return await original_reply(msg, **kwargs)
+
+    update.message.reply_text = prefixed_reply  # type: ignore[method-assign]
+    try:
+        # Temporarily set message text so handle_free_text reads it
+        update.message.text = transcribed  # type: ignore[assignment]
+        await handle_free_text(update, ctx)
+    finally:
+        update.message.reply_text = original_reply  # type: ignore[method-assign]
 
 
 import re as _re
@@ -640,6 +740,88 @@ async def handle_task_action_freetext(
             f"Paused ⏸️ *{task['title']}*. Use /resume when you're ready to pick it up again.",
             parse_mode=ParseMode.MARKDOWN,
         )
+
+
+async def handle_reschedule_task_freetext(
+    update: Update,
+    ctx: ContextTypes.DEFAULT_TYPE,
+    text: str,
+    claude_svc,
+) -> None:
+    """Handle 'reschedule_task' intent: change reminder time for a specific task."""
+    import tasks.svc as task_db
+    import pytz
+    from datetime import datetime, timezone, timedelta
+
+    IST = pytz.timezone("Asia/Kolkata")
+    uid = update.effective_user.id
+
+    try:
+        info = claude_svc.extract_reschedule_info(text)
+    except Exception:
+        info = {"task_name": "", "time": ""}
+
+    task_name = info.get("task_name", "").strip()
+    time_str = info.get("time", "").strip()
+
+    if not task_name:
+        await update.message.reply_text(
+            "Which task do you want to reschedule? Try: 'remind me about workout at 6am'."
+        )
+        return
+
+    tasks = task_db.list_tasks(uid)
+    if not tasks:
+        await update.message.reply_text("You don't have any active tasks right now.")
+        return
+
+    matches = _fuzzy_match_task(task_name, tasks)
+    if not matches:
+        await update.message.reply_text(
+            f"Couldn't find a task matching *{task_name}*. Say /tasks to see your list.",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+        return
+
+    if len(matches) > 1:
+        names = "\n".join(f"  • {t['title']}" for t in matches[:3])
+        await update.message.reply_text(
+            f"Which task did you mean?\n{names}\n\nBe more specific, e.g. 'move morning workout to 6am'.",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+        return
+
+    task = matches[0]
+
+    if not time_str:
+        await update.message.reply_text(
+            f"What time should I remind you about *{task['title']}*? (e.g. '6am', '8:30pm')",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+        return
+
+    # Parse HH:MM into today's datetime in IST, push to tomorrow if already passed
+    try:
+        h, m = map(int, time_str.split(":"))
+        now_ist = datetime.now(IST)
+        target_ist = now_ist.replace(hour=h, minute=m, second=0, microsecond=0)
+        if target_ist <= now_ist:
+            target_ist += timedelta(days=1)
+        new_time_utc = target_ist.astimezone(timezone.utc)
+    except Exception:
+        await update.message.reply_text(
+            f"Couldn't parse that time. Try something like '6am' or '20:30'."
+        )
+        return
+
+    task_db.reschedule_task(task["id"], new_time_utc)
+
+    when_label = new_time_utc.astimezone(IST).strftime("%I:%M %p")
+    day_label = "today" if new_time_utc.astimezone(IST).date() == datetime.now(IST).date() else "tomorrow"
+    await update.message.reply_text(
+        f"Done! I'll remind you about *{task['title']}* at {when_label} {day_label} 👍",
+        parse_mode=ParseMode.MARKDOWN,
+    )
 
 
 async def handle_set_time_freetext(
@@ -1417,6 +1599,9 @@ def main() -> None:
 
     # Contact sharing handler (for /twilio on phone number collection)
     app.add_handler(MessageHandler(filters.CONTACT, handle_contact))
+
+    # Voice note handler
+    app.add_handler(MessageHandler(filters.VOICE, handle_voice))
 
     # Global text handler (lowest priority)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))

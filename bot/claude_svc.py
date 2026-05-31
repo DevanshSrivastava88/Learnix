@@ -87,8 +87,8 @@ def classify_intent(text: str) -> str:
     show_progress | show_goals | show_graph | show_skipgraph | start_study | study |
     show_topics | study_topic | skip_topic |
     breakdown | done | skip_task | delete_task | pause_task |
-    set_time | add_topic | manage_goal | clear_data | show_help | show_settings | create_goal |
-    chat"""
+    set_time | reschedule_task | add_topic | manage_goal | clear_data | show_help |
+    show_settings | create_goal | chat"""
     result = _ask_json(
         f'Classify this message into exactly one category.\n'
         f'Message: "{text}"\n\n'
@@ -136,9 +136,15 @@ def classify_intent(text: str) -> str:
         f'(e.g. "delete X", "remove X habit", "get rid of X")\n'
         f'- "pause_task": user wants to pause/stop reminders for a specific task temporarily '
         f'(e.g. "pause X", "stop reminding me about X for now")\n'
-        f'- "set_time": user wants to change/set a reminder time — morning brief, study session, or EOD check-in '
+        f'- "reschedule_task": user wants to change the reminder TIME of a SPECIFIC NAMED TASK/HABIT '
+        f'(e.g. "remind me about workout at 6am", "move my reading reminder to 8pm", '
+        f'"change pushup time to 5pm", "set morning workout to 7am", "shift my meditation to 9pm"). '
+        f'Key signal: message names a specific TASK/HABIT and a new time for IT specifically.\n'
+        f'- "set_time": user wants to change a SYSTEM-WIDE setting — morning brief, study session time, or EOD check-in '
         f'(e.g. "set my morning brief to 8am", "change study time to 9pm", "my EOD is at 10pm", '
-        f'"update my reminder times", "set morning to 7am", "change my study reminder")\n'
+        f'"I want to study at 9pm", "wake me up with a brief at 7am", "remind me about morning brief at 8", '
+        f'"I usually sleep by 11", "update my reminder times", "set morning to 7am", "change my study reminder"). '
+        f'Key signal: user mentions study/brief/EOD/morning/evening as a CATEGORY, not a specific task name.\n'
         f'- "add_topic": user wants to add a topic to a study goal '
         f'(e.g. "add recursion to my Python goal", "add topic X", "I want to add X to my learning", '
         f'"add X as a topic", "put X in my goal")\n'
@@ -159,11 +165,12 @@ def classify_intent(text: str) -> str:
         f'Key signal: user names a SUBJECT they want to learn, not an existing topic.\n'
         f'- "chat": clearly just greeting, small talk, joke, feelings, general question\n\n'
         f'IMPORTANT RULES:\n'
+        f'- "reschedule_task" takes HIGHEST priority when user names a specific habit/task AND a new time for it.\n'
+        f'- "set_time" takes priority when user mentions changing morning brief/study session/EOD — system-wide times.\n'
         f'- "create_goal" takes priority over "start_study" when user says "I want to learn X" or "teach me X" with a subject name.\n'
         f'- "breakdown" takes priority over "study" when the message contains "break down" or "steps for".\n'
         f'- "study_topic" and "skip_topic" take priority when user mentions a SPECIFIC NAMED topic with study/skip/jump action words.\n'
         f'- "done"/"skip_task"/"delete_task"/"pause_task" take priority when user mentions a specific task name with those action words.\n'
-        f'- "set_time" takes priority when user mentions changing morning/study/EOD time.\n'
         f'- "add_topic" takes priority when user clearly wants to add a topic to an existing goal.\n'
         f'- "manage_goal" takes priority when user wants to delete/pause/edit a goal.\n'
         f'- Default to "chat" when genuinely unsure (not "task"). Only use "task" when user clearly wants to CREATE something.\n'
@@ -298,22 +305,59 @@ def parse_task(text: str) -> dict:
 def extract_set_time_info(text: str) -> dict:
     """Extract which time to set (morning/study/eod) and the time value from a set_time message.
 
+    Covers natural language like:
+    - "I want to study at 9pm" → study
+    - "wake me up with a brief at 7am" → morning
+    - "I usually sleep by 11" → eod (bedtime implies EOD)
+    - "remind me about morning brief at 8" → morning
+
     Returns: {"time_type": "morning"|"study"|"eod"|"", "time_value": "HH:MM"|""}
     """
     result = _ask_json(
         f'Extract time-setting info from this message.\n'
         f'Message: "{text}"\n\n'
         f'time_type options:\n'
-        f'- "morning": morning brief, morning reminder, wake-up reminder\n'
-        f'- "study": study session, study time, study reminder, daily study\n'
-        f'- "eod": EOD, end of day, evening check-in, night reminder\n'
+        f'- "morning": morning brief, morning reminder, wake-up, brief, "wake me up", '
+        f'"morning", "start my day", "good morning"\n'
+        f'- "study": study session, study time, study reminder, daily study, '
+        f'"I want to study at X", "study at X", "study time", "learning session"\n'
+        f'- "eod": EOD, end of day, evening check-in, night reminder, '
+        f'"I sleep by X", "I usually sleep at X", "bedtime", "night", "evening wrap-up"\n'
         f'- "": unclear/ambiguous\n\n'
         f'time_value: extract the time as HH:MM in 24h format. '
-        f'Convert 12h to 24h (e.g. "8am" → "08:00", "9pm" → "21:00", "10:30pm" → "22:30"). '
+        f'Convert 12h to 24h (e.g. "8am" → "08:00", "9pm" → "21:00", "10:30pm" → "22:30", '
+        f'"11" with sleep/night context → "23:00"). '
         f'Return empty string if no time given.\n\n'
         f'Return: {{"time_type": "...", "time_value": "..."}}'
     )
     return {"time_type": result.get("time_type", ""), "time_value": result.get("time_value", "")}
+
+
+def extract_reschedule_info(text: str) -> dict:
+    """Extract task name and new time from a reschedule_task message.
+
+    Examples:
+      "remind me about workout at 6am" → {"task_name": "workout", "time": "06:00"}
+      "move my reading reminder to 8pm" → {"task_name": "reading", "time": "20:00"}
+      "change pushup time to 5pm" → {"task_name": "pushup", "time": "17:00"}
+
+    Returns: {"task_name": "...", "time": "HH:MM"}
+    """
+    result = _ask_json(
+        f'Extract the specific task/habit name and new reminder time from this message.\n'
+        f'Message: "{text}"\n\n'
+        f'Examples:\n'
+        f'  "remind me about workout at 6am" → {{"task_name": "workout", "time": "06:00"}}\n'
+        f'  "move my reading reminder to 8pm" → {{"task_name": "reading", "time": "20:00"}}\n'
+        f'  "change pushup time to 5pm" → {{"task_name": "pushup", "time": "17:00"}}\n'
+        f'  "set morning workout to 7am" → {{"task_name": "morning workout", "time": "07:00"}}\n'
+        f'  "shift my meditation to 9pm" → {{"task_name": "meditation", "time": "21:00"}}\n\n'
+        f'task_name: the specific habit/task name (short, clean string)\n'
+        f'time: new time as HH:MM in 24h format. Convert 12h → 24h. '
+        f'Return empty string if no time given.\n\n'
+        f'Return: {{"task_name": "...", "time": "..."}}'
+    )
+    return {"task_name": result.get("task_name", "").strip(), "time": result.get("time", "").strip()}
 
 
 def extract_goal_name_from_message(text: str) -> str:
@@ -364,6 +408,22 @@ def extract_add_topic_info(text: str) -> dict:
         f'Return: {{"topic_name": "...", "goal_name": "..."}}'
     )
     return {"topic_name": result.get("topic_name", "").strip(), "goal_name": result.get("goal_name", "").strip()}
+
+
+def transcribe_voice(file_path: str) -> str:
+    """Transcribe a voice/audio file using Gemini Files API.
+
+    Accepts .oga/.ogg (Telegram voice notes). Returns the transcribed text.
+    """
+    audio_file = genai.upload_file(file_path, mime_type="audio/ogg")
+    response = _model.generate_content(
+        [
+            "Transcribe this audio to text exactly as spoken. "
+            "Return only the transcription, nothing else.",
+            audio_file,
+        ]
+    )
+    return response.text.strip()
 
 
 def daily_summary(status: dict) -> str:

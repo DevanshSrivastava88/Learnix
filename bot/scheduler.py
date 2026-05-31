@@ -28,6 +28,63 @@ IST = pytz.timezone("Asia/Kolkata")
 # Formatters (pure functions — easy to test)
 # ---------------------------------------------------------------------------
 
+def get_missed_yesterday(user_id: int) -> list[str]:
+    """Return titles of habit/reminder tasks that were due yesterday but not marked done."""
+    from supabase_svc import get_client
+    yesterday = date.today() - timedelta(days=1)
+    yesterday_start = datetime(yesterday.year, yesterday.month, yesterday.day, 0, 0, 0,
+                               tzinfo=IST).astimezone(__import__("pytz").utc)
+    yesterday_end = datetime(yesterday.year, yesterday.month, yesterday.day, 23, 59, 59,
+                             tzinfo=IST).astimezone(__import__("pytz").utc)
+
+    sb = get_client()
+
+    # Tasks that were reminded yesterday (last_reminder_at between yesterday 00:00–23:59 IST)
+    # We approximate using next_reminder_at: tasks whose next_reminder_at was set within
+    # yesterday (i.e. was due yesterday). Since we advance by 1 day on done and 8h on remind,
+    # a simpler heuristic: query activity_log for done habits yesterday, then compare to all habits.
+    res_done = (
+        sb.table("activity_log")
+        .select("note")
+        .eq("user_id", user_id)
+        .eq("event_type", "habit")
+        .eq("event_date", yesterday.isoformat())
+        .execute()
+    )
+    done_notes = {row["note"].lower() for row in (res_done.data or []) if row.get("note")}
+
+    # Active habit/reminder tasks
+    res_tasks = (
+        sb.table("tasks")
+        .select("title, task_type, next_reminder_at")
+        .eq("user_id", user_id)
+        .eq("status", "active")
+        .in_("task_type", ["habit", "reminder"])
+        .execute()
+    )
+    tasks = res_tasks.data or []
+
+    missed = []
+    for t in tasks:
+        title = t.get("title", "")
+        # Check if next_reminder_at is today or later (meaning it was rescheduled, i.e. reminded)
+        # We consider a task "missed" if its title didn't appear in yesterday's done activity log
+        if title.lower() not in done_notes:
+            next_at = t.get("next_reminder_at")
+            if next_at:
+                try:
+                    next_dt = datetime.fromisoformat(next_at)
+                    if next_dt.tzinfo is None:
+                        next_dt = next_dt.replace(tzinfo=__import__("pytz").utc)
+                    next_ist = next_dt.astimezone(IST)
+                    # If task is due today or after, it was active yesterday and not done
+                    if next_ist.date() >= date.today():
+                        missed.append(title)
+                except Exception:
+                    pass
+    return missed
+
+
 def format_morning_brief(user_id: int) -> str:
     settings = settings_svc.get_settings(user_id)
     streak = settings.get("streak", 0) or 0
@@ -97,6 +154,16 @@ def format_morning_brief(user_id: int) -> str:
                 except Exception:
                     pass
             lines.append(f"• {m['title']} — {done}/{total}{deadline_str}")
+
+    # Missed yesterday section
+    try:
+        missed = get_missed_yesterday(user_id)
+        if missed:
+            lines.append("\n⚠️ *Missed yesterday:*")
+            for title in missed:
+                lines.append(f"• {title}")
+    except Exception:
+        pass  # Don't break the morning brief if this fails
 
     lines.append(f"\n🔥 Streak: {streak} day(s) — let's keep it going!")
     return "\n".join(lines)
