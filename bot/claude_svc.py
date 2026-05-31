@@ -85,30 +85,73 @@ def score_answer(question: str, expected_answer: str, user_answer: str) -> dict:
 def classify_intent(text: str) -> str:
     """Classify free-form message into one of: task | show_tasks | show_schedule |
     show_progress | show_goals | show_graph | show_skipgraph | start_study | study |
-    breakdown | chat"""
+    breakdown | done | skip_task | delete_task | pause_task | chat"""
     result = _ask_json(
         f'Classify this message into exactly one category.\n'
         f'Message: "{text}"\n\n'
         f'Categories:\n'
-        f'- "task": user wants to ADD/CREATE a reminder, habit, or todo\n'
-        f'- "show_tasks": user wants to SEE their tasks/habits list (e.g. "show my tasks", "what do I have to do", "my habits")\n'
-        f'- "show_schedule": user wants to see today\'s schedule or day plan (e.g. "what\'s my day", "my schedule", "today\'s plan")\n'
-        f'- "show_progress": user wants to see study progress or stats (e.g. "how am I doing", "my progress", "study stats")\n'
-        f'- "show_goals": user wants to see their study goals (e.g. "my goals", "what am I studying", "learning goals")\n'
-        f'- "show_graph": user wants to see activity graph or stats (e.g. "my activity", "show stats", "how active am I")\n'
-        f'- "show_skipgraph": user wants to see skip patterns (e.g. "how many times did I skip", "my skip stats")\n'
-        f'- "start_study": user wants to start a study session now (e.g. "let\'s study", "start studying", "teach me")\n'
+        f'- "task": user wants to ADD/CREATE a reminder, habit, or todo '
+        f'(e.g. "add X", "track X", "I need to X every day", "set a reminder for X", "I want to start X")\n'
+        f'- "show_tasks": user wants to SEE their tasks/habits list '
+        f'(e.g. "show my tasks", "what do I have to do", "my habits", "what am I tracking", '
+        f'"list everything", "show habits", "what\'s on my list", "all my tasks")\n'
+        f'- "show_schedule": user wants to see today\'s schedule or day plan '
+        f'(e.g. "what\'s my day", "my schedule", "today\'s plan", "plan my day", '
+        f'"what\'s today look like", "my day", "day view", "what\'s up for today")\n'
+        f'- "show_progress": user wants to see study progress or stats '
+        f'(e.g. "how am I doing", "my progress", "study stats", "am I on track", '
+        f'"am I improving", "how far am I", "my study stats", "how\'s my Python going", "how\'s learning going")\n'
+        f'- "show_goals": user wants to see their study goals '
+        f'(e.g. "my goals", "what am I studying", "learning goals", "what am I learning", "show goals")\n'
+        f'- "show_graph": user wants to see activity graph or stats '
+        f'(e.g. "my activity", "show stats", "how active am I", "how active have I been", '
+        f'"show my streak", "how lazy have I been", "activity", "my stats")\n'
+        f'- "show_skipgraph": user wants to see skip patterns '
+        f'(e.g. "how many times did I skip", "my skip stats", "what did I skip most", '
+        f'"skip patterns", "how many times did I skip")\n'
+        f'- "start_study": user wants to start a study session now '
+        f'(e.g. "let\'s study", "start studying", "teach me", "let\'s do some Python", '
+        f'"teach me something", "quiz me", "I want to study", "continue studying")\n'
         f'- "study": user asks an educational question or wants to learn a specific topic\n'
         f'- "breakdown": user wants to break a task OR learning goal into steps/subtopics. '
         f'ALWAYS use this when message contains "break down", "break ... into steps", "steps for", '
-        f'"learning path", "subtopics for", "how do I approach", "plan for". '
-        f'Examples: "break down morning workout", "steps for Python", "break my goal into topics"\n'
+        f'"learning path", "subtopics for", "how do I approach", "plan for", "give me a roadmap for", '
+        f'"plan out", "structure ... for me". '
+        f'Examples: "break down morning workout", "steps for Python", "break my goal into topics", '
+        f'"plan out my morning routine", "give me a roadmap for ML"\n'
+        f'- "done": user is reporting they completed a specific task '
+        f'(e.g. "I finished X", "done with X", "completed X", "just did X", "marked X done")\n'
+        f'- "skip_task": user wants to skip a specific task today '
+        f'(e.g. "skip X today", "skipping X", "not doing X today")\n'
+        f'- "delete_task": user wants to permanently delete/remove a task '
+        f'(e.g. "delete X", "remove X habit", "get rid of X")\n'
+        f'- "pause_task": user wants to pause/stop reminders for a specific task temporarily '
+        f'(e.g. "pause X", "stop reminding me about X for now")\n'
         f'- "chat": clearly just greeting, small talk, joke, feelings, general question\n\n'
-        f'IMPORTANT: "breakdown" takes priority over "study" when the message contains "break down" or "steps for".\n'
-        f'Default to "chat" when genuinely unsure (not "task"). Only use "task" when user clearly wants to CREATE something.\n'
+        f'IMPORTANT RULES:\n'
+        f'- "breakdown" takes priority over "study" when the message contains "break down" or "steps for".\n'
+        f'- "done"/"skip_task"/"delete_task"/"pause_task" take priority when user mentions a specific task name with those action words.\n'
+        f'- Default to "chat" when genuinely unsure (not "task"). Only use "task" when user clearly wants to CREATE something.\n'
         f'Return: {{"intent": "..."}}'
     )
     return result.get("intent", "chat")
+
+
+def extract_task_name_from_message(text: str) -> str:
+    """Extract the task name the user is referring to in a done/skip/delete/pause message."""
+    result = _ask_json(
+        f'Extract the task name the user is referring to from this message.\n'
+        f'Message: "{text}"\n\n'
+        f'Examples:\n'
+        f'  "I finished my workout" -> {{"task_name": "workout"}}\n'
+        f'  "done with Python studying" -> {{"task_name": "Python studying"}}\n'
+        f'  "skip meditation today" -> {{"task_name": "meditation"}}\n'
+        f'  "delete my running habit" -> {{"task_name": "running"}}\n'
+        f'  "pause reading reminders" -> {{"task_name": "reading"}}\n\n'
+        f'Return just the task name as a short clean string.\n'
+        f'Return: {{"task_name": "..."}}'
+    )
+    return result.get("task_name", "").strip()
 
 
 def extract_breakdown_subject(text: str) -> str:
@@ -186,7 +229,10 @@ def parse_task(text: str) -> dict:
         "- For habit: set recurrence_days (default 1), others null\n"
         "- Convert hours to minutes: '2 hours' = 120, '1.5 hours' = 90\n"
         "- Only ask clarify if genuinely ambiguous\n"
-        "- Keep title short (3-5 words)"
+        "- Keep title short (3-5 words)\n"
+        "- If user says 'remind me to X' with NO time information, set type='reminder', delay_minutes=0, "
+        "and clarify='When? (e.g. \"in 30 mins\", \"at 8pm\")' — do NOT ask any other question\n"
+        "- Never ask 'How many minutes from now?' — always use the above phrasing"
     )
     return _ask_json(prompt)
 

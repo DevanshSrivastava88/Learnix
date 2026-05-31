@@ -64,7 +64,7 @@ async def _parse_and_respond(update, ctx, text: str, claude_svc) -> int:
     if task_type == "reminder":
         delay = parsed.get("delay_minutes") or 0
         if delay <= 0:
-            await update.message.reply_text("How many minutes from now should I remind you?")
+            await update.message.reply_text('When? (e.g. "in 30 mins", "at 8pm")')
             ctx.user_data["partial_task"] = parsed
             return NT_DESCRIBE
         uid = update.effective_user.id
