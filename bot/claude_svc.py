@@ -86,7 +86,9 @@ def classify_intent(text: str) -> str:
     """Classify free-form message into one of: task | show_tasks | show_schedule |
     show_progress | show_goals | show_graph | show_skipgraph | start_study | study |
     show_topics | study_topic | skip_topic |
-    breakdown | done | skip_task | delete_task | pause_task | chat"""
+    breakdown | done | skip_task | delete_task | pause_task |
+    set_time | add_topic | manage_goal | clear_data | show_help | show_settings | create_goal |
+    chat"""
     result = _ask_json(
         f'Classify this message into exactly one category.\n'
         f'Message: "{text}"\n\n'
@@ -134,11 +136,36 @@ def classify_intent(text: str) -> str:
         f'(e.g. "delete X", "remove X habit", "get rid of X")\n'
         f'- "pause_task": user wants to pause/stop reminders for a specific task temporarily '
         f'(e.g. "pause X", "stop reminding me about X for now")\n'
+        f'- "set_time": user wants to change/set a reminder time — morning brief, study session, or EOD check-in '
+        f'(e.g. "set my morning brief to 8am", "change study time to 9pm", "my EOD is at 10pm", '
+        f'"update my reminder times", "set morning to 7am", "change my study reminder")\n'
+        f'- "add_topic": user wants to add a topic to a study goal '
+        f'(e.g. "add recursion to my Python goal", "add topic X", "I want to add X to my learning", '
+        f'"add X as a topic", "put X in my goal")\n'
+        f'- "manage_goal": user wants to delete, pause, or edit a study goal '
+        f'(e.g. "delete my Python goal", "pause my React goal", "edit my goal name", '
+        f'"remove my goal", "I want to stop learning X")\n'
+        f'- "clear_data": user wants to delete all their data and start fresh '
+        f'(e.g. "delete all my data", "reset everything", "start fresh", "wipe my data", "clear everything")\n'
+        f'- "show_help": user wants to know what the bot can do or see command list '
+        f'(e.g. "help", "what can you do", "commands", "how does this work", "what are your features", '
+        f'"show me what you can do", "what do you do")\n'
+        f'- "show_settings": user wants to see their current reminder time settings '
+        f'(e.g. "show my settings", "my times", "what are my reminder times", "my schedule settings", '
+        f'"show reminders", "what time do you remind me")\n'
+        f'- "create_goal": user wants to CREATE a new learning goal for a subject '
+        f'(e.g. "I want to learn React", "teach me Python", "I need to learn SQL", '
+        f'"set up a goal for ML", "create a goal for JavaScript", "I want to study Data Science"). '
+        f'Key signal: user names a SUBJECT they want to learn, not an existing topic.\n'
         f'- "chat": clearly just greeting, small talk, joke, feelings, general question\n\n'
         f'IMPORTANT RULES:\n'
+        f'- "create_goal" takes priority over "start_study" when user says "I want to learn X" or "teach me X" with a subject name.\n'
         f'- "breakdown" takes priority over "study" when the message contains "break down" or "steps for".\n'
         f'- "study_topic" and "skip_topic" take priority when user mentions a SPECIFIC NAMED topic with study/skip/jump action words.\n'
         f'- "done"/"skip_task"/"delete_task"/"pause_task" take priority when user mentions a specific task name with those action words.\n'
+        f'- "set_time" takes priority when user mentions changing morning/study/EOD time.\n'
+        f'- "add_topic" takes priority when user clearly wants to add a topic to an existing goal.\n'
+        f'- "manage_goal" takes priority when user wants to delete/pause/edit a goal.\n'
         f'- Default to "chat" when genuinely unsure (not "task"). Only use "task" when user clearly wants to CREATE something.\n'
         f'Return: {{"intent": "..."}}'
     )
@@ -266,6 +293,77 @@ def parse_task(text: str) -> dict:
         "- Never ask 'How many minutes from now?' — always use the above phrasing"
     )
     return _ask_json(prompt)
+
+
+def extract_set_time_info(text: str) -> dict:
+    """Extract which time to set (morning/study/eod) and the time value from a set_time message.
+
+    Returns: {"time_type": "morning"|"study"|"eod"|"", "time_value": "HH:MM"|""}
+    """
+    result = _ask_json(
+        f'Extract time-setting info from this message.\n'
+        f'Message: "{text}"\n\n'
+        f'time_type options:\n'
+        f'- "morning": morning brief, morning reminder, wake-up reminder\n'
+        f'- "study": study session, study time, study reminder, daily study\n'
+        f'- "eod": EOD, end of day, evening check-in, night reminder\n'
+        f'- "": unclear/ambiguous\n\n'
+        f'time_value: extract the time as HH:MM in 24h format. '
+        f'Convert 12h to 24h (e.g. "8am" → "08:00", "9pm" → "21:00", "10:30pm" → "22:30"). '
+        f'Return empty string if no time given.\n\n'
+        f'Return: {{"time_type": "...", "time_value": "..."}}'
+    )
+    return {"time_type": result.get("time_type", ""), "time_value": result.get("time_value", "")}
+
+
+def extract_goal_name_from_message(text: str) -> str:
+    """Extract the subject/goal name from a 'create_goal' or 'manage_goal' message."""
+    result = _ask_json(
+        f'Extract the learning subject or goal name from this message.\n'
+        f'Message: "{text}"\n\n'
+        f'Examples:\n'
+        f'  "I want to learn React" → {{"goal_name": "React"}}\n'
+        f'  "teach me Python" → {{"goal_name": "Python"}}\n'
+        f'  "delete my Python goal" → {{"goal_name": "Python"}}\n'
+        f'  "pause my React goal" → {{"goal_name": "React"}}\n'
+        f'  "edit my Machine Learning goal name" → {{"goal_name": "Machine Learning"}}\n\n'
+        f'Return just the subject name as a clean string.\n'
+        f'Return: {{"goal_name": "..."}}'
+    )
+    return result.get("goal_name", "").strip()
+
+
+def extract_manage_goal_action(text: str) -> str:
+    """Extract what the user wants to do with a goal: delete, pause, or edit."""
+    result = _ask_json(
+        f'Extract the action the user wants to perform on a study goal.\n'
+        f'Message: "{text}"\n\n'
+        f'Actions:\n'
+        f'- "delete": remove/delete/get rid of the goal\n'
+        f'- "pause": pause/stop/freeze the goal temporarily\n'
+        f'- "edit": edit/rename/update/change the goal\n'
+        f'- "": unclear\n\n'
+        f'Return: {{"action": "..."}}'
+    )
+    return result.get("action", "").strip()
+
+
+def extract_add_topic_info(text: str) -> dict:
+    """Extract topic name and goal name from an 'add_topic' message.
+
+    Returns: {"topic_name": "...", "goal_name": "..."}
+    """
+    result = _ask_json(
+        f'Extract topic and goal from this message.\n'
+        f'Message: "{text}"\n\n'
+        f'Examples:\n'
+        f'  "add recursion to my Python goal" → {{"topic_name": "Recursion", "goal_name": "Python"}}\n'
+        f'  "add topic Binary Trees" → {{"topic_name": "Binary Trees", "goal_name": ""}}\n'
+        f'  "I want to add Decorators to my learning" → {{"topic_name": "Decorators", "goal_name": ""}}\n\n'
+        f'Return goal_name as empty string if not mentioned.\n'
+        f'Return: {{"topic_name": "...", "goal_name": "..."}}'
+    )
+    return {"topic_name": result.get("topic_name", "").strip(), "goal_name": result.get("goal_name", "").strip()}
 
 
 def daily_summary(status: dict) -> str:

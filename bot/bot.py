@@ -230,6 +230,18 @@ async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         await _parse_and_respond(update, ctx, update.message.text.strip(), _cs)
         return
 
+    # Multi-step goal creation from free text
+    if await _handle_freetext_goal_flow(update, ctx):
+        return
+
+    # Goal picker for add_topic flow
+    if await _handle_add_topic_goal_picker(update, ctx):
+        return
+
+    # Time-type picker response
+    if await _handle_time_picker_response(update, ctx):
+        return
+
     # Free-form intent routing
     await handle_free_text(update, ctx)
 
@@ -256,6 +268,23 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
     from telegram.constants import ChatAction
     text = update.message.text.strip()
 
+    # Pre-check cancel words BEFORE classify_intent — instant response, no API call
+    ascii_text = text.encode("ascii", errors="ignore").decode().strip()
+    cancel_words = {"cancel", "stop", "quit", "exit", "nevermind", "never mind", "forget it"}
+    if ascii_text.lower() in cancel_words:
+        uid = update.effective_user.id
+        # Clean up quiz state if active
+        if uid in ctx.bot_data.get("quiz_state", {}):
+            ctx.bot_data["quiz_state"].pop(uid, None)
+            await update.message.reply_text(
+                "Quiz cancelled. Come back whenever you're ready!",
+                reply_markup=ReplyKeyboardRemove(),
+            )
+        else:
+            ctx.user_data.clear()
+            await update.message.reply_text("Cancelled! 👍", reply_markup=ReplyKeyboardRemove())
+        return
+
     # Bulk topic import — numbered/bulleted list while user has an active goal
     parsed_list = _parse_bullet_list(text)
     if parsed_list:
@@ -272,21 +301,20 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
             return
 
     # Pre-check: ignore emoji-only messages and bare dismissal/reaction phrases
-    ascii_text = text.encode("ascii", errors="ignore").decode().strip()
     if not ascii_text:  # emoji-only or symbols with no text
         return
     # Use ascii_text for word check so "❌ Cancel" → "Cancel" → caught
     # Also catches stale keyboard button replies that arrive outside an active flow
     if ascii_text.lower() in {
-        "cancel", "back", "stop", "exit", "no", "nope", "nah",
-        "never mind", "nevermind", "nm", "forget it", "nothing",
+        "back", "no", "nope", "nah",
+        "nm", "nothing",
         "wtf", "lol", "lmao", "omg", "damn", "hmm", "hm", "ok",
         "okay", "k", "kk", "fine", "cool", "nice", "great",
         # keyboard button replies that should never reach Gemini
         "yeah, add it", "edit", "yes, delete it",
         "none (root topic)", "name", "description", "target date",
     }:
-        await update.message.reply_text("Hey! 👋 What do you want to track? Or /help to see what I can do.")
+        await update.message.reply_text("Hey! 👋 What do you want to track? Or say 'help' to see what I can do.")
         return
 
     await update.message.chat.send_action(ChatAction.TYPING)
@@ -323,7 +351,7 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
             await study_handlers.handle_study_topic(update, ctx, topic_name)
         else:
             await update.message.reply_text(
-                "Which topic did you want to study? Try: 'study OOP Basics' or use /topics to see your list."
+                "Which topic did you want to study? Try: 'study OOP Basics' or say 'show topics' to see your list."
             )
     elif intent == "skip_topic":
         topic_name = ""
@@ -335,15 +363,29 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
             await study_handlers.handle_skip_topic_request(update, ctx, topic_name)
         else:
             await update.message.reply_text(
-                "Which topic did you want to skip? Try: 'skip OOP Basics' or use /topics to see your list."
+                "Which topic did you want to skip? Try: 'skip OOP Basics' or say 'show topics' to see your list."
             )
     elif intent == "start_study":
         await study_handlers.cmd_study(update, ctx)
+    elif intent == "create_goal":
+        await handle_create_goal_freetext(update, ctx, text, claude_svc)
     elif intent == "study":
         await update.message.reply_text(
             "Sounds like you want to learn something! 📚\n\n"
-            "Use /goal to set up a learning goal, then /study to start a session.",
+            "Say 'I want to learn X' to create a goal, then say 'study' to start a session.",
         )
+    elif intent == "set_time":
+        await handle_set_time_freetext(update, ctx, text, claude_svc)
+    elif intent == "add_topic":
+        await handle_add_topic_freetext(update, ctx, text, claude_svc)
+    elif intent == "manage_goal":
+        await handle_manage_goal_freetext(update, ctx, text, claude_svc)
+    elif intent == "clear_data":
+        await cmd_clear(update, ctx)
+    elif intent == "show_help":
+        await cmd_info(update, ctx)
+    elif intent == "show_settings":
+        await tasks_handlers.cmd_settings(update, ctx)
     elif intent in ("done", "skip_task", "delete_task", "pause_task"):
         # Bare "done"/"skip" with no task name — check last reminded task first
         if intent in ("done", "skip_task") and text.lower().strip() in ("done", "skip"):
@@ -362,7 +404,7 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
             )
             await update.message.reply_text(reply)
         except Exception:
-            await update.message.reply_text("I'm here! Try /help to see what I can do.")
+            await update.message.reply_text("I'm here! Say 'help' to see what I can do.")
 
 
 import re as _re
@@ -598,6 +640,346 @@ async def handle_task_action_freetext(
             f"Paused ⏸️ *{task['title']}*. Use /resume when you're ready to pick it up again.",
             parse_mode=ParseMode.MARKDOWN,
         )
+
+
+async def handle_set_time_freetext(
+    update: Update,
+    ctx: ContextTypes.DEFAULT_TYPE,
+    text: str,
+    claude_svc,
+) -> None:
+    """Handle 'set_time' intent expressed in free text."""
+    try:
+        info = claude_svc.extract_set_time_info(text)
+    except Exception:
+        info = {"time_type": "", "time_value": ""}
+
+    time_type = info.get("time_type", "")
+    time_value = info.get("time_value", "")
+
+    # If we have both — apply immediately
+    if time_type and time_value:
+        uid = update.effective_user.id
+        try:
+            h, m = map(int, time_value.split(":"))
+            assert 0 <= h < 24 and 0 <= m < 60
+        except Exception:
+            await update.message.reply_text(
+                f"Couldn't parse that time. Try something like 'set morning to 08:00'."
+            )
+            return
+        if time_type == "morning":
+            settings_svc.set_morning_brief_time(uid, time_value)
+            label = "Morning brief"
+        elif time_type == "study":
+            settings_svc.set_daily_time(uid, time_value)
+            label = "Study time"
+        else:  # eod
+            settings_svc.set_eod_time(uid, time_value)
+            label = "EOD check-in"
+        await update.message.reply_text(
+            f"Done! {label} set to *{time_value}* IST. 🕐",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+        return
+
+    # Have a time but not which type — ask
+    if time_value and not time_type:
+        ctx.user_data["setting_time_value_pending"] = time_value
+        buttons = [["Morning brief"], ["Study session"], ["EOD check-in"]]
+        await update.message.reply_text(
+            f"Got it — {time_value}. Which reminder is that for?",
+            reply_markup=ReplyKeyboardMarkup(buttons, one_time_keyboard=True, resize_keyboard=True),
+        )
+        ctx.user_data["setting_time_for_picker"] = True
+        return
+
+    # Have a type but no time — ask for the time
+    if time_type and not time_value:
+        label_map = {"morning": "morning brief", "study": "study session", "eod": "EOD check-in"}
+        label = label_map.get(time_type, time_type)
+        ctx.user_data["setting_time_for"] = time_type
+        await update.message.reply_text(
+            f"What time for your {label}? (HH:MM IST, e.g. `09:00`)",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+        return
+
+    # Neither — ask which they want to change
+    await update.message.reply_text(
+        "Which time do you want to change?\n\n"
+        "• Morning brief\n• Study session\n• EOD check-in\n\n"
+        "Say something like 'set morning brief to 8am'."
+    )
+
+
+async def _handle_time_picker_response(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> bool:
+    """Consume a reply to the time-type picker. Returns True if consumed."""
+    if not ctx.user_data.get("setting_time_for_picker"):
+        return False
+    choice = update.message.text.strip().lower()
+    type_map = {
+        "morning brief": "morning",
+        "study session": "study",
+        "eod check-in": "eod",
+    }
+    time_type = type_map.get(choice)
+    if not time_type:
+        # Not a valid picker answer — clear and let message fall through
+        ctx.user_data.pop("setting_time_for_picker", None)
+        ctx.user_data.pop("setting_time_value_pending", None)
+        return False
+    time_value = ctx.user_data.pop("setting_time_value_pending", "")
+    ctx.user_data.pop("setting_time_for_picker", None)
+    uid = update.effective_user.id
+    if time_type == "morning":
+        settings_svc.set_morning_brief_time(uid, time_value)
+        label = "Morning brief"
+    elif time_type == "study":
+        settings_svc.set_daily_time(uid, time_value)
+        label = "Study time"
+    else:
+        settings_svc.set_eod_time(uid, time_value)
+        label = "EOD check-in"
+    await update.message.reply_text(
+        f"Done! {label} set to *{time_value}* IST. 🕐",
+        parse_mode=ParseMode.MARKDOWN,
+        reply_markup=ReplyKeyboardRemove(),
+    )
+    return True
+
+
+async def handle_add_topic_freetext(
+    update: Update,
+    ctx: ContextTypes.DEFAULT_TYPE,
+    text: str,
+    claude_svc,
+) -> None:
+    """Handle 'add_topic' intent in free text."""
+    import study.svc as study_svc
+
+    try:
+        info = claude_svc.extract_add_topic_info(text)
+    except Exception:
+        info = {"topic_name": "", "goal_name": ""}
+
+    topic_name = info.get("topic_name", "").strip()
+    goal_hint = info.get("goal_name", "").strip()
+
+    if not topic_name:
+        await update.message.reply_text(
+            "What topic do you want to add? Try: 'add Recursion to my Python goal'."
+        )
+        return
+
+    uid = update.effective_user.id
+    goals = study_svc.list_goals(uid)
+    if not goals:
+        await update.message.reply_text("You don't have any goals yet. Say 'I want to learn X' to create one first!")
+        return
+
+    # Match goal by hint, or default to single goal
+    matched_goal = None
+    if goal_hint:
+        goal_hint_lower = goal_hint.lower()
+        for g in goals:
+            if goal_hint_lower in g["name"].lower() or g["name"].lower() in goal_hint_lower:
+                matched_goal = g
+                break
+
+    if not matched_goal and len(goals) == 1:
+        matched_goal = goals[0]
+
+    if not matched_goal:
+        # Multiple goals, ambiguous — ask which
+        buttons = [[g["name"]] for g in goals]
+        ctx.user_data["pending_add_topic_name"] = topic_name
+        await update.message.reply_text(
+            f"Which goal should I add *{topic_name}* to?",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=ReplyKeyboardMarkup(buttons, one_time_keyboard=True, resize_keyboard=True),
+        )
+        ctx.user_data["add_topic_goal_picker"] = [g["id"] for g in goals]
+        ctx.user_data["add_topic_goals_map"] = {g["name"]: g for g in goals}
+        return
+
+    # Add directly
+    existing = study_svc.list_topics_for_goal(matched_goal["id"])
+    order_index = len(existing)
+    study_svc.create_topic(goal_id=matched_goal["id"], title=topic_name, order_index=order_index)
+    await update.message.reply_text(
+        f"Added! 📌 *{topic_name}* is now in *{matched_goal['name']}*.",
+        parse_mode=ParseMode.MARKDOWN,
+    )
+
+
+async def _handle_add_topic_goal_picker(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> bool:
+    """Consume goal-picker response for add_topic flow. Returns True if consumed."""
+    if "add_topic_goal_picker" not in ctx.user_data:
+        return False
+    chosen = update.message.text.strip()
+    goals_map = ctx.user_data.pop("add_topic_goals_map", {})
+    ctx.user_data.pop("add_topic_goal_picker", None)
+    topic_name = ctx.user_data.pop("pending_add_topic_name", "")
+    goal = goals_map.get(chosen)
+    if not goal:
+        await update.message.reply_text(
+            "Hmm, couldn't find that goal. Try again: 'add X to my Y goal'.",
+            reply_markup=ReplyKeyboardRemove(),
+        )
+        return True
+    import study.svc as study_svc
+    existing = study_svc.list_topics_for_goal(goal["id"])
+    study_svc.create_topic(goal_id=goal["id"], title=topic_name, order_index=len(existing))
+    await update.message.reply_text(
+        f"Added! 📌 *{topic_name}* is now in *{goal['name']}*.",
+        parse_mode=ParseMode.MARKDOWN,
+        reply_markup=ReplyKeyboardRemove(),
+    )
+    return True
+
+
+async def handle_manage_goal_freetext(
+    update: Update,
+    ctx: ContextTypes.DEFAULT_TYPE,
+    text: str,
+    claude_svc,
+) -> None:
+    """Handle 'manage_goal' intent (delete/pause/edit) in free text."""
+    import study.svc as study_svc
+
+    try:
+        action = claude_svc.extract_manage_goal_action(text)
+        goal_name_hint = claude_svc.extract_goal_name_from_message(text)
+    except Exception:
+        action = ""
+        goal_name_hint = ""
+
+    uid = update.effective_user.id
+    all_goals = study_svc.list_goals(uid) + study_svc.list_goals(uid, status="paused")
+    if not all_goals:
+        await update.message.reply_text("You don't have any goals yet.")
+        return
+
+    # Try to match goal by hint
+    matched_goal = None
+    if goal_name_hint:
+        hint_lower = goal_name_hint.lower()
+        for g in all_goals:
+            if hint_lower in g["name"].lower() or g["name"].lower() in hint_lower:
+                matched_goal = g
+                break
+
+    if not matched_goal and len(all_goals) == 1:
+        matched_goal = all_goals[0]
+
+    if action == "delete":
+        # Route to deletegoal conversation
+        await study_handlers.cmd_deletegoal(update, ctx)
+    elif action == "pause":
+        await study_handlers.cmd_pausegoal(update, ctx)
+    elif action == "edit":
+        await study_handlers.cmd_editgoal(update, ctx)
+    else:
+        # Ambiguous action — show options
+        goal_str = f" *{matched_goal['name']}*" if matched_goal else ""
+        await update.message.reply_text(
+            f"What do you want to do with{goal_str} your goal?\n\n"
+            "• 'delete my X goal'\n"
+            "• 'pause my X goal'\n"
+            "• 'edit my X goal'"
+        )
+
+
+async def handle_create_goal_freetext(
+    update: Update,
+    ctx: ContextTypes.DEFAULT_TYPE,
+    text: str,
+    claude_svc,
+) -> None:
+    """Handle 'create_goal' intent: extract subject, then start goal flow pre-filled."""
+    try:
+        goal_name = claude_svc.extract_goal_name_from_message(text)
+    except Exception:
+        goal_name = ""
+
+    if not goal_name:
+        # Fall back to starting goal flow normally
+        await study_handlers.cmd_goal(update, ctx)
+        return
+
+    # Pre-fill the goal name and jump straight to difficulty selection
+    ctx.user_data["goal_name"] = goal_name
+    ctx.user_data["goal_desc"] = ""
+    # We can't enter the ConversationHandler mid-flow from outside it,
+    # so we send the difficulty prompt and set a flag to handle the next message
+    buttons = [["Easy"], ["Medium"], ["Hard"]]
+    await update.message.reply_text(
+        f"Let's set up a learning goal! 🎯\n\nGoal: *{goal_name}*\n\nWhat difficulty?",
+        parse_mode=ParseMode.MARKDOWN,
+        reply_markup=ReplyKeyboardMarkup(buttons, one_time_keyboard=True, resize_keyboard=True),
+    )
+    ctx.user_data["freetext_goal_state"] = "difficulty"
+
+
+async def _handle_freetext_goal_flow(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> bool:
+    """Handle multi-step goal creation started from free text. Returns True if consumed."""
+    state = ctx.user_data.get("freetext_goal_state")
+    if not state:
+        return False
+
+    text = update.message.text.strip()
+
+    if state == "difficulty":
+        choice = text.lower()
+        if choice not in ("easy", "medium", "hard"):
+            buttons = [["Easy"], ["Medium"], ["Hard"]]
+            await update.message.reply_text(
+                "Please pick Easy, Medium, or Hard:",
+                reply_markup=ReplyKeyboardMarkup(buttons, one_time_keyboard=True, resize_keyboard=True),
+            )
+            return True
+        ctx.user_data["goal_difficulty"] = choice
+        ctx.user_data["freetext_goal_state"] = "deadline"
+        await update.message.reply_text(
+            "Target date? (YYYY-MM-DD, e.g. 2026-12-01) Or '-' to skip:",
+            reply_markup=ReplyKeyboardRemove(),
+        )
+        return True
+
+    if state == "deadline":
+        from datetime import datetime as _dt
+        import study.svc as study_svc
+
+        deadline = text
+        if deadline != "-":
+            try:
+                _dt.fromisoformat(deadline)
+            except ValueError:
+                await update.message.reply_text("Hmm, that date doesn't look right. Use YYYY-MM-DD or '-' to skip:")
+                return True
+        else:
+            deadline = None
+
+        uid = update.effective_user.id
+        name = ctx.user_data.get("goal_name", "New Goal")
+        desc = ctx.user_data.get("goal_desc", "")
+        difficulty = ctx.user_data.get("goal_difficulty", "medium")
+        study_svc.create_goal(uid, name, desc, deadline, difficulty=difficulty)
+        diff_label = {"easy": "Easy 🟢", "medium": "Medium 🟡", "hard": "Hard 🔴"}.get(difficulty, "Medium 🟡")
+
+        # Clean up
+        for key in ("goal_name", "goal_desc", "goal_difficulty", "freetext_goal_state"):
+            ctx.user_data.pop(key, None)
+
+        await update.message.reply_text(
+            f"Goal created! 🎯 *{name}* ({diff_label}) is on the list.\n\n"
+            f"Say 'break down {name}' to auto-generate topics, or 'add topic X' to add manually.",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+        return True
+
+    return False
 
 
 async def handle_breakdown(update: Update, ctx: ContextTypes.DEFAULT_TYPE, text: str) -> None:

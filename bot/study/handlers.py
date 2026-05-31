@@ -477,8 +477,9 @@ async def handle_quiz_answer(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> 
         return
     user_answer = update.message.text.strip()
 
-    # Bug 1: /cancel (or bare "cancel") exits the quiz cleanly
-    if user_answer.startswith("/") or user_answer.lower() == "cancel":
+    # /cancel or natural-language cancel words exit the quiz cleanly
+    _cancel_words = {"cancel", "stop", "quit", "exit", "nevermind", "never mind", "forget it"}
+    if user_answer.startswith("/") or user_answer.lower() in _cancel_words:
         ctx.bot_data.get("quiz_state", {}).pop(uid, None)
         await update.message.reply_text(
             "Quiz cancelled. Come back whenever you're ready!",
