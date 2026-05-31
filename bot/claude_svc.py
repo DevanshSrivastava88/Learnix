@@ -107,10 +107,13 @@ def classify_intent(text: str) -> str:
 
 def parse_task(text: str) -> dict:
     """Parse natural language task. Returns type: reminder | interval_reminder | habit."""
-    from datetime import date
-    today = date.today().isoformat()
+    from datetime import datetime
+    import pytz
+    IST = pytz.timezone("Asia/Kolkata")
+    now_ist = datetime.now(IST)
+    now_str = now_ist.strftime("%Y-%m-%d %H:%M %p IST (%A)")
     prompt = (
-        f"Today is {today}. Extract task info from this message: \"{text}\"\n\n"
+        f"Current date and time: {now_str}. Extract task info from this message: \"{text}\"\n\n"
         "Return ONLY a JSON object, no markdown:\n"
         "{\n"
         "  \"type\": \"reminder\" or \"interval_reminder\" or \"habit\",\n"
