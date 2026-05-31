@@ -57,3 +57,62 @@ def test_get_due_tasks_returns_overdue():
         mock_client.return_value = client
         result = tasks_svc.get_due_tasks()
         assert len(result) == 1
+
+
+# ---------------------------------------------------------------------------
+# Important flag tests
+# ---------------------------------------------------------------------------
+
+def test_is_important_true_when_prefixed():
+    task = _row(description='important:true|some detail')
+    assert tasks_svc.is_important(task) is True
+
+
+def test_is_important_true_when_only_flag():
+    task = _row(description='important:true')
+    assert tasks_svc.is_important(task) is True
+
+
+def test_is_important_false_when_no_prefix():
+    task = _row(description='just a regular description')
+    assert tasks_svc.is_important(task) is False
+
+
+def test_is_important_false_when_empty():
+    task = _row(description='')
+    assert tasks_svc.is_important(task) is False
+
+
+def test_mark_important_prepends_flag():
+    task_data = _row(description='existing detail')
+    with patch('tasks.svc.get_task', return_value=task_data), \
+         patch('tasks.svc.get_client') as mock_client:
+        client = make_client()
+        mock_client.return_value = client
+        tasks_svc.mark_important('task-1')
+        update_call = client.table.return_value.update.call_args
+        updated = update_call[0][0]
+        assert updated['description'] == 'important:true|existing detail'
+
+
+def test_mark_important_noop_if_already_important():
+    task_data = _row(description='important:true|existing')
+    with patch('tasks.svc.get_task', return_value=task_data), \
+         patch('tasks.svc.get_client') as mock_client:
+        client = make_client()
+        mock_client.return_value = client
+        tasks_svc.mark_important('task-1')
+        # update should NOT have been called
+        assert not client.table.return_value.update.called
+
+
+def test_unmark_important_removes_prefix():
+    task_data = _row(description='important:true|my notes')
+    with patch('tasks.svc.get_task', return_value=task_data), \
+         patch('tasks.svc.get_client') as mock_client:
+        client = make_client()
+        mock_client.return_value = client
+        tasks_svc.unmark_important('task-1')
+        update_call = client.table.return_value.update.call_args
+        updated = update_call[0][0]
+        assert updated['description'] == 'my notes'

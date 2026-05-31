@@ -9,6 +9,7 @@ scheduler.py — Polling-based scheduler for all users.
 """
 
 import logging
+import os
 from datetime import datetime, date
 
 import pytz
@@ -281,10 +282,14 @@ async def eod_poller(ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def reminder_poller(ctx: ContextTypes.DEFAULT_TYPE) -> None:
     """Every 300s: send habit/milestone reminders for all due tasks.
-    Habits: max 2 reminders per day, auto-skip on 3rd attempt.
+    Habits: max 2 reminders per day (unless important — re-remind every 1hr until done).
+    Auto-skip non-important habits on 3rd attempt.
+    Auto-reschedule if no response after 1hr.
     """
+    from datetime import timezone as _tz, timedelta
     due = tasks_svc.get_due_tasks()
     today = datetime.now(IST).date().isoformat()
+    railway_url = os.environ.get("RAILWAY_URL", "")
 
     for task in due:
         # Skip breakdown step tasks — users mark steps done manually
@@ -294,16 +299,16 @@ async def reminder_poller(ctx: ContextTypes.DEFAULT_TYPE) -> None:
         title = task["title"]
         task_id = task["id"]
         task_type = task["task_type"]
+        important = tasks_svc.is_important(task)
         try:
             if task_type == "habit":
                 count_key = f"reminded_{task_id}_{today}"
                 reminded_today = ctx.bot_data.get(count_key, 0)
 
-                if reminded_today >= 2:
-                    # Auto-skip after 2 reminders with no response
+                if reminded_today >= 2 and not important:
+                    # Auto-skip after 2 reminders with no response (non-important only)
                     import analytics_svc
                     tasks_svc.log_skip(uid, task_id, note="auto_skip_no_response")
-                    from datetime import timedelta, timezone as _tz
                     next_utc = datetime.now(_tz.utc) + timedelta(days=task.get("recurrence_days", 1))
                     tasks_svc.reschedule_task(task_id, next_utc)
                     ctx.bot_data[count_key] = 0
@@ -315,24 +320,31 @@ async def reminder_poller(ctx: ContextTypes.DEFAULT_TYPE) -> None:
                     )
                     continue
 
-                # Send Telegram reminder and advance next_reminder_at by 8 hours
+                # Build reminder message with delay option
+                important_prefix = "⚡ " if important else ""
                 msg = (
-                    f"⏰ Time for *{title}*!\n\n"
-                    f"Reply 'done' or 'skip' 👇"
+                    f"⏰ Time for {important_prefix}*{title}*!\n\n"
+                    f"Reply 'done', 'skip', or 'delay ⏳'"
                 )
                 await ctx.bot.send_message(uid, msg, parse_mode=ParseMode.MARKDOWN)
                 ctx.bot_data.setdefault("last_reminded", {})[uid] = task_id
+                # Track when this reminder was sent (for auto-reschedule logic)
+                ctx.bot_data.setdefault("last_reminded_at", {})[uid] = datetime.now(_tz.utc).isoformat()
 
                 # Also call user's phone if Twilio is enabled
                 import twilio_svc
                 if twilio_svc.is_twilio_enabled(uid):
                     import asyncio
                     await asyncio.get_running_loop().run_in_executor(
-                        None, twilio_svc.make_reminder_call, uid, title
+                        None, twilio_svc.make_reminder_call, uid, task_id, title, railway_url
                     )
 
-                from datetime import timezone as _tz, timedelta
-                next_utc = datetime.now(_tz.utc) + timedelta(hours=8)
+                # For important tasks: re-remind every 1hr until done/skipped
+                # For regular tasks: advance 8hrs between reminders
+                if important:
+                    next_utc = datetime.now(_tz.utc) + timedelta(hours=1)
+                else:
+                    next_utc = datetime.now(_tz.utc) + timedelta(hours=8)
                 tasks_svc.reschedule_task(task_id, next_utc)
                 ctx.bot_data[count_key] = reminded_today + 1
             else:

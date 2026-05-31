@@ -7,6 +7,8 @@ Required env vars:
 
 Optional:
   TELEGRAM_CHAT_ID    — fallback if no users have /twilio on yet
+  SUPABASE_URL        — for call-response route to update DB
+  SUPABASE_KEY        — for call-response route to update DB
   PORT                — Flask port (default 5050)
 """
 
@@ -14,7 +16,7 @@ import os
 import hmac
 import hashlib
 import base64
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 import pytz
 from flask import Flask, request, Response
@@ -92,6 +94,115 @@ def missed_call():
 
     _notify_all(message)
     return Response("<Response/>", status=200, mimetype="text/xml")
+
+
+def _get_supabase():
+    """Return a lightweight Supabase client using the supabase-py library."""
+    from supabase import create_client
+    url = os.environ.get("SUPABASE_URL", "")
+    key = os.environ.get("SUPABASE_KEY", "")
+    if not url or not key:
+        return None
+    return create_client(url, key)
+
+
+def _mark_task_done_supabase(task_id: str) -> bool:
+    """Mark a habit done and advance next_reminder_at by recurrence_days."""
+    sb = _get_supabase()
+    if not sb:
+        return False
+    try:
+        res = sb.table("tasks").select("recurrence_days").eq("id", task_id).execute()
+        if not res.data:
+            return False
+        recurrence = res.data[0].get("recurrence_days", 1) or 1
+        next_at = (datetime.now(timezone.utc) + timedelta(days=recurrence)).isoformat()
+        sb.table("tasks").update({"next_reminder_at": next_at}).eq("id", task_id).execute()
+        return True
+    except Exception as exc:
+        print(f"[webhook] mark_task_done failed for {task_id}: {exc}")
+        return False
+
+
+def _skip_task_supabase(task_id: str, user_id: int) -> bool:
+    """Log a skip and advance next_reminder_at by recurrence_days."""
+    sb = _get_supabase()
+    if not sb:
+        return False
+    try:
+        res = sb.table("tasks").select("recurrence_days").eq("id", task_id).execute()
+        if not res.data:
+            return False
+        recurrence = res.data[0].get("recurrence_days", 1) or 1
+        next_at = (datetime.now(timezone.utc) + timedelta(days=recurrence)).isoformat()
+        sb.table("tasks").update({"next_reminder_at": next_at}).eq("id", task_id).execute()
+        try:
+            sb.table("task_skips").insert({
+                "user_id": user_id,
+                "task_id": task_id,
+                "note": "ivr_skip",
+            }).execute()
+        except Exception:
+            pass  # skip log is non-critical
+        return True
+    except Exception as exc:
+        print(f"[webhook] skip_task failed for {task_id}: {exc}")
+        return False
+
+
+def _get_task_title(task_id: str) -> str:
+    """Return task title from Supabase, or empty string."""
+    sb = _get_supabase()
+    if not sb:
+        return ""
+    try:
+        res = sb.table("tasks").select("title").eq("id", task_id).execute()
+        return res.data[0].get("title", "") if res.data else ""
+    except Exception:
+        return ""
+
+
+@app.route("/twilio/call-response", methods=["POST"])
+def call_response():
+    """Handle IVR digit press: 1 = done, 2 = skip."""
+    digit = request.form.get("Digits", "")
+    task_id = request.args.get("task_id", "")
+    user_id_str = request.args.get("user_id", "")
+
+    if not task_id or not user_id_str:
+        return Response(
+            '<?xml version="1.0" encoding="UTF-8"?><Response><Say>Invalid request.</Say></Response>',
+            status=200,
+            mimetype="text/xml",
+        )
+
+    try:
+        user_id = int(user_id_str)
+    except ValueError:
+        return Response(
+            '<?xml version="1.0" encoding="UTF-8"?><Response><Say>Invalid user.</Say></Response>',
+            status=200,
+            mimetype="text/xml",
+        )
+
+    title = _get_task_title(task_id) or "your task"
+
+    if digit == "1":
+        _mark_task_done_supabase(task_id)
+        _send_telegram(user_id, f"✅ Great! Marked <b>{title}</b> as done via phone call. Keep it up!")
+        response_say = "Awesome! Marked as done. Keep it up!"
+    elif digit == "2":
+        _skip_task_supabase(task_id, user_id)
+        _send_telegram(user_id, f"⏭ Skipped <b>{title}</b> for now.")
+        response_say = "Got it, skipped for now."
+    else:
+        response_say = "I'll remind you again in one hour."
+
+    return Response(
+        f'<?xml version="1.0" encoding="UTF-8"?><Response><Say>{response_say}</Say></Response>',
+        status=200,
+        mimetype="text/xml",
+    )
 
 
 @app.route("/health", methods=["GET"])

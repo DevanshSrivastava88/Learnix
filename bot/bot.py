@@ -210,6 +210,10 @@ async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if await handle_schedule_timesheet(update, ctx):
         return
 
+    # Delay duration response (when user was asked "how long?")
+    if await handle_delay_duration_response(update, ctx):
+        return
+
     # Skip reschedule flow
     from tasks.handlers import handle_skip_response
     if await handle_skip_response(update, ctx):
@@ -417,6 +421,10 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
         await cmd_info(update, ctx)
     elif intent == "show_settings":
         await tasks_handlers.cmd_settings(update, ctx)
+    elif intent == "mark_important":
+        await handle_mark_important_freetext(update, ctx, text, claude_svc)
+    elif intent == "delay":
+        await handle_delay_intent(update, ctx, text)
     elif intent in ("done", "skip_task", "delete_task", "pause_task"):
         # Bare "done"/"skip" with no task name — check last reminded task first
         if intent in ("done", "skip_task") and text.lower().strip() in ("done", "skip"):
@@ -1539,6 +1547,185 @@ async def handle_schedule_timesheet(update: Update, ctx: ContextTypes.DEFAULT_TY
 
     await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.MARKDOWN)
     return True
+
+
+async def handle_mark_important_freetext(
+    update: Update,
+    ctx: ContextTypes.DEFAULT_TYPE,
+    text: str,
+    claude_svc,
+) -> None:
+    """Handle 'mark_important' intent: mark a task as important."""
+    import tasks.svc as task_db
+
+    uid = update.effective_user.id
+    tasks = task_db.list_tasks(uid)
+    if not tasks:
+        await update.message.reply_text("You don't have any active tasks right now.")
+        return
+
+    # Extract task name from message
+    try:
+        task_name = claude_svc.extract_task_name_from_message(text)
+    except Exception:
+        task_name = ""
+
+    if not task_name:
+        # Try last reminded task
+        last_id = ctx.bot_data.get("last_reminded", {}).get(uid)
+        if last_id:
+            task = next((t for t in tasks if t["id"] == last_id), None)
+            if task:
+                task_db.mark_important(task["id"])
+                await update.message.reply_text(
+                    f"Got it — *{task['title']}* is now marked ⚡ important. "
+                    f"I'll keep reminding you every hour until you do it.",
+                    parse_mode=ParseMode.MARKDOWN,
+                )
+                return
+        await update.message.reply_text("Which task should I mark as important? Try: 'mark workout as important'.")
+        return
+
+    matches = _fuzzy_match_task(task_name, tasks)
+    if not matches:
+        await update.message.reply_text(
+            f"Couldn't find a task matching *{task_name}*. Try /tasks to see your list.",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+        return
+
+    if len(matches) > 1:
+        names = "\n".join(f"  • {t['title']}" for t in matches[:3])
+        await update.message.reply_text(
+            f"Which task did you mean?\n{names}\n\nBe more specific.",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+        return
+
+    task = matches[0]
+    task_db.mark_important(task["id"])
+    await update.message.reply_text(
+        f"Got it — *{task['title']}* is now marked ⚡ important. "
+        f"I'll keep reminding you every hour until you do it.",
+        parse_mode=ParseMode.MARKDOWN,
+    )
+
+
+async def handle_delay_intent(
+    update: Update,
+    ctx: ContextTypes.DEFAULT_TYPE,
+    text: str,
+) -> None:
+    """Handle explicit 'delay' intent — extract duration if given, else ask."""
+    uid = update.effective_user.id
+    last_id = ctx.bot_data.get("last_reminded", {}).get(uid)
+    if not last_id:
+        await update.message.reply_text("No recent reminder to delay. Say the task name explicitly, e.g. 'delay workout by 30 mins'.")
+        return
+
+    duration_minutes = _parse_delay_duration(text)
+    if duration_minutes is None:
+        # Ask how long
+        ctx.user_data["pending_delay_task_id"] = last_id
+        await update.message.reply_text(
+            "How long? Reply with a time like '30 mins', '2 hours', or just say '1 hour' to use the default."
+        )
+        return
+
+    await _apply_delay(update, ctx, last_id, duration_minutes)
+
+
+async def handle_delay_duration_response(
+    update: Update,
+    ctx: ContextTypes.DEFAULT_TYPE,
+) -> bool:
+    """Called from handle_text. Handles duration reply after a 'delay?' prompt. Returns True if consumed."""
+    task_id = ctx.user_data.get("pending_delay_task_id")
+    if not task_id:
+        return False
+
+    text = update.message.text.strip()
+    duration_minutes = _parse_delay_duration(text)
+    if duration_minutes is None:
+        # Default 1 hour if we can't parse
+        duration_minutes = 60
+
+    ctx.user_data.pop("pending_delay_task_id", None)
+    await _apply_delay(update, ctx, task_id, duration_minutes)
+    return True
+
+
+async def _apply_delay(
+    update: Update,
+    ctx: ContextTypes.DEFAULT_TYPE,
+    task_id: str,
+    duration_minutes: int,
+) -> None:
+    """Apply a delay to a task by rescheduling its next_reminder_at."""
+    import tasks.svc as task_db
+    from datetime import datetime, timezone, timedelta
+
+    uid = update.effective_user.id
+    all_tasks = task_db.list_tasks(uid)
+    task = next((t for t in all_tasks if t["id"] == task_id), None)
+    if not task:
+        await update.message.reply_text("Couldn't find that task. Try /tasks to see your list.")
+        return
+
+    new_time = datetime.now(timezone.utc) + timedelta(minutes=duration_minutes)
+    task_db.reschedule_task(task_id, new_time)
+
+    if duration_minutes < 60:
+        duration_str = f"{duration_minutes} min"
+    elif duration_minutes == 60:
+        duration_str = "1 hour"
+    else:
+        hours = duration_minutes // 60
+        mins = duration_minutes % 60
+        duration_str = f"{hours}h" + (f" {mins}m" if mins else "")
+
+    await update.message.reply_text(
+        f"Got it! I'll remind you about *{task['title']}* in {duration_str}. ⏳",
+        parse_mode=ParseMode.MARKDOWN,
+    )
+
+
+def _parse_delay_duration(text: str) -> int | None:
+    """Parse delay duration from text. Returns minutes, or None if can't parse.
+    Also detects bare 'delay' or 'remind me later' with no duration.
+    """
+    import re
+    text_lower = text.lower().strip()
+
+    # Check for bare delay words with no duration info
+    bare_delay = re.match(r'^(delay|remind me later|later|snooze)$', text_lower)
+    if bare_delay:
+        return None
+
+    # Look for hour + minute patterns
+    # e.g. "2 hours", "1.5 hours", "30 mins", "45 minutes", "1 hour 30 mins"
+    hours_match = re.search(r'(\d+(?:\.\d+)?)\s*h(?:ours?)?', text_lower)
+    mins_match = re.search(r'(\d+)\s*m(?:in(?:utes?)?)?', text_lower)
+
+    total_minutes = 0
+    found = False
+
+    if hours_match:
+        total_minutes += int(float(hours_match.group(1)) * 60)
+        found = True
+    if mins_match:
+        total_minutes += int(mins_match.group(1))
+        found = True
+
+    if found and total_minutes > 0:
+        return total_minutes
+
+    # Bare number — treat as minutes
+    bare_num = re.match(r'^(\d+)$', text_lower)
+    if bare_num:
+        return int(bare_num.group(1))
+
+    return None
 
 
 async def _reminder_job(ctx: ContextTypes.DEFAULT_TYPE) -> None:

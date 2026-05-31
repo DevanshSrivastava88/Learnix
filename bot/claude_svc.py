@@ -86,7 +86,7 @@ def classify_intent(text: str) -> str:
     """Classify free-form message into one of: task | show_tasks | show_schedule |
     show_progress | show_goals | show_graph | show_skipgraph | start_study | study |
     show_topics | study_topic | skip_topic |
-    breakdown | done | skip_task | delete_task | pause_task |
+    breakdown | done | skip_task | delete_task | pause_task | mark_important | delay |
     set_time | reschedule_task | add_topic | manage_goal | clear_data | show_help |
     show_settings | create_goal | chat"""
     result = _ask_json(
@@ -148,6 +148,12 @@ def classify_intent(text: str) -> str:
         f'- "add_topic": user wants to add a topic to a study goal '
         f'(e.g. "add recursion to my Python goal", "add topic X", "I want to add X to my learning", '
         f'"add X as a topic", "put X in my goal")\n'
+        f'- "delay": user wants to delay/snooze/postpone a reminder '
+        f'(e.g. "delay", "remind me later", "snooze", "delay 30 mins", "delay by 1 hour", '
+        f'"not now", "later", "give me 30 more minutes")\n'
+        f'- "mark_important": user wants to mark a specific task as important or high-priority '
+        f'(e.g. "this is important", "mark workout as important", "I really need to do X", '
+        f'"X is urgent", "make X high priority", "X is critical")\n'
         f'- "manage_goal": user wants to delete, pause, or edit a study goal '
         f'(e.g. "delete my Python goal", "pause my React goal", "edit my goal name", '
         f'"remove my goal", "I want to stop learning X")\n'
@@ -170,7 +176,8 @@ def classify_intent(text: str) -> str:
         f'- "create_goal" takes priority over "start_study" when user says "I want to learn X" or "teach me X" with a subject name.\n'
         f'- "breakdown" takes priority over "study" when the message contains "break down" or "steps for".\n'
         f'- "study_topic" and "skip_topic" take priority when user mentions a SPECIFIC NAMED topic with study/skip/jump action words.\n'
-        f'- "done"/"skip_task"/"delete_task"/"pause_task" take priority when user mentions a specific task name with those action words.\n'
+        f'- "done"/"skip_task"/"delete_task"/"pause_task"/"mark_important" take priority when user mentions a specific task name with those action words.\n'
+        f'- "delay" takes priority when user clearly wants to snooze/delay a reminder.\n'
         f'- "add_topic" takes priority when user clearly wants to add a topic to an existing goal.\n'
         f'- "manage_goal" takes priority when user wants to delete/pause/edit a goal.\n'
         f'- Default to "chat" when genuinely unsure (not "task"). Only use "task" when user clearly wants to CREATE something.\n'
@@ -266,7 +273,9 @@ def breakdown_study_goal(goal_name: str, difficulty: str = "medium") -> list[str
 
 
 def parse_task(text: str) -> dict:
-    """Parse natural language task. Returns type: reminder | interval_reminder | habit."""
+    """Parse natural language task. Returns type: reminder | habit.
+    Note: interval_reminder is no longer generated — 'every hour' style is treated as a habit (recurrence_days=1).
+    """
     from datetime import datetime
     import pytz
     IST = pytz.timezone("Asia/Kolkata")
@@ -276,22 +285,20 @@ def parse_task(text: str) -> dict:
         f"Current date and time: {now_str}. Extract task info from this message: \"{text}\"\n\n"
         "Return ONLY a JSON object, no markdown:\n"
         "{\n"
-        "  \"type\": \"reminder\" or \"interval_reminder\" or \"habit\",\n"
+        "  \"type\": \"reminder\" or \"habit\",\n"
         "  \"title\": \"short task name (3-5 words)\",\n"
         "  \"description\": \"optional detail or empty string\",\n"
         "  \"delay_minutes\": integer (for reminders — how many minutes from now, e.g. 20),\n"
-        "  \"interval_minutes\": integer (for interval_reminder — repeat every X minutes, e.g. 60 for every hour),\n"
         "  \"recurrence_days\": integer (for habits — 1=daily, 7=weekly),\n"
         "  \"clarify\": \"one question if critical info is missing, else empty string\"\n"
         "}\n\n"
         "Rules:\n"
         "- 'reminder': one-time — phrases like 'in 20 mins', 'in 2 hours', 'at 5pm', 'in 10', 'remind me in X'\n"
-        "- 'interval_reminder': repeating intra-day — 'every hour', 'every 30 mins', 'every 2 hours', 'remind me every X'\n"
-        "- 'habit': daily/weekly — 'every day', 'daily', 'every morning', or no time/delay specified\n"
+        "- 'habit': daily/weekly or repeating pattern — 'every day', 'daily', 'every morning', 'every hour', "
+        "'remind me every X', or no time/delay specified. Treat 'every hour' and 'every X mins/hours' as habit with recurrence_days=1\n"
         "- A bare number like 'in 10' or 'remind in 10' always means 10 minutes (reminder)\n"
-        "- For reminder: set delay_minutes as integer minutes from now, others null\n"
-        "- For interval_reminder: set interval_minutes (e.g. 60 for hourly, 30 for every 30 min), others null\n"
-        "- For habit: set recurrence_days (default 1), others null\n"
+        "- For reminder: set delay_minutes as integer minutes from now, recurrence_days null\n"
+        "- For habit: set recurrence_days (default 1), delay_minutes null\n"
         "- Convert hours to minutes: '2 hours' = 120, '1.5 hours' = 90\n"
         "- Only ask clarify if genuinely ambiguous\n"
         "- Keep title short (3-5 words)\n"

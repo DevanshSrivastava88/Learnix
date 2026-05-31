@@ -57,10 +57,10 @@ def get_all_twilio_users() -> list:
     return res.data or []
 
 
-def make_reminder_call(user_id: int, task_title: str) -> bool:
+def make_reminder_call(user_id: int, task_id: str, task_title: str, railway_url: str = "") -> bool:
     """
-    Phase 1: call user's phone, ring for 20s then hang up → they see a missed call.
-    Phase 2 (later): swap twiml to <Say> the task name.
+    IVR call with Gather: user can press 1 (done) or 2 (skip).
+    Falls back to plain <Say> if no railway_url is set.
     Returns True if call was placed successfully.
     """
     account_sid  = os.environ.get("TWILIO_ACCOUNT_SID")
@@ -80,15 +80,27 @@ def make_reminder_call(user_id: int, task_title: str) -> bool:
         from twilio.rest import Client
         client = Client(account_sid, auth_token)
 
-        # Phase 1: ring and hang up (user sees missed call)
-        # Phase 2: replace twiml with <Say> to speak the task name
-        twiml = f"<Response><Say>Hey! Time to {task_title}. Don't forget!</Say><Pause length='2'/></Response>"
+        if railway_url:
+            # IVR with digit input — user presses 1 (done) or 2 (skip)
+            action_url = f"{railway_url}/twilio/call-response?task_id={task_id}&user_id={user_id}"
+            twiml = (
+                '<?xml version="1.0" encoding="UTF-8"?>'
+                "<Response>"
+                f'<Gather numDigits="1" timeout="10" action="{action_url}" method="POST">'
+                f"<Say>Time for {task_title}. Press 1 if you're done. Press 2 to skip. You have 10 seconds.</Say>"
+                "</Gather>"
+                "<Say>No response recorded. I'll remind you again in one hour.</Say>"
+                "</Response>"
+            )
+        else:
+            # Fallback: plain announcement
+            twiml = f"<Response><Say>Hey! Time to {task_title}. Don't forget!</Say><Pause length='2'/></Response>"
 
         call = client.calls.create(
             to=to_number,
             from_=from_number,
             twiml=twiml,
-            timeout=20,  # ring for 20 seconds max
+            timeout=20,
         )
         logger.info(f"Twilio call placed to {to_number} for '{task_title}' — SID: {call.sid}")
         return True

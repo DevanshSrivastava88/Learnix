@@ -105,6 +105,40 @@ def count_milestones(task_id: str) -> dict:
     return {"total": len(items), "done": sum(1 for m in items if m["done"])}
 
 
+def is_important(task: dict) -> bool:
+    """Return True if the task is marked important (via description prefix)."""
+    desc = task.get("description", "") or ""
+    return desc.startswith("important:true")
+
+
+def mark_important(task_id: str) -> None:
+    """Mark task as important by prepending 'important:true|' to description."""
+    task = get_task(task_id)
+    if not task:
+        return
+    desc = task.get("description", "") or ""
+    # Already marked — no-op
+    if desc.startswith("important:true"):
+        return
+    new_desc = f"important:true|{desc}"
+    update_task(task_id, description=new_desc)
+
+
+def unmark_important(task_id: str) -> None:
+    """Remove important flag from task description."""
+    task = get_task(task_id)
+    if not task:
+        return
+    desc = task.get("description", "") or ""
+    if desc.startswith("important:true|"):
+        new_desc = desc[len("important:true|"):]
+    elif desc == "important:true":
+        new_desc = ""
+    else:
+        return
+    update_task(task_id, description=new_desc)
+
+
 def log_skip(user_id: int, task_id: str, note: str = "outright") -> dict:
     res = get_client().table("task_skips").insert({
         "user_id": user_id,
