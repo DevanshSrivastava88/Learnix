@@ -15,7 +15,6 @@ import settings_svc
 import twilio_svc
 import study.handlers as study_handlers
 import tasks.handlers as tasks_handlers
-import tasks.timesheet_handlers as timesheet_handlers
 from scheduler import register_jobs
 
 load_dotenv()
@@ -34,12 +33,11 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
         f"👋 Hey *{first_name}*! I'm your AI life OS — just talk to me naturally.\n\n"
         f"📚 *Study* — /goal, /study\n"
-        f"✅ *Tasks* — just say what you want to track, or use /newtask\n"
+        f"✅ *Tasks* — just say what you want to track\n"
         f"⏰ *Reminders* — say 'remind me to X in Y mins'\n"
-        f"📅 /schedule — your full day view\n"
-        f"🗓 /timesheet — plan today's habits with times\n"
+        f"📅 /schedule — your full day view + plan habit times\n"
         f"📊 /tasks — see everything\n"
-        f"📈 /graph — activity graph  |  /skipgraph — skip analytics\n"
+        f"📈 /graph — activity + skip analytics\n"
         f"⚙️ /settings — tweak reminder times",
         parse_mode=ParseMode.MARKDOWN,
     )
@@ -60,16 +58,14 @@ async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         "/progress — Progress view\n"
         "/editgoal, /deletegoal, /pausegoal — Manage goals\n\n"
         "*Tasks & Reminders:*\n"
-        "Just talk naturally — or use /newtask\n"
-        "/schedule — Your full day view\n"
-        "/timesheet — Plan today's habits with times\n"
+        "Just talk naturally — 'workout every day', 'remind me at 9pm'\n"
+        "/schedule — Full day view; reply with times to plan habits\n"
         "/tasks — List all tasks\n"
-        "/skipgraph — Skip patterns graph\n"
         "/done\\_<id> — Mark task done\n"
         "/deletetask — Delete a task\n"
         "/pause, /resume — Pause or resume\n\n"
         "*Analytics:*\n"
-        "/graph — Activity graph (last 30 days)\n\n"
+        "/graph — Activity + skip patterns (last 30 days)\n\n"
         "*Settings:*\n"
         "/settings — View settings\n"
         "/settime, /setmorning, /seteod — Set reminder times\n"
@@ -138,31 +134,25 @@ async def handle_time_input(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> b
 
 
 # ---------------------------------------------------------------------------
-# /graph — Activity trend graph
+# /graph — Activity trend graph + skip analytics in one place
 # ---------------------------------------------------------------------------
-
-async def cmd_skipgraph(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    uid = update.effective_user.id
-    await update.message.reply_text("Generating your skip analytics... 📊")
-    try:
-        import analytics_svc
-        buf = analytics_svc.build_skip_graph(uid)
-        await update.message.reply_photo(buf, caption="Your skip patterns — last 30 days 📉\nRed bars = most-skipped days. Green line = completion rate.")
-    except Exception as e:
-        logger.error(f"Skip graph failed for {uid}: {e}")
-        await update.message.reply_text(f"Couldn't generate the graph right now: {e}")
-
 
 async def cmd_graph(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     uid = update.effective_user.id
-    await update.message.reply_text("Generating your activity graph... 📊")
+    await update.message.reply_text("Generating your graphs... 📊")
+    import analytics_svc
     try:
-        import analytics_svc
         buf = analytics_svc.build_graph(uid)
         await update.message.reply_photo(buf, caption="Your activity over the last 30 days 📈")
     except Exception as e:
         logger.error(f"Graph failed for {uid}: {e}")
-        await update.message.reply_text(f"Couldn't generate the graph right now: {e}")
+        await update.message.reply_text(f"Couldn't generate activity graph: {e}")
+    try:
+        buf = analytics_svc.build_skip_graph(uid)
+        await update.message.reply_photo(buf, caption="Your skip patterns — last 30 days 📉\nRed bars = most-skipped days. Green line = completion rate.")
+    except Exception as e:
+        logger.error(f"Skip graph failed for {uid}: {e}")
+        await update.message.reply_text(f"Couldn't generate skip graph: {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -203,6 +193,10 @@ async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
     # Clear confirmation flow
     if await handle_clear_confirm(update, ctx):
+        return
+
+    # Schedule timesheet inline reply
+    if await handle_schedule_timesheet(update, ctx):
         return
 
     # Skip reschedule flow
@@ -285,10 +279,8 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
         await study_handlers.cmd_progress(update, ctx)
     elif intent == "show_goals":
         await study_handlers.cmd_goals(update, ctx)
-    elif intent == "show_graph":
+    elif intent in ("show_graph", "show_skipgraph"):
         await cmd_graph(update, ctx)
-    elif intent == "show_skipgraph":
-        await cmd_skipgraph(update, ctx)
     elif intent == "start_study":
         await study_handlers.cmd_study(update, ctx)
     elif intent == "study":
@@ -324,10 +316,8 @@ async def cmd_info(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         "━━━━━━━━━━━━━━━━━━\n"
         "✅ *HABITS & TASKS*\n"
         "Just say it — _'I want to run every day'_ and I'll add it\n"
-        "/newtask — Add a habit or reminder\n"
         "/tasks — See all active tasks\n"
-        "/timesheet — Plan today: _'workout at 7am, reading at 10pm'_\n"
-        "/schedule — Full day view with times\n\n"
+        "/schedule — Full day view; reply with times to plan habits today\n\n"
 
         "━━━━━━━━━━━━━━━━━━\n"
         "⏰ *REMINDERS*\n"
@@ -339,8 +329,7 @@ async def cmd_info(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
         "━━━━━━━━━━━━━━━━━━\n"
         "📊 *INSIGHTS*\n"
-        "/graph — Activity over last 30 days\n"
-        "/skipgraph — Skip patterns + completion rate\n\n"
+        "/graph — Activity + skip patterns (last 30 days)\n\n"
 
         "━━━━━━━━━━━━━━━━━━\n"
         "⚙️ *SETTINGS*\n"
@@ -518,10 +507,80 @@ async def cmd_schedule(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
             else:
                 lines.append(f"  ⏰ *{title}*  →  fires at {next_str}")
 
+    # Offer to plan habit times inline
+    if habits:
+        lines.append(
+            "\n_Want to plan your day? Reply with times, e.g. 'workout at 8am, pushups in 30 mins'_"
+        )
+        ctx.user_data["schedule_timesheet_habits"] = habits
+
     await update.message.reply_text(
         "\n".join(lines),
         parse_mode=ParseMode.MARKDOWN,
     )
+
+
+async def handle_schedule_timesheet(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> bool:
+    """Called from handle_text. Handles inline time-planning reply after /schedule.
+    Returns True if consumed."""
+    habits = ctx.user_data.get("schedule_timesheet_habits")
+    if not habits:
+        return False
+
+    text = update.message.text.strip()
+    uid = update.effective_user.id
+
+    # Only consume if the message looks like it contains time-scheduling language.
+    # We check for common time keywords so random messages don't get swallowed.
+    time_keywords = ("at ", "am", "pm", "in ", "mins", "min", "hour", "tonight", "morning", "noon", "midnight")
+    if not any(kw in text.lower() for kw in time_keywords):
+        # Not a scheduling reply — clear the state and let the message fall through.
+        ctx.user_data.pop("schedule_timesheet_habits", None)
+        return False
+
+    ctx.user_data.pop("schedule_timesheet_habits", None)
+
+    import tasks.svc as task_db
+    import skip_time_parser as stp
+    import tasks.timesheet_handlers as ts
+
+    habit_names = [h["title"] for h in habits]
+    parsed = ts._parse_timesheet_input(text, habit_names)
+
+    scheduled = []
+    unmatched = []
+
+    for raw_name, time_str in parsed.items():
+        task = ts._find_habit(raw_name, habits)
+        if not task:
+            unmatched.append(raw_name)
+            continue
+        dt = stp.parse_time_expression(time_str)
+        if dt is None:
+            unmatched.append(f"{raw_name} (bad time: {time_str})")
+            continue
+        task_db.reschedule_task(task["id"], dt)
+        scheduled.append((task["title"], dt))
+
+    if not scheduled:
+        await update.message.reply_text(
+            "Couldn't parse any times from that. Try: `workout at 8am, reading at 10pm`",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+        return True
+
+    import pytz
+    IST = pytz.timezone("Asia/Kolkata")
+    lines = ["📅 *Today's plan:*\n"]
+    for title, dt in sorted(scheduled, key=lambda x: x[1]):
+        ist_time = dt.astimezone(IST).strftime("%I:%M %p")
+        lines.append(f"  • *{title}* at {ist_time}")
+    if unmatched:
+        lines.append(f"\n_Couldn't schedule: {', '.join(unmatched)}_")
+    lines.append("\nI'll remind you at each time. 🎯")
+
+    await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.MARKDOWN)
+    return True
 
 
 async def _reminder_job(ctx: ContextTypes.DEFAULT_TYPE) -> None:
@@ -555,7 +614,6 @@ def main() -> None:
     app.add_handler(CommandHandler("setmorning", cmd_setmorning))
     app.add_handler(CommandHandler("seteod", cmd_seteod))
     app.add_handler(CommandHandler("graph", cmd_graph))
-    app.add_handler(CommandHandler("skipgraph", cmd_skipgraph))
     app.add_handler(CommandHandler("schedule", cmd_schedule))
     app.add_handler(CommandHandler("info", cmd_info))
     app.add_handler(CommandHandler("clear", cmd_clear))
@@ -571,10 +629,6 @@ def main() -> None:
     for h in tasks_handlers.get_handlers():
         app.add_handler(h)
 
-    # Timesheet handlers
-    for h in timesheet_handlers.get_handlers():
-        app.add_handler(h)
-
     # Contact sharing handler (for /twilio on phone number collection)
     app.add_handler(MessageHandler(filters.CONTACT, handle_contact))
 
@@ -586,11 +640,9 @@ def main() -> None:
         from telegram import BotCommand
         await application.bot.set_my_commands([
             BotCommand("info",      "How everything works"),
-            BotCommand("schedule",  "Your full day at a glance"),
-            BotCommand("timesheet", "Plan today with times"),
+            BotCommand("schedule",  "Your full day + plan habit times"),
             BotCommand("tasks",     "List active tasks"),
-            BotCommand("graph",     "Activity graph"),
-            BotCommand("skipgraph", "Skip patterns graph"),
+            BotCommand("graph",     "Activity + skip patterns graph"),
             BotCommand("settings",  "View & update settings"),
             BotCommand("clear",     "Delete all your data"),
             BotCommand("twilio",    "Missed call notifications"),
