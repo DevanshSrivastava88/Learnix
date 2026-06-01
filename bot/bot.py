@@ -166,8 +166,135 @@ async def cmd_graph(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 # Global text handler (yes/later for study, quiz answers, time inputs)
 # ---------------------------------------------------------------------------
 
+async def _resolve_pending_task_action(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> bool:
+    """If user was asked to disambiguate a task action, resolve it now. Returns True if consumed."""
+    pending = ctx.user_data.get("pending_task_action")
+    if not pending:
+        return False
+
+    import tasks.svc as task_db
+    import analytics_svc
+    import settings_svc as settings_db
+
+    uid = update.effective_user.id
+    reply = update.message.text.strip()
+    action = pending["action"]
+    candidates = pending["candidates"]  # list of {"id": ..., "title": ...}
+
+    # Fuzzy match user's reply against candidate titles
+    matched = _fuzzy_match_task(reply, candidates)
+
+    if not matched:
+        names = "\n".join(f"  • {c['title']}" for c in candidates)
+        await update.message.reply_text(
+            f"Which one did you mean?\n{names}",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+        return True
+
+    if len(matched) > 1:
+        names = "\n".join(f"  • {t['title']}" for t in matched)
+        await update.message.reply_text(
+            f"Still a few matches — which one?\n{names}",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+        return True
+
+    # Exact match — perform the action
+    ctx.user_data.pop("pending_task_action", None)
+    task_id = matched[0]["id"]
+
+    # Fetch full task row (candidates only have id+title)
+    all_tasks = task_db.list_tasks(uid)
+    task = next((t for t in all_tasks if t["id"] == task_id), None)
+    if not task:
+        await update.message.reply_text("Couldn't find that task. Try /tasks to see your list.")
+        return True
+
+    if action == "done":
+        task_db.mark_done(task["id"])
+        analytics_svc.log_activity(uid, "habit", note=task["title"])
+        settings_db.update_streak(uid, __import__("datetime").date.today())
+        settings = settings_db.get_settings(uid)
+        streak = settings.get("streak", 0) or 0
+        streak_line = f"🔥 {streak} day streak!" if streak > 1 else "Nice, keep it up!"
+        recur = task.get("recurrence_days", 1)
+        await update.message.reply_text(
+            f"Done! ✅ *{task['title']}*  {streak_line}\nI'll remind you again in {recur} day(s).",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+
+    elif action == "skip_task":
+        from datetime import datetime, timezone, timedelta
+        task_db.log_skip(uid, task["id"], note="outright")
+        next_at = datetime.now(timezone.utc) + timedelta(days=task.get("recurrence_days", 1))
+        task_db.reschedule_task(task["id"], next_at)
+        await update.message.reply_text(
+            f"Skipped! I'll remind you about *{task['title']}* again in {task.get('recurrence_days', 1)} day(s).",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+
+    elif action == "delete_task":
+        task_db.delete_task(task["id"])
+        await update.message.reply_text(
+            f"Gone! 🗑️ *{task['title']}* has been deleted.",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+
+    elif action == "pause_task":
+        task_db.update_task(task["id"], status="paused")
+        await update.message.reply_text(
+            f"Paused ⏸️ *{task['title']}*. Use /resume when you're ready to pick it up again.",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+
+    elif action == "mark_important":
+        task_db.mark_important(task["id"])
+        await update.message.reply_text(
+            f"Got it — *{task['title']}* is now marked ⚡ important. "
+            f"I'll keep reminding you every hour until you do it.",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+
+    elif action == "reschedule_task":
+        # pending also has "time_str" stored at disambiguation time
+        time_str = pending.get("time_str", "")
+        if not time_str:
+            await update.message.reply_text(
+                f"What time should I remind you about *{task['title']}*? (e.g. '6am', '8:30pm')",
+                parse_mode=ParseMode.MARKDOWN,
+            )
+            return True
+        import pytz
+        from datetime import datetime, timezone, timedelta
+        IST = pytz.timezone("Asia/Kolkata")
+        try:
+            h, m = map(int, time_str.split(":"))
+            now_ist = datetime.now(IST)
+            target_ist = now_ist.replace(hour=h, minute=m, second=0, microsecond=0)
+            if target_ist <= now_ist:
+                target_ist += timedelta(days=1)
+            new_time_utc = target_ist.astimezone(timezone.utc)
+        except Exception:
+            await update.message.reply_text("Couldn't parse that time. Try something like '6am' or '20:30'.")
+            return True
+        task_db.reschedule_task(task["id"], new_time_utc)
+        when_label = new_time_utc.astimezone(IST).strftime("%I:%M %p")
+        day_label = "today" if new_time_utc.astimezone(IST).date() == datetime.now(IST).date() else "tomorrow"
+        await update.message.reply_text(
+            f"Done! I'll remind you about *{task['title']}* at {when_label} {day_label} 👍",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+
+    return True
+
+
 async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if await handle_time_input(update, ctx):
+        return
+
+    # Resolve disambiguation for task actions (done/skip/delete/pause/mark_important/reschedule)
+    if await _resolve_pending_task_action(update, ctx):
         return
 
     uid = update.effective_user.id
@@ -702,10 +829,14 @@ async def handle_task_action_freetext(
         return
 
     if len(matches) > 1:
-        # Ambiguous — ask which one
+        # Ambiguous — store pending state then ask which one
+        ctx.user_data["pending_task_action"] = {
+            "action": intent,
+            "candidates": [{"id": t["id"], "title": t["title"]} for t in matches[:3]],
+        }
         names = "\n".join(f"  • {t['title']}" for t in matches[:3])
         await update.message.reply_text(
-            f"Which task did you mean?\n{names}\n\nTap the right one via /tasks and use the command.",
+            f"Which task did you mean?\n{names}",
             parse_mode=ParseMode.MARKDOWN,
         )
         return
@@ -792,9 +923,14 @@ async def handle_reschedule_task_freetext(
         return
 
     if len(matches) > 1:
+        ctx.user_data["pending_task_action"] = {
+            "action": "reschedule_task",
+            "candidates": [{"id": t["id"], "title": t["title"]} for t in matches[:3]],
+            "time_str": time_str,
+        }
         names = "\n".join(f"  • {t['title']}" for t in matches[:3])
         await update.message.reply_text(
-            f"Which task did you mean?\n{names}\n\nBe more specific, e.g. 'move morning workout to 6am'.",
+            f"Which task did you mean?\n{names}",
             parse_mode=ParseMode.MARKDOWN,
         )
         return
@@ -1595,9 +1731,13 @@ async def handle_mark_important_freetext(
         return
 
     if len(matches) > 1:
+        ctx.user_data["pending_task_action"] = {
+            "action": "mark_important",
+            "candidates": [{"id": t["id"], "title": t["title"]} for t in matches[:3]],
+        }
         names = "\n".join(f"  • {t['title']}" for t in matches[:3])
         await update.message.reply_text(
-            f"Which task did you mean?\n{names}\n\nBe more specific.",
+            f"Which task did you mean?\n{names}",
             parse_mode=ParseMode.MARKDOWN,
         )
         return
