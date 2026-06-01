@@ -1,0 +1,158 @@
+# Learnix Bot — Project Memory
+
+**Last updated:** 2026-05-31  
+**Stack:** Python 3.11, python-telegram-bot v21, Gemini 2.5 Flash (`google-generativeai`), Supabase (postgres via `supabase-py`), pytz, matplotlib
+
+---
+
+## What It Is
+
+A multi-user Telegram bot that acts as a personal AI life OS. Two main systems:
+
+1. **Study** — create goals, add topics (tree), teach via Gemini, quiz (5 questions), track streaks
+2. **Tasks / LifeOS** — habits (recurring reminders), milestones (deadline + checklist), free-text intent routing via Gemini
+
+---
+
+## File Map
+
+```
+bot/
+  bot.py                  # main router — registers all handlers, starts scheduler
+  claude_svc.py           # Gemini wrapper: _ask, _ask_json, teach_topic, generate_quiz, score_answer, classify_intent, parse_task, daily_summary
+  scheduler.py            # polling jobs (study/morning/EOD/reminder/motivation), format_morning_brief, format_eod
+  settings_svc.py         # per-user settings CRUD (daily_session_time, morning_brief_time, eod_time, streak)
+  supabase_svc.py         # thin wrapper: get_client() (lazy singleton)
+  analytics_svc.py        # log_activity, get_activity_last_n_days, build_graph (PNG), get_skips_last_n_days, build_skip_graph
+  motivation_svc.py       # 4 research-backed triggers, Gemini message generation, 24h cooldown
+  skip_time_parser.py     # parse_time_expression("3pm" / "in 2 hours" / "tomorrow 9am") → UTC datetime
+  study/
+    svc.py                # goal + topic DB ops (all scoped by user_id)
+    handlers.py           # /goal, /goals, /addtopic, /study, /progress, /editgoal, /deletegoal, /pausegoal
+  tasks/
+    svc.py                # task DB ops: create_task, list_tasks, mark_done, get_due_tasks, log_skip, reschedule_task
+    handlers.py           # /newtask, /tasks, /done_<id>, /pause, /resume, /complete, /skip_<id>, freetext flow
+    timesheet_handlers.py # /timesheet — plan today's habits with natural language times (Gemini parses, skip_time_parser resolves)
+  tests/
+    test_settings_svc.py
+    test_study_svc.py
+    test_tasks_svc.py
+    test_scheduler.py
+    test_analytics_svc.py
+```
+
+---
+
+## Commands
+
+| Command | Handler | Description |
+|---|---|---|
+| /start | bot.py | Register user (creates settings row), show welcome |
+| /help | bot.py | Full command list |
+| /goal | study/handlers.py | Create study goal (name, desc, deadline) |
+| /goals | study/handlers.py | List goals with progress bars |
+| /addtopic | study/handlers.py | Add topic/subtopic to a goal |
+| /study | study/handlers.py | Start study session (teach + quiz) |
+| /progress | study/handlers.py | Full goal+topic progress view |
+| /editgoal, /deletegoal, /pausegoal | study/handlers.py | Goal management |
+| /newtask | tasks/handlers.py | Add habit or milestone (or say it naturally) |
+| /tasks | tasks/handlers.py | List all active tasks |
+| /done\_\<id\> | tasks/handlers.py | Mark habit done (auto-schedules next reminder) |
+| /skip\_\<id\> | tasks/handlers.py | Skip with reschedule or outright skip (logs to task\_skips) |
+| /pause, /resume | tasks/handlers.py | Pause/resume habits |
+| /timesheet | timesheet\_handlers.py | Plan today's habits: "workout at 8am, reading at 10pm" |
+| /schedule | bot.py | Show full day view (automatics + habits + live reminders) |
+| /graph | bot.py | Activity trend graph (last 30 days, PNG) |
+| /skipgraph | bot.py | Skip analytics graph (skips/day bar chart + completion rate line) |
+| /settings | tasks/handlers.py | View current times |
+| /settime, /setmorning, /seteod | bot.py | Update study/morning/EOD times |
+
+---
+
+## Key Flows
+
+### Free-text task creation
+1. `handle_free_text` pre-checks for nav words ("cancel", "back" etc.) before calling Gemini
+2. Gemini `classify_intent` → task / study / chat
+3. If task → `parse_task` (JSON mode) → reminder / interval\_reminder / habit
+4. Shows confirm keyboard → user confirms/edits
+
+### Skip flow (`/skip_<id>`)
+1. `handle_skip_task` sets `pending_skip` in user_data
+2. `handle_skip_response` (called from `handle_text`) consumes next message
+3. If "skip" → `log_skip` + reschedule by recurrence_days
+4. Else → `skip_time_parser.parse_time_expression(text)` → reschedule to that UTC datetime
+
+### Timesheet (`/timesheet`)
+1. Lists active habits
+2. User replies with natural time plan ("workout at 8am, reading at 10pm")
+3. Gemini extracts `{habit_name: time_string}` dict
+4. `skip_time_parser` resolves each to UTC datetime
+5. `reschedule_task` updates `next_reminder_at` for each
+
+### Motivation engine
+4 triggers checked by `motivation_poller` (every 30 min via scheduler):
+- `daily_skip_burst` — 3+ skips today, fires 17-22 IST
+- `streak_broken` — streak > 0 but 2+ days since last study, fires 08-09 IST
+- `low_weekly_rate` — skip rate > 50% last 7 days, fires 08-10 IST
+- `no_activity` — no activity/skips in 2+ days, fires 09-20 IST
+
+24h cooldown enforced via `motivation_log` table. Message generated by Gemini with identity-based (non-guilt-shaming) tone.
+
+---
+
+## Scheduler Jobs (all registered in `scheduler.register_jobs`)
+
+| Job | Interval | What it does |
+|---|---|---|
+| study\_poller | 60s | Sends daily study prompt at user's `daily_session_time` IST |
+| morning\_poller | 60s | Sends morning brief at user's `morning_brief_time` IST |
+| eod\_poller | 60s | Sends EOD check-in at user's `eod_time` IST |
+| reminder\_poller | 300s | Sends habit/milestone reminders for due tasks (all users) |
+| motivation\_poller | 1800s | Checks triggers, sends motivational message (24h cooldown) |
+
+---
+
+## Database Tables
+
+| Table | Key columns | Notes |
+|---|---|---|
+| settings | user\_id (PK), daily\_session\_time, morning\_brief\_time, eod\_time, streak, last\_study\_date | Created on /start |
+| goals | id, user\_id, name, description, target\_date, status | status: in\_progress \| paused \| completed |
+| topics | id, goal\_id, title, notes, parent\_id, order\_index, status, score | Hierarchical; status: not\_started \| completed \| needs\_revision |
+| quiz\_attempts | topic\_id, score, attempted\_at | |
+| tasks | id, user\_id, title, task\_type, status, next\_reminder\_at, recurrence\_days, target\_date | task\_type: habit \| milestone |
+| milestones | id, task\_id, title, done, order\_index | Checklist items for milestone-type tasks |
+| activity\_log | user\_id, event\_type, event\_date, note | event\_type: study \| habit \| milestone; used for /graph |
+| task\_skips | id, user\_id, task\_id, skipped\_at, note | Logged when /skip\_\<id\> used; used for /skipgraph + motivation triggers |
+| motivation\_log | user\_id, trigger\_type, sent\_at | Enforces 24h cooldown |
+
+---
+
+## LLM Notes
+
+- **Model:** `gemini-2.5-flash` via `google-generativeai`
+- `claude_svc.py` (kept as `claude_svc` for historical reasons) wraps all Gemini calls
+- Module-level `genai.configure()` is deferred to first call (`_get_model()`) so test collection doesn't fail without API key
+- JSON mode (`response_mime_type="application/json"`) used for `classify_intent`, `parse_task`, `score_answer`, `generate_quiz`, `_parse_timesheet_input`
+
+---
+
+## Running Tests
+
+```bash
+cd bot
+pip install -r requirements.txt
+python -m pytest tests/ -v
+```
+
+All 17 tests should pass. Tests mock Supabase client and Gemini — no live credentials needed.
+
+---
+
+## Current Gaps / Backlog Notes
+
+- Railway deploy blocked (nixpacks issue, not code-related)
+- `/skipgraph` needs real skip data to be useful
+- No tests for: `skip_time_parser`, `build_skip_graph`, `motivation_svc`, `timesheet_handlers`
+- Gemini replacement with NVIDIA NIM under consideration (OpenAI-compatible, free tier)

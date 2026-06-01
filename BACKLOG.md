@@ -1,19 +1,19 @@
 # Learnix Backlog
 
-_Last updated: 2026-05-28_
+_Last updated: 2026-06-01_
 _Project status: workInProgress_
 _Auto-agent: enabled_
 
 ## 🔥 Immediate (next session)
 
 - [ ] **Test new features live** — skip flow, /timesheet, /skipgraph in Telegram
-- [ ] **Fix "Cancel" pre-check bug** — bare "Cancel" text gets Gemini-classified as a task; needs string check before hitting Gemini in `handle_free_text`
+- [x] **Fix "Cancel" pre-check bug** — bare "Cancel" text gets Gemini-classified as a task; needs string check before hitting Gemini in `handle_free_text`
 - [ ] **Deploy to Railway** — still failing: "Failed to read app source directory" from nixpacks. Railway incident not resolved. Retry later.
 - [ ] **Twilio missed call feature** — optional per-user toggle (on/off via /settings). Use Twilio creds from talking-agent project. User number: +918004844144
 
 ## 📋 Short-term
 
-- [ ] Update project memory with today's changes (motivation engine, skip, timesheet, skipgraph)
+- [x] Update project memory with today's changes (motivation engine, skip, timesheet, skipgraph)
 - [ ] Test motivation engine triggers manually (force a trigger condition, verify message fires)
 - [ ] `/skipgraph` needs data — need actual skips logged before graph is useful
 - [ ] Consider NVIDIA NIM (free LLM API, OpenAI-compatible) as Gemini replacement — build.nvidia.com
@@ -24,6 +24,14 @@ _Auto-agent: enabled_
 - [ ] Multi-user data view with new schema (goals, habits, skips, motivation log)
 - [ ] Activity graph embed
 - [ ] Skip analytics embed
+
+## ✅ Done (2026-06-01)
+
+- Add tests for `skip_time_parser` — 17 cases covering in-X-min/hour, absolute times (am/pm, 24h), tomorrow patterns, roll-to-next-day edge, None on invalid input; suite now 34 tests, all green
+
+## ✅ Done (2026-05-30)
+
+- Fix claude_svc lazy Gemini init — module-level genai.configure() blocked test collection; deferred to first call so all 17 tests pass
 
 ## ✅ Done (2026-05-29)
 
