@@ -38,15 +38,12 @@ def test_create_milestone_returns_task():
         assert result['task_type'] == 'milestone'
 
 def test_mark_done_sets_next_reminder():
-    with patch('tasks.svc.get_task') as mock_get, \
-         patch('tasks.svc.get_client') as mock_client:
-        mock_get.return_value = _row(recurrence_days=2)
-        client = make_client()
-        mock_client.return_value = client
+    with patch.object(tasks_svc, 'get_task', return_value=_row(recurrence_days=2)), \
+         patch.object(tasks_svc, 'update_task') as mock_update:
         tasks_svc.mark_done('task-1')
-        update_call = client.table.return_value.update.call_args
-        updated_data = update_call[0][0]
-        assert 'next_reminder_at' in updated_data
+        mock_update.assert_called_once()
+        _, kwargs = mock_update.call_args
+        assert 'next_reminder_at' in kwargs
 
 def test_get_due_tasks_returns_overdue():
     overdue = _row(next_reminder_at=(datetime.now(timezone.utc) - timedelta(hours=1)).isoformat())
@@ -85,14 +82,12 @@ def test_is_important_false_when_empty():
 
 def test_mark_important_prepends_flag():
     task_data = _row(description='existing detail')
-    with patch('tasks.svc.get_task', return_value=task_data), \
-         patch('tasks.svc.get_client') as mock_client:
-        client = make_client()
-        mock_client.return_value = client
+    with patch.object(tasks_svc, 'get_task', return_value=task_data), \
+         patch.object(tasks_svc, 'update_task') as mock_update:
         tasks_svc.mark_important('task-1')
-        update_call = client.table.return_value.update.call_args
-        updated = update_call[0][0]
-        assert updated['description'] == 'important:true|existing detail'
+        mock_update.assert_called_once()
+        _, kwargs = mock_update.call_args
+        assert kwargs.get('description') == 'important:true|existing detail'
 
 
 def test_mark_important_noop_if_already_important():
@@ -108,11 +103,9 @@ def test_mark_important_noop_if_already_important():
 
 def test_unmark_important_removes_prefix():
     task_data = _row(description='important:true|my notes')
-    with patch('tasks.svc.get_task', return_value=task_data), \
-         patch('tasks.svc.get_client') as mock_client:
-        client = make_client()
-        mock_client.return_value = client
+    with patch.object(tasks_svc, 'get_task', return_value=task_data), \
+         patch.object(tasks_svc, 'update_task') as mock_update:
         tasks_svc.unmark_important('task-1')
-        update_call = client.table.return_value.update.call_args
-        updated = update_call[0][0]
-        assert updated['description'] == 'my notes'
+        mock_update.assert_called_once()
+        _, kwargs = mock_update.call_args
+        assert kwargs.get('description') == 'my notes'

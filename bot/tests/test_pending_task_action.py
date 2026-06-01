@@ -1,76 +1,90 @@
-"""Tests for the pending_task_action disambiguation state machine.
-
-Strategy: test the _fuzzy_match_task helper directly (no DB needed),
-then test the state-storage and resolution logic via bot.py handlers
-with all external deps mocked out.
-"""
+"""Tests for the pending_task_action disambiguation state machine."""
 import sys
 import types
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 # ---------------------------------------------------------------------------
-# Minimal stubs so bot.py can be imported without live services
+# Build a complete stub dict for patch.dict — auto-cleaned up by context manager
 # ---------------------------------------------------------------------------
 
-def _make_stub(name):
-    mod = types.ModuleType(name)
-    sys.modules[name] = mod
-    return mod
+def _make_stubs():
+    stubs = {}
+
+    def stub(name):
+        m = types.ModuleType(name)
+        stubs[name] = m
+        return m
+
+    dotenv = stub("dotenv")
+    dotenv.load_dotenv = lambda: None
+
+    tg = stub("telegram")
+    tg.Update = MagicMock
+    tg.KeyboardButton = MagicMock
+    tg.ReplyKeyboardMarkup = MagicMock
+    tg.ReplyKeyboardRemove = MagicMock
+
+    tg_const = stub("telegram.constants")
+    tg_const.ParseMode = MagicMock()
+    tg_const.ParseMode.MARKDOWN = "Markdown"
+
+    tg_ext = stub("telegram.ext")
+    tg_ext.Application = MagicMock
+    tg_ext.CommandHandler = MagicMock
+    tg_ext.MessageHandler = MagicMock
+    ctx_types = MagicMock()
+    ctx_types.DEFAULT_TYPE = MagicMock()
+    tg_ext.ContextTypes = ctx_types
+    tg_ext.filters = MagicMock()
+
+    settings = stub("settings_svc")
+    settings.update_streak = MagicMock()
+    settings.get_settings = MagicMock()
+
+    twilio = stub("twilio_svc")
+    twilio.is_twilio_enabled = MagicMock(return_value=False)
+
+    analytics = stub("analytics_svc")
+    analytics.log_activity = MagicMock()
+
+    tasks_pkg = stub("tasks")
+    tasks_svc_stub = stub("tasks.svc")
+    for fn in ["list_tasks", "mark_done", "log_skip", "reschedule_task",
+               "delete_task", "update_task", "mark_important"]:
+        setattr(tasks_svc_stub, fn, MagicMock())
+    tasks_pkg.svc = tasks_svc_stub
+
+    tasks_handlers = stub("tasks.handlers")
+    tasks_handlers.get_handlers = lambda: []
+
+    study_pkg = stub("study")
+    study_svc_stub = stub("study.svc")
+    study_pkg.svc = study_svc_stub
+
+    study_handlers = stub("study.handlers")
+    study_handlers.get_handlers = lambda: []
+
+    scheduler = stub("scheduler")
+    scheduler.register_jobs = lambda app: None
+
+    supabase = stub("supabase_svc")
+
+    return stubs
 
 
-for _name in [
-    "dotenv", "telegram", "telegram.constants", "telegram.ext",
-    "settings_svc", "twilio_svc", "study.handlers",
-    "tasks", "tasks.handlers", "tasks.svc",
-    "study", "study.svc",
-    "analytics_svc",
-    "scheduler", "supabase_svc",
-]:
-    if _name not in sys.modules:
-        _make_stub(_name)
+_STUBS = _make_stubs()
 
-# Wire sub-modules onto parent stubs so patch("tasks.svc.list_tasks") resolves
-sys.modules["tasks"].svc = sys.modules["tasks.svc"]
-sys.modules["study"].svc = sys.modules["study.svc"]
+# Import bot once under the stubs — use patch.dict so sys.modules is restored automatically
+with patch.dict(sys.modules, _STUBS), \
+     patch.dict("os.environ", {"TELEGRAM_BOT_TOKEN": "test"}):
+    # Remove bot from sys.modules if cached from another test file
+    sys.modules.pop("bot", None)
+    import bot  # noqa: E402  (module-level import inside context is intentional)
 
-# Pre-populate stub functions so patch() can replace them (create=True alternative)
-for _fn in ["list_tasks", "mark_done", "log_skip", "reschedule_task",
-            "delete_task", "update_task", "mark_important"]:
-    setattr(sys.modules["tasks.svc"], _fn, MagicMock())
-
-for _fn in ["log_activity"]:
-    setattr(sys.modules["analytics_svc"], _fn, MagicMock())
-
-for _fn in ["update_streak", "get_settings"]:
-    setattr(sys.modules["settings_svc"], _fn, MagicMock())
-
-# telegram stubs need a few attributes bot.py references at import time
-tg = sys.modules["telegram"]
-tg.Update = MagicMock
-tg.KeyboardButton = MagicMock
-tg.ReplyKeyboardMarkup = MagicMock
-tg.ReplyKeyboardRemove = MagicMock
-tg_const = sys.modules["telegram.constants"]
-tg_const.ParseMode = MagicMock()
-tg_const.ParseMode.MARKDOWN = "Markdown"
-tg_ext = sys.modules["telegram.ext"]
-tg_ext.Application = MagicMock
-tg_ext.CommandHandler = MagicMock
-tg_ext.MessageHandler = MagicMock
-_ctx_types = MagicMock()
-_ctx_types.DEFAULT_TYPE = MagicMock()
-tg_ext.ContextTypes = _ctx_types
-tg_ext.filters = MagicMock()
-sys.modules["dotenv"].load_dotenv = lambda: None
-sys.modules["study.handlers"].get_handlers = lambda: []
-sys.modules["tasks.handlers"].get_handlers = lambda: []
-sys.modules["scheduler"].register_jobs = lambda app: None
-
-# Now import the module under test
-with patch.dict("os.environ", {"TELEGRAM_BOT_TOKEN": "test"}):
-    import importlib
-    import bot
+# After the with block, sys.modules is restored to pre-stub state.
+# bot is now imported and its functions reference the stub objects captured at import time.
+# That is fine — the tests only call bot functions and patch the stubs in _STUBS directly.
 
 
 # ---------------------------------------------------------------------------
@@ -106,14 +120,11 @@ def test_fuzzy_no_match_returns_empty():
 
 @pytest.mark.asyncio
 async def test_handle_task_action_freetext_stores_pending_on_ambiguous():
-    """When multiple tasks match, pending_task_action must be set before asking."""
-
     tasks_in_db = [
         {"id": "1", "title": "Morning workout", "recurrence_days": 1},
         {"id": "2", "title": "Morning workout — Step 1: Warmup", "recurrence_days": 1},
     ]
 
-    # Build fake update + ctx
     update = MagicMock()
     update.message.reply_text = AsyncMock()
     update.effective_user.id = 42
@@ -125,7 +136,9 @@ async def test_handle_task_action_freetext_stores_pending_on_ambiguous():
     fake_claude = MagicMock()
     fake_claude.extract_task_name_from_message.return_value = "morning workout"
 
-    with patch("tasks.svc.list_tasks", return_value=tasks_in_db):
+    _STUBS["tasks.svc"].list_tasks = MagicMock(return_value=tasks_in_db)
+
+    with patch.dict(sys.modules, _STUBS):
         await bot.handle_task_action_freetext(update, ctx, "done morning workout", "done", fake_claude)
 
     assert "pending_task_action" in ctx.user_data
@@ -134,22 +147,17 @@ async def test_handle_task_action_freetext_stores_pending_on_ambiguous():
     assert len(pending["candidates"]) == 2
     candidate_ids = {c["id"] for c in pending["candidates"]}
     assert "1" in candidate_ids and "2" in candidate_ids
-
-    # Bot should have asked a disambiguation question
     update.message.reply_text.assert_awaited_once()
     msg = update.message.reply_text.call_args[0][0]
     assert "Which task" in msg
 
 
 # ---------------------------------------------------------------------------
-# _resolve_pending_task_action — resolves correctly when user replies
+# _resolve_pending_task_action
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
 async def test_resolve_pending_done_action():
-    """After storing pending_task_action, replying with the task name should mark it done."""
-
-    # Use clearly distinct candidate titles so fuzzy match picks exactly one
     full_tasks = [
         {"id": "1", "title": "Morning workout", "recurrence_days": 1},
         {"id": "2", "title": "Evening run", "recurrence_days": 1},
@@ -172,22 +180,16 @@ async def test_resolve_pending_done_action():
     }
     ctx.bot_data = {}
 
-    fake_settings = {"streak": 3}
+    _STUBS["tasks.svc"].list_tasks = MagicMock(return_value=full_tasks)
+    _STUBS["tasks.svc"].mark_done = MagicMock()
+    _STUBS["settings_svc"].get_settings = MagicMock(return_value={"streak": 3})
 
-    with patch("tasks.svc.list_tasks", return_value=full_tasks), \
-         patch("tasks.svc.mark_done") as mock_mark_done, \
-         patch("analytics_svc.log_activity"), \
-         patch("settings_svc.update_streak"), \
-         patch("settings_svc.get_settings", return_value=fake_settings):
-
+    with patch.dict(sys.modules, _STUBS):
         consumed = await bot._resolve_pending_task_action(update, ctx)
 
     assert consumed is True
-    # pending state must be cleared
     assert "pending_task_action" not in ctx.user_data
-    # mark_done called with the matched task id
-    mock_mark_done.assert_called_once_with("1")
-    # confirmation sent
+    _STUBS["tasks.svc"].mark_done.assert_called_once_with("1")
     update.message.reply_text.assert_awaited_once()
     msg = update.message.reply_text.call_args[0][0]
     assert "Morning workout" in msg
@@ -195,8 +197,6 @@ async def test_resolve_pending_done_action():
 
 @pytest.mark.asyncio
 async def test_resolve_pending_no_match_re_asks():
-    """When the reply doesn't match any candidate, bot re-asks without clearing state."""
-
     update = MagicMock()
     update.message.text = "something totally different"
     update.message.reply_text = AsyncMock()
@@ -215,9 +215,7 @@ async def test_resolve_pending_no_match_re_asks():
     consumed = await bot._resolve_pending_task_action(update, ctx)
 
     assert consumed is True
-    # State must NOT be cleared — still waiting for a valid answer
     assert "pending_task_action" in ctx.user_data
-    # Bot re-asks
     update.message.reply_text.assert_awaited_once()
 
 
@@ -232,7 +230,7 @@ async def test_resolve_returns_false_when_no_pending():
 
 
 # ---------------------------------------------------------------------------
-# handle_mark_important_freetext — stores pending on ambiguous match
+# handle_mark_important_freetext
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
@@ -253,7 +251,9 @@ async def test_handle_mark_important_stores_pending_on_ambiguous():
     fake_claude = MagicMock()
     fake_claude.extract_task_name_from_message.return_value = "morning workout"
 
-    with patch("tasks.svc.list_tasks", return_value=tasks_in_db):
+    _STUBS["tasks.svc"].list_tasks = MagicMock(return_value=tasks_in_db)
+
+    with patch.dict(sys.modules, _STUBS):
         await bot.handle_mark_important_freetext(update, ctx, "mark morning workout important", fake_claude)
 
     assert "pending_task_action" in ctx.user_data
@@ -261,7 +261,7 @@ async def test_handle_mark_important_stores_pending_on_ambiguous():
 
 
 # ---------------------------------------------------------------------------
-# handle_reschedule_task_freetext — stores pending on ambiguous match
+# handle_reschedule_task_freetext
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
@@ -281,7 +281,9 @@ async def test_handle_reschedule_stores_pending_on_ambiguous():
     fake_claude = MagicMock()
     fake_claude.extract_reschedule_info.return_value = {"task_name": "morning workout", "time": "06:00"}
 
-    with patch("tasks.svc.list_tasks", return_value=tasks_in_db):
+    _STUBS["tasks.svc"].list_tasks = MagicMock(return_value=tasks_in_db)
+
+    with patch.dict(sys.modules, _STUBS):
         await bot.handle_reschedule_task_freetext(update, ctx, "reschedule morning workout to 6am", fake_claude)
 
     assert "pending_task_action" in ctx.user_data
