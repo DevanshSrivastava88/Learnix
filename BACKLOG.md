@@ -1,6 +1,6 @@
 # Learnix Backlog
 
-_Last updated: 2026-05-31_
+_Last updated: 2026-06-01_
 _Project status: workInProgress_
 _Auto-agent: enabled_
 
@@ -23,6 +23,10 @@ _Auto-agent: enabled_
 - [ ] Multi-user data view with new schema (goals, habits, skips, motivation log)
 - [ ] Activity graph embed
 - [ ] Skip analytics embed
+
+## ✅ Done (2026-06-01)
+
+- Add tests for `skip_time_parser` — 17 cases covering in-X-min/hour, absolute times (am/pm, 24h), tomorrow patterns, roll-to-next-day edge, None on invalid input; suite now 34 tests, all green
 
 ## ✅ Done (2026-05-30)
 
