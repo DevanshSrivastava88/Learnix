@@ -154,14 +154,20 @@ async def nt_confirm(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
 
     uid = update.effective_user.id
     recur = parsed.get("recurrence_days", 1)
-    task = db.create_task(
-        user_id=uid,
-        title=parsed.get("title", "Task"),
-        task_type="habit",
-        description=parsed.get("description", ""),
-        recurrence_days=recur,
-        target_date=None,
-    )
+    try:
+        task = db.create_task(
+            user_id=uid,
+            title=parsed.get("title", "Task"),
+            task_type="habit",
+            description=parsed.get("description", ""),
+            recurrence_days=recur,
+            target_date=None,
+        )
+    except Exception as e:
+        logger.error(f"nt_confirm create_task failed: {e}")
+        await update.message.reply_text("Something went wrong saving that. Try again!", reply_markup=ReplyKeyboardRemove())
+        ctx.user_data.clear()
+        return ConversationHandler.END
     freq = "every day" if recur == 1 else f"every {recur} days"
     await update.message.reply_text(
         f"Added! 🎉 I'll remind you about *{task['title']}* {freq}.",

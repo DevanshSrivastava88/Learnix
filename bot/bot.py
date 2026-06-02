@@ -1920,6 +1920,12 @@ def main() -> None:
             await u.message.reply_text("Nothing to cancel. 👍")
     app.add_handler(CommandHandler("cancel", _global_cancel))
 
+    async def _cmd_reset(u, c):
+        c.user_data.clear()
+        await u.message.reply_text("State cleared. 👍 You can start fresh now.", reply_markup=ReplyKeyboardRemove())
+
+    app.add_handler(CommandHandler("reset", _cmd_reset))
+
     # Study handlers
     for h in study_handlers.get_handlers():
         app.add_handler(h)
@@ -1952,6 +1958,15 @@ def main() -> None:
         ])
         logger.info("Learnix bot started — all jobs registered.")
 
+    async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+        logger.error("Unhandled exception", exc_info=context.error)
+        if isinstance(update, Update) and update.effective_message:
+            try:
+                await update.effective_message.reply_text("Oops, something broke. Try again or use /cancel to reset.")
+            except Exception:
+                pass
+
+    app.add_error_handler(error_handler)
     app.post_init = on_startup
     logger.info("Starting Learnix bot...")
     app.run_polling(drop_pending_updates=True)
