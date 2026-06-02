@@ -1,6 +1,6 @@
 # Learnix Backlog
 
-_Last updated: 2026-06-01_
+_Last updated: 2026-06-02_
 _Project status: workInProgress_
 _Auto-agent: enabled_
 
@@ -24,6 +24,13 @@ _Auto-agent: enabled_
 - [ ] Multi-user data view with new schema (goals, habits, skips, motivation log)
 - [ ] Activity graph embed
 - [ ] Skip analytics embed
+
+## ✅ Done (2026-06-02)
+
+- Fix test suite ordering failures — add `tests/conftest.py` that pre-imports real modules
+  (`settings_svc`, `scheduler`, `study.handlers`) before `test_pending_task_action.py`'s
+  collection-time stub injection, and restores real `tasks.svc`/`settings_svc` callables
+  before any test runs; suite now 92 tests, all green
 
 ## ✅ Done (2026-06-01)
 
