@@ -95,7 +95,7 @@ def classify_intent(text: str) -> str:
     show_topics | study_topic | skip_topic |
     breakdown | done | skip_task | delete_task | pause_task | mark_important | delay |
     set_time | reschedule_task | add_topic | manage_goal | clear_data | show_help |
-    show_settings | create_goal | chat"""
+    show_settings | create_goal | twilio | chat"""
     result = _ask_json(
         f'Classify this message into exactly one category.\n'
         f'Message: "{text}"\n\n'
@@ -166,6 +166,10 @@ def classify_intent(text: str) -> str:
         f'"remove my goal", "I want to stop learning X")\n'
         f'- "clear_data": user wants to delete all their data and start fresh '
         f'(e.g. "delete all my data", "reset everything", "start fresh", "wipe my data", "clear everything")\n'
+        f'- "twilio": user wants to toggle phone call reminders on or off '
+        f'(e.g. "turn on phone calls", "enable call reminders", "disable calls", '
+        f'"turn off phone reminders", "call me for reminders", "stop calling me", '
+        f'"phone call on", "phone call off", "call notifications")\n'
         f'- "show_help": user wants to know what the bot can do or see command list '
         f'(e.g. "help", "what can you do", "commands", "how does this work", "what are your features", '
         f'"show me what you can do", "what do you do")\n'

@@ -548,6 +548,8 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
         await handle_manage_goal_freetext(update, ctx, text, claude_svc)
     elif intent == "clear_data":
         await cmd_clear(update, ctx)
+    elif intent == "twilio":
+        await _handle_twilio_freetext(update, ctx, text)
     elif intent == "show_help":
         await cmd_info(update, ctx)
     elif intent == "show_settings":
@@ -1532,6 +1534,26 @@ async def cmd_twilio(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
             "Try <code>/twilio on</code> or <code>/twilio off</code>.",
             parse_mode="HTML",
         )
+
+
+async def _handle_twilio_freetext(update: Update, ctx: ContextTypes.DEFAULT_TYPE, text: str) -> None:
+    uid = update.effective_user.id
+    lower = text.lower()
+    off_words = {"off", "disable", "stop", "turn off", "deactivate", "no calls", "no call"}
+    is_off = any(w in lower for w in off_words)
+    if is_off:
+        twilio_svc.set_twilio_enabled(uid, False)
+        await update.message.reply_text("Call reminders off. ⏸", parse_mode="HTML")
+    else:
+        twilio_svc.set_twilio_enabled(uid, True)
+        if not twilio_svc.get_phone_number(uid):
+            btn = KeyboardButton("📱 Share my number", request_contact=True)
+            await update.message.reply_text(
+                "Call reminders on! 📞 I'll call you for ALL reminders. Share your number:",
+                reply_markup=ReplyKeyboardMarkup([[btn]], one_time_keyboard=True, resize_keyboard=True),
+            )
+        else:
+            await update.message.reply_text("Call on 📞", reply_markup=ReplyKeyboardRemove())
 
 
 async def cmd_schedule(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
