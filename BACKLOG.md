@@ -1,22 +1,20 @@
 # Learnix Backlog
 
-_Last updated: 2026-06-01_
+_Last updated: 2026-06-02_
 _Project status: workInProgress_
 _Auto-agent: enabled_
 
 ## 🔥 Immediate (next session)
 
-- [ ] **Test new features live** — skip flow, /timesheet, /skipgraph in Telegram
-- [x] **Fix "Cancel" pre-check bug** — bare "Cancel" text gets Gemini-classified as a task; needs string check before hitting Gemini in `handle_free_text`
-- [ ] **Deploy to Railway** — still failing: "Failed to read app source directory" from nixpacks. Railway incident not resolved. Retry later.
-- [ ] **Twilio missed call feature** — optional per-user toggle (on/off via /settings). Use Twilio creds from talking-agent project. User number: +918004844144
+- [ ] **Test important flag + delay end-to-end** — mark task important, verify hourly reminders till EOD
+- [ ] **Test Twilio IVR** — enable calls, trigger reminder, verify press-1-done / press-2-skip works (RAILWAY_URL is set)
+- [ ] **Test disambiguation flow** — "mark morning workout as important" → "Morning workout" → confirm ⚡
 
 ## 📋 Short-term
 
-- [x] Update project memory with today's changes (motivation engine, skip, timesheet, skipgraph)
-- [ ] Test motivation engine triggers manually (force a trigger condition, verify message fires)
-- [ ] `/skipgraph` needs data — need actual skips logged before graph is useful
-- [ ] Consider NVIDIA NIM (free LLM API, OpenAI-compatible) as Gemini replacement — build.nvidia.com
+- [ ] Test motivation engine triggers manually
+- [ ] `/skipgraph` needs real skip data before graph is useful
+- [ ] Consider NVIDIA NIM as Gemini replacement — build.nvidia.com
 
 ## 🗓 Phase 2 — Web Dashboard
 
@@ -25,9 +23,26 @@ _Auto-agent: enabled_
 - [ ] Activity graph embed
 - [ ] Skip analytics embed
 
-## ✅ Done (2026-06-01)
+## ✅ Done (2026-06-01 — massive feature day)
 
-- Add tests for `skip_time_parser` — 17 cases covering in-X-min/hour, absolute times (am/pm, 24h), tomorrow patterns, roll-to-next-day edge, None on invalid input; suite now 34 tests, all green
+- Zero slash commands — everything via natural language
+- Voice notes — Gemini transcribes + processes as text  
+- Smart onboarding — any first message triggers welcome
+- Important flag — tasks remind hourly till EOD
+- Delay option — 'delay 30 mins' reschedules reminder
+- Context-aware done/skip — bot remembers last reminder, no /done_id links
+- Twilio IVR — press 1 done, press 2 skip, 10s timeout; calls ALL reminder types
+- RAILWAY_URL env var set in Railway for IVR webhooks
+- Morning brief shows missed tasks from yesterday
+- Task reschedule — 'remind me about workout at 6am'
+- Natural time setting — 'I want to study at 9pm'
+- Goal difficulty — Easy/Medium/Hard at creation
+- Jump to specific topic — 'study Control Flow'
+- Skip topics mid-quiz, cancel exits quiz cleanly
+- Disambiguation state persists across messages
+- Test isolation fixed — 92/92 tests green
+- README rewritten with full command reference
+- Add tests for `skip_time_parser` — 17 cases, all green
 
 ## ✅ Done (2026-05-30)
 
