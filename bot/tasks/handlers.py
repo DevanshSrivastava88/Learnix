@@ -370,13 +370,17 @@ async def handle_complete_task(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -
 
 async def cmd_settings(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     import settings_svc
+    import twilio_svc
     uid = update.effective_user.id
     s = settings_svc.get_settings(uid)
+    twilio_on = twilio_svc.is_twilio_enabled(uid)
+    twilio_status = "ON ✅" if twilio_on else "OFF ⏸"
     await update.message.reply_text(
         f"*⚙️ Your settings*\n\n"
         f"📖 Study time: *{s['daily_session_time']}* IST — /settime\n"
         f"🌅 Morning brief: *{s['morning_brief_time']}* IST — /setmorning\n"
-        f"🌙 EOD check-in: *{s['eod_time']}* IST — /seteod",
+        f"🌙 EOD check-in: *{s['eod_time']}* IST — /seteod\n"
+        f"📞 Call reminders: *{twilio_status}* — /twilio on \\| /twilio off",
         parse_mode=ParseMode.MARKDOWN,
     )
 
