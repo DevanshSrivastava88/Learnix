@@ -185,6 +185,12 @@ async def _resolve_pending_task_action(update: Update, ctx: ContextTypes.DEFAULT
     matched = _fuzzy_match_task(reply, candidates)
 
     if not matched:
+        attempts = pending.get("attempts", 0) + 1
+        if attempts >= 2:
+            ctx.user_data.pop("pending_task_action", None)
+            await update.message.reply_text("No worries, cancelled that action. 👍", reply_markup=ReplyKeyboardRemove())
+            return True
+        pending["attempts"] = attempts
         names = "\n".join(f"  • {c['title']}" for c in candidates)
         await update.message.reply_text(
             f"Which one did you mean?\n{names}",
@@ -349,11 +355,18 @@ async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     # Pending task confirm/re-describe from free-text flow
     freetext_state = ctx.user_data.get("freetext_task_state")
     if freetext_state == "confirm":
-        from tasks.handlers import nt_confirm, NT_DESCRIBE
-        result = await nt_confirm(update, ctx)
-        if result == NT_DESCRIBE:
-            ctx.user_data["freetext_task_state"] = "describe"
-        return
+        # Only treat as confirmation if user explicitly confirms/edits/cancels
+        confirm_words = {"yeah, add it", "✅ yeah, add it", "yes", "yep", "add it", "sure", "ok", "okay", "add", "✏️ edit", "edit", "❌ cancel", "cancel", "no", "nope"}
+        if update.message.text.strip().lower() not in confirm_words:
+            # Not a confirm response — clear state and fall through to normal routing
+            ctx.user_data.pop("freetext_task_state", None)
+            ctx.user_data.pop("parsed_task", None)
+        else:
+            from tasks.handlers import nt_confirm, NT_DESCRIBE
+            result = await nt_confirm(update, ctx)
+            if result == NT_DESCRIBE:
+                ctx.user_data["freetext_task_state"] = "describe"
+            return
     if freetext_state == "describe":
         import claude_svc as _cs
         from tasks.handlers import _parse_and_respond
@@ -1664,9 +1677,8 @@ async def handle_schedule_timesheet(update: Update, ctx: ContextTypes.DEFAULT_TY
         r"\bat\s+\d",                          # "at 8", "at 10"
         r"\bin\s+\d",                          # "in 30 mins", "in 2 hours"
         r"\bmins?\b", r"\bhours?\b",           # "mins", "hours"
-        r"\bmorning\b", r"\bevening\b",
-        r"\bnight\b", r"\bnoon\b",
-        r"\bmidnight\b", r"\bo'clock\b",
+        r"\bmorning\s+at\b", r"\bevening\s+at\b",  # "morning at X" — requires "at"
+        r"\bnoon\b", r"\bmidnight\b", r"\bo'clock\b",
     ]
     lower = text.lower()
     is_time_reply = any(re.search(p, lower) for p in time_patterns)
