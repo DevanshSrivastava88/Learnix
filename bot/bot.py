@@ -817,7 +817,8 @@ async def handle_task_action_freetext(
     import settings_svc as settings_db
 
     uid = update.effective_user.id
-    tasks = task_db.list_tasks(uid)
+    # Exclude breakdown step tasks — they're internal and shouldn't appear in disambiguation
+    tasks = [t for t in task_db.list_tasks(uid) if " — Step " not in t.get("title", "")]
     if not tasks:
         await update.message.reply_text("You don't have any active tasks right now.")
         return
