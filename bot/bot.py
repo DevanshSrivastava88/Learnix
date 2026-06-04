@@ -481,14 +481,21 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
         await update.message.reply_text("Hey! 👋 What do you want to track? Or say 'help' to see what I can do.")
         return
 
+    # Build rolling chat context (last 5 turns)
+    history = ctx.user_data.setdefault("chat_history", [])
+    history.append(f"User: {text}")
+    if len(history) > 10:
+        history[:] = history[-10:]
+    context = "\n".join(history[:-1])  # exclude current message
+
     await update.message.chat.send_action(ChatAction.TYPING)
     try:
-        intent = claude_svc.classify_intent(text)
+        intent = claude_svc.classify_intent(text, context=context)
     except Exception:
         intent = "chat"
 
     if intent == "task":
-        await _parse_and_respond(update, ctx, text, claude_svc)
+        await _parse_and_respond(update, ctx, text, claude_svc, context=context)
     elif intent == "breakdown":
         await handle_breakdown(update, ctx, text)
     elif intent == "show_tasks":
@@ -570,10 +577,12 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
     else:
         # General chat — Learnix responds naturally
         try:
+            context_block = f"Recent conversation:\n{context}\n\n" if context else ""
             reply = claude_svc._ask(
-                f"You are Learnix, a friendly AI life coach. Reply casually and helpfully in 1-2 sentences.\n\nUser: {text}",
+                f"{context_block}You are Learnix, a friendly AI life coach. Reply casually and helpfully in 1-2 sentences.\n\nUser: {text}",
                 max_tokens=4096,
             )
+            history.append(f"Bot: {reply[:200]}")
             await update.message.reply_text(reply)
         except Exception:
             await update.message.reply_text("I'm here! Say 'help' to see what I can do.")

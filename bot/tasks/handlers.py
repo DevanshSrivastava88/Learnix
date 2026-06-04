@@ -45,9 +45,9 @@ async def nt_describe(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     return await _parse_and_respond(update, ctx, update.message.text.strip(), claude_svc)
 
 
-async def _parse_and_respond(update, ctx, text: str, claude_svc) -> int:
+async def _parse_and_respond(update, ctx, text: str, claude_svc, context: str = "") -> int:
     try:
-        parsed = claude_svc.parse_task(text)
+        parsed = claude_svc.parse_task(text, context=context)
     except Exception as e:
         logger.error(f"parse_task failed: {e}")
         await update.message.reply_text("Hmm, didn't catch that — say it again?")

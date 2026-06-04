@@ -89,14 +89,16 @@ def score_answer(question: str, expected_answer: str, user_answer: str) -> dict:
     return _ask_json(prompt)
 
 
-def classify_intent(text: str) -> str:
+def classify_intent(text: str, context: str = "") -> str:
     """Classify free-form message into one of: task | show_tasks | show_schedule |
     show_progress | show_goals | show_graph | show_skipgraph | start_study | study |
     show_topics | study_topic | skip_topic |
     breakdown | done | skip_task | delete_task | pause_task | mark_important | delay |
     set_time | reschedule_task | add_topic | manage_goal | clear_data | show_help |
     show_settings | create_goal | twilio | chat"""
+    context_block = f'Recent conversation:\n{context}\n\n' if context else ""
     result = _ask_json(
+        f'{context_block}'
         f'Classify this message into exactly one category.\n'
         f'Message: "{text}"\n\n'
         f'Categories:\n'
@@ -283,7 +285,7 @@ def breakdown_study_goal(goal_name: str, difficulty: str = "medium") -> list[str
     raise ValueError("breakdown_study_goal: expected JSON array")
 
 
-def parse_task(text: str) -> dict:
+def parse_task(text: str, context: str = "") -> dict:
     """Parse natural language task. Returns type: reminder | habit.
     Note: interval_reminder is no longer generated — 'every hour' style is treated as a habit (recurrence_days=1).
     """
@@ -292,8 +294,9 @@ def parse_task(text: str) -> dict:
     IST = pytz.timezone("Asia/Kolkata")
     now_ist = datetime.now(IST)
     now_str = now_ist.strftime("%Y-%m-%d %H:%M %p IST (%A)")
+    context_block = f"Recent conversation:\n{context}\n\n" if context else ""
     prompt = (
-        f"Current date and time: {now_str}. Extract task info from this message: \"{text}\"\n\n"
+        f"{context_block}Current date and time: {now_str}. Extract task info from this message: \"{text}\"\n\n"
         "Return ONLY a JSON object, no markdown:\n"
         "{\n"
         "  \"type\": \"reminder\" or \"habit\",\n"
