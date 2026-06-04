@@ -1,6 +1,6 @@
 # Learnix Backlog
 
-_Last updated: 2026-06-02_
+_Last updated: 2026-06-03_
 _Project status: workInProgress_
 _Auto-agent: enabled_
 
@@ -9,7 +9,7 @@ _Auto-agent: enabled_
 - [ ] **Test new features live** — skip flow, /timesheet, /skipgraph in Telegram
 - [x] **Fix "Cancel" pre-check bug** — bare "Cancel" text gets Gemini-classified as a task; needs string check before hitting Gemini in `handle_free_text`
 - [ ] **Deploy to Railway** — still failing: "Failed to read app source directory" from nixpacks. Railway incident not resolved. Retry later.
-- [ ] **Twilio missed call feature** — optional per-user toggle (on/off via /settings). Use Twilio creds from talking-agent project. User number: +918004844144
+- [x] **Twilio missed call feature** — optional per-user toggle (on/off via /settings). Use Twilio creds from talking-agent project. User number: +918004844144
 
 ## 📋 Short-term
 
