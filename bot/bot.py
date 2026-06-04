@@ -501,14 +501,6 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
         history[:] = history[-12:]
     context = "\n".join(history[:-1])  # exclude current message
 
-    # Patch reply_text to capture bot reply into history
-    _captured = []
-    _orig_reply = update.message.reply_text
-    async def _capturing_reply(msg, **kw):
-        _captured.append(str(msg)[:200])
-        return await _orig_reply(msg, **kw)
-    update.message.reply_text = _capturing_reply  # type: ignore
-
     await update.message.chat.send_action(ChatAction.TYPING)
     try:
         intent = claude_svc.classify_intent(text, context=context)
@@ -517,12 +509,16 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
 
     if intent == "task":
         await _parse_and_respond(update, ctx, text, claude_svc, context=context)
+        history.append("Bot: [created/asked about a task or reminder]")
     elif intent == "breakdown":
         await handle_breakdown(update, ctx, text)
+        history.append("Bot: [broke down a task into steps]")
     elif intent == "show_tasks":
         await tasks_handlers.cmd_tasks(update, ctx)
+        history.append("Bot: [showed task list]")
     elif intent == "show_schedule":
         await cmd_schedule(update, ctx)
+        history.append("Bot: [showed day schedule]")
     elif intent == "show_progress":
         await study_handlers.cmd_progress(update, ctx)
     elif intent == "show_goals":
@@ -603,13 +599,10 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
                 f"{context_block}You are Learnix, a friendly AI life coach. Reply casually and helpfully in 1-2 sentences.\n\nUser: {text}",
                 max_tokens=4096,
             )
+            history.append(f"Bot: {reply[:200]}")
             await update.message.reply_text(reply)
         except Exception:
             await update.message.reply_text("I'm here! Say 'help' to see what I can do.")
-
-    update.message.reply_text = _orig_reply  # type: ignore
-    if _captured:
-        history.append(f"Bot: {_captured[0]}")
 
 
 async def handle_voice(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
