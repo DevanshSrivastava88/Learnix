@@ -1,6 +1,6 @@
 # Learnix Backlog
 
-_Last updated: 2026-06-03_
+_Last updated: 2026-06-06_
 _Project status: workInProgress_
 _Auto-agent: enabled_
 
@@ -24,6 +24,15 @@ _Auto-agent: enabled_
 - [ ] Multi-user data view with new schema (goals, habits, skips, motivation log)
 - [ ] Activity graph embed
 - [ ] Skip analytics embed
+
+## ✅ Done (2026-06-06)
+
+- Fix broken test `test_handle_task_action_freetext_stores_pending_on_ambiguous` — task 2's
+  title `"Morning workout — Step 1: Warmup"` was silently filtered by the `" — Step "` exclusion
+  in `handle_task_action_freetext`, leaving only 1 match (not ambiguous) and crashing on a
+  MagicMock > int comparison. Changed task 2 title to `"Morning workout at home"` so both tasks
+  survive the filter and trigger the ambiguous-match path the test intended; suite now 105 tests,
+  all green
 
 ## ✅ Done (2026-06-02)
 

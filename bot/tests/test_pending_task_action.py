@@ -120,9 +120,11 @@ def test_fuzzy_no_match_returns_empty():
 
 @pytest.mark.asyncio
 async def test_handle_task_action_freetext_stores_pending_on_ambiguous():
+    # Both titles must survive the "— Step " filter in handle_task_action_freetext
+    # and both must fuzzy-match "morning workout" to trigger the ambiguous path.
     tasks_in_db = [
         {"id": "1", "title": "Morning workout", "recurrence_days": 1},
-        {"id": "2", "title": "Morning workout — Step 1: Warmup", "recurrence_days": 1},
+        {"id": "2", "title": "Morning workout at home", "recurrence_days": 1},
     ]
 
     update = MagicMock()
