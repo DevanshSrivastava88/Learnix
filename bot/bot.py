@@ -306,34 +306,9 @@ async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     uid = update.effective_user.id
     text = update.message.text.strip().lower()
 
-    # yes/later for pending study sessions
-    pending = ctx.bot_data.get("pending_sessions", {})
-    if uid in pending:
-        topic_id = pending[uid]
-        if text == "yes":
-            pending.pop(uid, None)
-            from study.svc import get_topic
-            topic = get_topic(topic_id)
-            if topic:
-                await study_handlers._run_study_session(update, ctx, topic)
-        elif text == "later":
-            pending.pop(uid, None)
-            await update.message.reply_text("No worries! I'll nudge you again in 2 hours. 😴")
-            ctx.job_queue.run_once(
-                _reminder_job, when=7200,
-                data={"user_id": uid, "topic_id": topic_id},
-                name=f"reminder_{uid}",
-            )
-        return
-
-    # Skip topic confirmation
-    if await study_handlers.handle_skip_topic_confirm(update, ctx):
-        return
-
-    # Quiz answers
-    if uid in ctx.bot_data.get("quiz_state", {}):
-        await study_handlers.handle_quiz_answer(update, ctx)
-        return
+    # Study feature disabled — clear any stale study state
+    ctx.bot_data.get("pending_sessions", {}).pop(uid, None)
+    ctx.bot_data.get("quiz_state", {}).pop(uid, None)
 
     # Clear confirmation flow
     if await handle_clear_confirm(update, ctx):
@@ -519,49 +494,29 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
     elif intent == "show_schedule":
         await cmd_schedule(update, ctx)
         history.append("Bot: [showed day schedule]")
-    elif intent == "show_progress":
-        await study_handlers.cmd_progress(update, ctx)
-    elif intent == "show_goals":
-        await study_handlers.cmd_goals(update, ctx)
+    elif intent in ("show_progress", "show_goals", "show_topics", "study_topic",
+                    "skip_topic", "start_study", "create_goal", "study",
+                    "add_topic", "manage_goal"):
+        # Study feature disabled — treat as chat
+        intent = "chat"
+        # fall through to chat handler below
+        try:
+            context_block = f"Recent conversation:\n{context}\n\n" if context else ""
+            reply = claude_svc._ask(
+                f"{context_block}You are disrupto, a no-nonsense AI productivity coach. "
+                f"Study features are coming soon. Reply in 1 sentence acknowledging what the user said "
+                f"and redirect them to habits/reminders/tasks.\n\nUser: {text}",
+                max_tokens=200,
+            )
+            history.append(f"Bot: {reply[:200]}")
+            await update.message.reply_text(reply)
+        except Exception:
+            await update.message.reply_text("Study features coming soon! For now I'm focused on habits and tasks.")
+        return
     elif intent == "show_graph":
         await cmd_graph(update, ctx)
     elif intent == "show_skipgraph":
         await cmd_skipgraph(update, ctx)
-    elif intent == "show_topics":
-        await study_handlers.cmd_topics(update, ctx)
-    elif intent == "study_topic":
-        topic_name = ""
-        try:
-            topic_name = claude_svc.extract_topic_name(text)
-        except Exception:
-            pass
-        if topic_name:
-            await study_handlers.handle_study_topic(update, ctx, topic_name)
-        else:
-            await update.message.reply_text(
-                "Which topic did you want to study? Try: 'study OOP Basics' or say 'show topics' to see your list."
-            )
-    elif intent == "skip_topic":
-        topic_name = ""
-        try:
-            topic_name = claude_svc.extract_topic_name(text)
-        except Exception:
-            pass
-        if topic_name:
-            await study_handlers.handle_skip_topic_request(update, ctx, topic_name)
-        else:
-            await update.message.reply_text(
-                "Which topic did you want to skip? Try: 'skip OOP Basics' or say 'show topics' to see your list."
-            )
-    elif intent == "start_study":
-        await study_handlers.cmd_study(update, ctx)
-    elif intent == "create_goal":
-        await handle_create_goal_freetext(update, ctx, text, claude_svc)
-    elif intent == "study":
-        await update.message.reply_text(
-            "Sounds like you want to learn something! 📚\n\n"
-            "Say 'I want to learn X' to create a goal, then say 'study' to start a session.",
-        )
     elif intent == "reschedule_task":
         await handle_reschedule_task_freetext(update, ctx, text, claude_svc)
     elif intent == "set_time":
@@ -1974,9 +1929,9 @@ def main() -> None:
 
     app.add_handler(CommandHandler("reset", _cmd_reset))
 
-    # Study handlers
-    for h in study_handlers.get_handlers():
-        app.add_handler(h)
+    # Study handlers — DISABLED (study feature off for now)
+    # for h in study_handlers.get_handlers():
+    #     app.add_handler(h)
 
     # Task handlers
     for h in tasks_handlers.get_handlers():

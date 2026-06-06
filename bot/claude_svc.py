@@ -195,7 +195,9 @@ def classify_intent(text: str, context: str = "") -> str:
         f'- "task" takes priority over "delay" when user says "remind me that/this in X mins" — context provides the task subject.\n'
         f'- "add_topic" takes priority when user clearly wants to add a topic to an existing goal.\n'
         f'- "manage_goal" takes priority when user wants to delete/pause/edit a goal.\n'
-        f'- Default to "chat" when genuinely unsure (not "task"). Only use "task" when user clearly wants to CREATE something.\n'
+        f'- Default to "chat" when genuinely unsure. Only use "task" when user uses explicit action words: '
+        f'"add", "track", "remind me", "set a reminder", "I want to start", "every day", "daily". '
+        f'Statements like "im trying to X" or "I want to X" without a tracking/reminder word are "chat".\n'
         f'Return: {{"intent": "..."}}'
     )
     return result.get("intent", "chat")
