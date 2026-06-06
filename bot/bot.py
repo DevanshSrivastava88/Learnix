@@ -295,8 +295,47 @@ async def _resolve_pending_task_action(update: Update, ctx: ContextTypes.DEFAULT
     return True
 
 
+async def _handle_habit_time_response(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> bool:
+    """After habit creation, handle user's preferred reminder time. Returns True if consumed."""
+    task_id = ctx.user_data.get("pending_habit_time_id")
+    if not task_id:
+        return False
+    title = ctx.user_data.pop("pending_habit_title", "task")
+    ctx.user_data.pop("pending_habit_time_id", None)
+    text = update.message.text.strip()
+    if text.lower() in {"skip", "default", "later", "no", "nope"}:
+        await update.message.reply_text(f"Got it — I'll use your default reminder time for *{title}*. 👍", parse_mode=ParseMode.MARKDOWN)
+        return True
+    import skip_time_parser as stp
+    import tasks.svc as task_db
+    dt = stp.parse_time_expression(text)
+    if dt is None:
+        await update.message.reply_text(
+            f"Didn't catch that time. Try `7am`, `6:30pm`, or say `skip`.",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+        # Restore state so user can try again
+        ctx.user_data["pending_habit_time_id"] = task_id
+        ctx.user_data["pending_habit_title"] = title
+        return True
+    task_db.reschedule_task(task_id, dt)
+    import pytz
+    from datetime import timezone
+    IST = pytz.timezone("Asia/Kolkata")
+    time_label = dt.astimezone(IST).strftime("%I:%M %p").lstrip("0")
+    await update.message.reply_text(
+        f"Done! I'll remind you about *{title}* at {time_label} IST daily. 🔔",
+        parse_mode=ParseMode.MARKDOWN,
+    )
+    return True
+
+
 async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if await handle_time_input(update, ctx):
+        return
+
+    # Habit time preference (asked after habit creation)
+    if await _handle_habit_time_response(update, ctx):
         return
 
     # Resolve disambiguation for task actions (done/skip/delete/pause/mark_important/reschedule)

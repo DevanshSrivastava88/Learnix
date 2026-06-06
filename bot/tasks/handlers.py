@@ -169,12 +169,17 @@ async def nt_confirm(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
         ctx.user_data.clear()
         return ConversationHandler.END
     freq = "every day" if recur == 1 else f"every {recur} days"
+    # Ask for preferred reminder time before clearing state
+    ctx.user_data.clear()
+    ctx.user_data["pending_habit_time_id"] = task["id"]
+    ctx.user_data["pending_habit_title"] = task["title"]
     await update.message.reply_text(
-        f"Added! 🎉 I'll remind you about *{task['title']}* {freq}.",
+        f"Added! 🎉 *{task['title']}* — {freq}.\n\n"
+        f"⏰ What time should I remind you? (e.g. `7am`, `6:30pm`)\n"
+        f"Or say `skip` to use your default.",
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=ReplyKeyboardRemove(),
     )
-    ctx.user_data.clear()
     return ConversationHandler.END
 
 
