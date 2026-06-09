@@ -1,6 +1,6 @@
 # Learnix Backlog
 
-_Last updated: 2026-06-06_
+_Last updated: 2026-06-09_
 _Project status: workInProgress_
 _Auto-agent: enabled_
 
@@ -14,7 +14,7 @@ _Auto-agent: enabled_
 ## 📋 Short-term
 
 - [x] Update project memory with today's changes (motivation engine, skip, timesheet, skipgraph)
-- [ ] Test motivation engine triggers manually (force a trigger condition, verify message fires)
+- [x] Test motivation engine triggers manually (force a trigger condition, verify message fires) — automated unit tests added in `tests/test_motivation_svc.py` (30 tests: all triggers, priority order, edge cases, async send flow)
 - [ ] `/skipgraph` needs data — need actual skips logged before graph is useful
 - [ ] Consider NVIDIA NIM (free LLM API, OpenAI-compatible) as Gemini replacement — build.nvidia.com
 
