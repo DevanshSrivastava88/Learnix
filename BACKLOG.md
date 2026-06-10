@@ -1,6 +1,6 @@
 # Learnix Backlog
 
-_Last updated: 2026-06-09_
+_Last updated: 2026-06-10_
 _Project status: workInProgress_
 _Auto-agent: enabled_
 
@@ -24,6 +24,13 @@ _Auto-agent: enabled_
 - [ ] Multi-user data view with new schema (goals, habits, skips, motivation log)
 - [ ] Activity graph embed
 - [ ] Skip analytics embed
+
+## ✅ Done (2026-06-10)
+
+- Add tests for `get_skips_last_n_days`, `get_done_counts_last_n_days`, `build_skip_graph` in
+  `tests/test_analytics_svc.py` — 7 new tests covering: data return, None-guard, empty-data graph,
+  skip+done data graph (with most-skipped task label), and None task lookup; suite now 142 tests,
+  all green
 
 ## ✅ Done (2026-06-06)
 
