@@ -1,6 +1,6 @@
 # Learnix Backlog
 
-_Last updated: 2026-06-10_
+_Last updated: 2026-06-11_
 _Project status: workInProgress_
 _Auto-agent: enabled_
 
@@ -16,7 +16,7 @@ _Auto-agent: enabled_
 - [x] Update project memory with today's changes (motivation engine, skip, timesheet, skipgraph)
 - [x] Test motivation engine triggers manually (force a trigger condition, verify message fires) — automated unit tests added in `tests/test_motivation_svc.py` (30 tests: all triggers, priority order, edge cases, async send flow)
 - [ ] `/skipgraph` needs data — need actual skips logged before graph is useful
-- [ ] Consider NVIDIA NIM (free LLM API, OpenAI-compatible) as Gemini replacement — build.nvidia.com
+- [x] Consider NVIDIA NIM (free LLM API, OpenAI-compatible) as Gemini replacement — build.nvidia.com
 
 ## 🗓 Phase 2 — Web Dashboard
 
@@ -24,6 +24,16 @@ _Auto-agent: enabled_
 - [ ] Multi-user data view with new schema (goals, habits, skips, motivation log)
 - [ ] Activity graph embed
 - [ ] Skip analytics embed
+
+## ✅ Done (2026-06-11)
+
+- Add `nim_svc.py` — NVIDIA NIM proof-of-concept LLM provider, drop-in alternative to `claude_svc.py`.
+  Uses OpenAI-compatible API (`integrate.api.nvidia.com/v1`, model `meta/llama-3.1-70b-instruct`).
+  Same function signatures as `claude_svc.py`; `transcribe_voice` raises `NotImplementedError` (NIM
+  has no audio endpoint). Added `openai>=1.0.0` to requirements. 27 new tests in
+  `tests/test_nim_svc.py` covering lazy init, `_ask`, `_ask_json` (JSON-mode flag), all high-level
+  functions, and the `NotImplementedError` guard; suite now 169 tests, all green.
+  To activate: set `NIM_API_KEY` env var and replace `import claude_svc` with `import nim_svc` where needed.
 
 ## ✅ Done (2026-06-10)
 
