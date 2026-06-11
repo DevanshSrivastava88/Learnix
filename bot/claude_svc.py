@@ -1,21 +1,37 @@
 import os
 import json
 import re
+import time
 from dotenv import load_dotenv
-import google.generativeai as genai
+from openai import OpenAI, RateLimitError
 
 load_dotenv()
 
-MODEL = "gemini-2.5-flash"
-_model = None
+MODEL = "llama-3.1-8b-instant"
+_client = None
 
 
-def _get_model() -> genai.GenerativeModel:
-    global _model
-    if _model is None:
-        genai.configure(api_key=os.environ["GEMINI_API_KEY"])
-        _model = genai.GenerativeModel(MODEL)
-    return _model
+def _get_client() -> OpenAI:
+    global _client
+    if _client is None:
+        _client = OpenAI(
+            api_key=os.environ["GROQ_API_KEY"],
+            base_url="https://api.groq.com/openai/v1",
+            max_retries=0,
+        )
+    return _client
+
+
+def _with_retry(fn, retries: int = 4, base_delay: float = 1.0):
+    """Retry on Groq rate limits (429) with exponential backoff."""
+    for attempt in range(retries):
+        try:
+            return fn()
+        except RateLimitError:
+            if attempt == retries - 1:
+                raise
+            time.sleep(base_delay * (2 ** attempt))
+
 
 SYSTEM = (
     "You are Learnix, a sharp and friendly study coach. "
@@ -25,23 +41,57 @@ SYSTEM = (
 
 
 def _ask(prompt: str, max_tokens: int = 1024) -> str:
-    resp = _get_model().generate_content(
-        prompt,
-        generation_config=genai.types.GenerationConfig(max_output_tokens=max_tokens),
-    )
-    return resp.text.strip()
+    resp = _with_retry(lambda: _get_client().chat.completions.create(
+        model=MODEL,
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=max_tokens,
+    ))
+    return resp.choices[0].message.content.strip()
 
 
-def _ask_json(prompt: str) -> dict | list:
-    """Call Gemini with JSON mode — forces clean JSON output, no markdown."""
-    resp = _get_model().generate_content(
-        prompt,
-        generation_config=genai.types.GenerationConfig(
-            response_mime_type="application/json",
-            max_output_tokens=8192,
-        ),
-    )
-    return json.loads(resp.text.strip())
+def _ask_json(prompt: str, max_tokens: int = 512, model: str = None) -> dict | list:
+    """Call Groq with JSON mode — forces clean JSON output, no markdown."""
+    resp = _with_retry(lambda: _get_client().chat.completions.create(
+        model=model or MODEL,
+        messages=[
+            {"role": "system", "content": "You are a JSON extraction assistant. Always respond with valid JSON only, no markdown, no explanation."},
+            {"role": "user", "content": prompt},
+        ],
+        response_format={"type": "json_object"},
+        max_tokens=max_tokens,
+    ))
+    text = resp.choices[0].message.content.strip()
+    result = json.loads(text)
+    # If wrapped in a list, unwrap
+    if isinstance(result, dict):
+        # Check if it's actually a list stored under a key
+        for v in result.values():
+            if isinstance(v, list):
+                return v
+    return result
+
+
+def _ask_json_array(prompt: str, max_tokens: int = 1024) -> list:
+    """Call Groq expecting a JSON array — wraps in object for JSON mode compatibility."""
+    wrapped_prompt = prompt + '\n\nIMPORTANT: Return JSON object with key "items" containing the array: {"items": [...]}'
+    resp = _with_retry(lambda: _get_client().chat.completions.create(
+        model=MODEL,
+        messages=[
+            {"role": "system", "content": "You are a JSON extraction assistant. Always respond with valid JSON only, no markdown, no explanation."},
+            {"role": "user", "content": wrapped_prompt},
+        ],
+        response_format={"type": "json_object"},
+        max_tokens=max_tokens,
+    ))
+    text = resp.choices[0].message.content.strip()
+    result = json.loads(text)
+    if isinstance(result, list):
+        return result
+    if isinstance(result, dict):
+        for v in result.values():
+            if isinstance(v, list):
+                return v
+    raise ValueError("Expected JSON array")
 
 
 def teach_topic(title: str, notes: str = "") -> str:
@@ -66,11 +116,11 @@ def generate_quiz(title: str, notes: str = "") -> list[dict]:
     prompt = (
         f"{context}"
         f"Generate exactly 5 quiz questions about: {title}\n\n"
-        "Return a JSON array:\n"
-        '[{"question": "...", "expected_answer": "..."}, ...]'
+        "Return a JSON object with key 'items' containing an array:\n"
+        '{"items": [{"question": "...", "expected_answer": "..."}, ...]}'
         "\nTest understanding, not just recall. Keep expected_answer to 1-3 sentences."
     )
-    result = _ask_json(prompt)
+    result = _ask_json(prompt, max_tokens=2048)
     if isinstance(result, list):
         return result[:5]
     raise ValueError("generate_quiz: expected JSON array")
@@ -86,7 +136,7 @@ def score_answer(question: str, expected_answer: str, user_answer: str) -> dict:
         '{"correct": true/false, "explanation": "1-2 sentences"}\n'
         "Be lenient with phrasing but strict on concept."
     )
-    return _ask_json(prompt)
+    return _ask_json(prompt, max_tokens=150)
 
 
 def classify_intent(text: str, context: str = "") -> str:
@@ -99,108 +149,161 @@ def classify_intent(text: str, context: str = "") -> str:
     context_block = f'Recent conversation:\n{context}\n\n' if context else ""
     result = _ask_json(
         f'{context_block}'
-        f'Classify this message into exactly one category.\n'
-        f'Message: "{text}"\n\n'
-        f'Categories:\n'
-        f'- "task": user wants to ADD/CREATE a reminder, habit, or todo '
-        f'(e.g. "add X", "track X", "I need to X every day", "set a reminder for X", "I want to start X")\n'
-        f'- "show_tasks": user wants to SEE their tasks/habits list '
-        f'(e.g. "show my tasks", "what do I have to do", "my habits", "what am I tracking", '
-        f'"list everything", "show habits", "what\'s on my list", "all my tasks")\n'
-        f'- "show_schedule": user wants to see today\'s schedule or day plan '
-        f'(e.g. "what\'s my day", "my schedule", "today\'s plan", "plan my day", '
-        f'"what\'s today look like", "my day", "day view", "what\'s up for today")\n'
-        f'- "show_progress": user wants to see study progress or stats '
-        f'(e.g. "how am I doing", "my progress", "study stats", "am I on track", '
-        f'"am I improving", "how far am I", "my study stats", "how\'s my Python going", "how\'s learning going")\n'
-        f'- "show_goals": user wants to see their study goals '
-        f'(e.g. "my goals", "what am I studying", "learning goals", "what am I learning", "show goals")\n'
-        f'- "show_graph": user wants to see activity graph or stats '
-        f'(e.g. "my activity", "show stats", "how active am I", "how active have I been", '
-        f'"show my streak", "how lazy have I been", "activity", "my stats")\n'
-        f'- "show_skipgraph": user wants to see skip patterns '
-        f'(e.g. "how many times did I skip", "my skip stats", "what did I skip most", '
-        f'"skip patterns", "how many times did I skip")\n'
-        f'- "start_study": user wants to start a study session now '
-        f'(e.g. "let\'s study", "start studying", "teach me", "let\'s do some Python", '
-        f'"teach me something", "quiz me", "I want to study", "continue studying")\n'
-        f'- "study": user asks an educational question or wants to learn a specific topic\n'
-        f'- "show_topics": user wants to see the numbered list of topics for a goal '
-        f'(e.g. "show my topics", "list topics", "what topics do I have", "show topics for Python", "my topic list")\n'
-        f'- "study_topic": user wants to study or jump to a specific named topic '
-        f'(e.g. "study OOP Basics", "start Functions", "jump to File I/O", "do Error Handling now")\n'
-        f'- "skip_topic": user wants to skip a specific named topic '
-        f'(e.g. "skip OOP", "skip File I/O topic", "I don\'t need Error Handling", "skip Functions")\n'
-        f'- "breakdown": user wants to break a task OR learning goal into steps/subtopics. '
-        f'ALWAYS use this when message contains "break down", "break ... into steps", "steps for", '
-        f'"learning path", "subtopics for", "how do I approach", "plan for", "give me a roadmap for", '
-        f'"plan out", "structure ... for me". '
-        f'Examples: "break down morning workout", "steps for Python", "break my goal into topics", '
-        f'"plan out my morning routine", "give me a roadmap for ML"\n'
-        f'- "done": user is reporting they completed a specific task '
-        f'(e.g. "I finished X", "done with X", "completed X", "just did X", "marked X done")\n'
-        f'- "skip_task": user wants to skip a specific task today '
-        f'(e.g. "skip X today", "skipping X", "not doing X today")\n'
-        f'- "delete_task": user wants to permanently delete/remove a task '
-        f'(e.g. "delete X", "remove X habit", "get rid of X")\n'
-        f'- "pause_task": user wants to pause/stop reminders for a specific task temporarily '
-        f'(e.g. "pause X", "stop reminding me about X for now")\n'
-        f'- "reschedule_task": user wants to change the reminder TIME of a SPECIFIC NAMED TASK/HABIT '
-        f'(e.g. "remind me about workout at 6am", "move my reading reminder to 8pm", '
-        f'"change pushup time to 5pm", "set morning workout to 7am", "shift my meditation to 9pm"). '
-        f'Key signal: message names a specific TASK/HABIT and a new time for IT specifically.\n'
-        f'- "set_time": user wants to change a SYSTEM-WIDE setting — morning brief, study session time, or EOD check-in '
-        f'(e.g. "set my morning brief to 8am", "change study time to 9pm", "my EOD is at 10pm", '
-        f'"I want to study at 9pm", "wake me up with a brief at 7am", "remind me about morning brief at 8", '
-        f'"I usually sleep by 11", "update my reminder times", "set morning to 7am", "change my study reminder"). '
-        f'Key signal: user mentions study/brief/EOD/morning/evening as a CATEGORY, not a specific task name.\n'
-        f'- "add_topic": user wants to add a topic to a study goal '
-        f'(e.g. "add recursion to my Python goal", "add topic X", "I want to add X to my learning", '
-        f'"add X as a topic", "put X in my goal")\n'
-        f'- "delay": user wants to delay/snooze/postpone an EXISTING reminder that just fired '
-        f'(e.g. "delay", "remind me later", "snooze", "delay 30 mins", "delay by 1 hour", '
-        f'"not now", "later", "give me 30 more minutes"). '
-        f'NOT "delay" when user says "remind me that/this in X mins" — that is "task" (creating a new reminder using context).\n'
-        f'- "mark_important": user wants to mark a specific task as important or high-priority '
-        f'(e.g. "this is important", "mark workout as important", "I really need to do X", '
-        f'"X is urgent", "make X high priority", "X is critical")\n'
-        f'- "manage_goal": user wants to delete, pause, or edit a study goal '
-        f'(e.g. "delete my Python goal", "pause my React goal", "edit my goal name", '
-        f'"remove my goal", "I want to stop learning X")\n'
-        f'- "clear_data": user wants to delete all their data and start fresh '
-        f'(e.g. "delete all my data", "reset everything", "start fresh", "wipe my data", "clear everything")\n'
-        f'- "twilio": user wants to toggle phone call reminders on or off '
-        f'(e.g. "turn on phone calls", "enable call reminders", "disable calls", '
-        f'"turn off phone reminders", "call me for reminders", "stop calling me", '
-        f'"phone call on", "phone call off", "call notifications")\n'
-        f'- "show_help": user wants to know what the bot can do or see command list '
-        f'(e.g. "help", "what can you do", "commands", "how does this work", "what are your features", '
-        f'"show me what you can do", "what do you do")\n'
-        f'- "show_settings": user wants to see their current reminder time settings '
-        f'(e.g. "show my settings", "my times", "what are my reminder times", "my schedule settings", '
-        f'"show reminders", "what time do you remind me")\n'
-        f'- "create_goal": user wants to CREATE a new learning goal for a subject '
-        f'(e.g. "I want to learn React", "teach me Python", "I need to learn SQL", '
-        f'"set up a goal for ML", "create a goal for JavaScript", "I want to study Data Science"). '
-        f'Key signal: user names a SUBJECT they want to learn, not an existing topic.\n'
-        f'- "chat": clearly just greeting, small talk, joke, feelings, general question\n\n'
-        f'IMPORTANT RULES:\n'
-        f'- "reschedule_task" takes HIGHEST priority when user names a specific habit/task AND a new time for it.\n'
-        f'- "set_time" takes priority when user mentions changing morning brief/study session/EOD — system-wide times.\n'
-        f'- "create_goal" takes priority over "start_study" when user says "I want to learn X" or "teach me X" with a subject name.\n'
-        f'- "breakdown" takes priority over "study" when the message contains "break down" or "steps for".\n'
-        f'- "study_topic" and "skip_topic" take priority when user mentions a SPECIFIC NAMED topic with study/skip/jump action words.\n'
-        f'- "done"/"skip_task"/"delete_task"/"pause_task"/"mark_important" take priority when user mentions a specific task name with those action words.\n'
-        f'- "delay" takes priority ONLY when user wants to snooze an existing reminder (no new subject mentioned).\n'
-        f'- "task" takes priority over "delay" when user says "remind me that/this in X mins" — context provides the task subject.\n'
-        f'- "add_topic" takes priority when user clearly wants to add a topic to an existing goal.\n'
-        f'- "manage_goal" takes priority when user wants to delete/pause/edit a goal.\n'
-        f'- Default to "chat" when genuinely unsure. Only use "task" when user uses explicit action words: '
-        f'"add", "track", "remind me", "set a reminder", "I want to start", "every day", "daily". '
-        f'Statements like "im trying to X" or "I want to X" without a tracking/reminder word are "chat".\n'
-        f'Return: {{"intent": "..."}}'
+        f'Classify this message into exactly one category. Message: "{text}"\n\n'
+        f'Categories (name: meaning — example):\n'
+        f'task: add/create a reminder, habit, or todo — needs an explicit tracking word: "add X", "track X", "remind me to X", "X every day/daily", "ping me to X", "don\'t let me forget to X"\n'
+        f'show_tasks: see tasks/habits list — "show my tasks", "what am I tracking", "give me my task list", "show me what I just added", "what do I have going on", "list", "tasks", "my tasks", "show list"\n'
+        f'show_schedule: see today\'s schedule/day plan — "what\'s my day", "my schedule", "give me a rundown of today", "what\'s on my plate", "am I forgetting anything today", "what should I do today"\n'
+        f'show_progress: see study progress/stats — "how am I doing with my studies", "my study stats", "how far along am I in learning"\n'
+        f'show_goals: see study goals — "my goals", "what am I learning", "what am I studying", "show my learning goals", "what study goals do I have"\n'
+        f'show_graph: see activity graph/productivity stats — "my activity", "show my streak", "how productive have I been", "how have I been doing lately", "show my progress chart"\n'
+        f'show_skipgraph: see skip patterns — "my skip stats", "what did I skip most", "what do I skip the most", "when do I usually bail"\n'
+        f'start_study: start a study session now — "let\'s study", "quiz me", "quiz me on something", "I want to practice", "let\'s review"\n'
+        f'study: asking an educational QUESTION to be taught right now — "explain recursion", "what is a closure in JS", "teach me about photosynthesis" '
+        f'(NOT "I want to learn X" or "teach me X" as a subject/skill — those are create_goal)\n'
+        f'show_topics: see numbered topic list for a goal — "show my topics", "list topics for Python", "list my study topics"\n'
+        f'study_topic: study/jump to a SPECIFIC named topic — "study OOP Basics", "jump to File I/O"\n'
+        f'skip_topic: skip a SPECIFIC named topic — "skip Error Handling topic"\n'
+        f'breakdown: break a task/goal into steps — contains "break down", "steps for", "roadmap for", "plan out", "subtopics for", "break X into steps", "help me plan out X"\n'
+        f'done: reporting completion of a task — "I finished X", "done with X", "just knocked out X", "done!", "Done!", "just did it", "finished!"\n'
+        f'skip_task: skip a task today — "skip X today", "not doing X today", "gonna skip X for today", "skip it today", "skipping it", "not doing it today"\n'
+        f'delete_task: permanently delete a task — "delete X", "remove X habit"\n'
+        f'pause_task: pause reminders for a task temporarily — "pause X", "stop reminding me about X"\n'
+        f'reschedule_task: change reminder TIME of a SPECIFIC named task — "move my reading reminder to 8pm", "set morning workout to 7am", "push my X reminder to Y" '
+        f'(names a task AND a new time for IT)\n'
+        f'set_time: change a SYSTEM-WIDE time — morning brief / study session / EOD — "set my morning brief to 8am", "change study time to 9pm", "I usually study at Xpm", "I wake up at Xam" '
+        f'(system category, not a specific task name)\n'
+        f'add_topic: add a topic to a study goal — "add recursion to my Python goal"\n'
+        f'delay: snooze an EXISTING reminder — "delay", "snooze", "delay 30 mins", "remind me later", "snooze X reminder by Y", "snooze the X reminder by Y hours" '
+        f'(NOT "remind me that/this in X mins" — that\'s "task")\n'
+        f'mark_important: mark a specific task as important — "mark workout as important", "X is urgent", "flag X as priority", "X is really important", "that one is really important mark it", "this is important flag it"\n'
+        f'manage_goal: delete/pause/edit a study goal — "delete my Python goal", "pause my React goal"\n'
+        f'clear_data: delete all data and start fresh — "reset everything", "wipe my data"\n'
+        f'twilio: toggle phone call missed-call notifications — "turn on phone calls", "stop calling me", "notify me when someone calls", "let me know when someone calls me", "call alerts on/off"\n'
+        f'show_help: what bot can do / command list — "help", "what can you do for me", "how do you work", "what are your features"\n'
+        f'show_settings: see reminder time settings — "show my settings", "what are my current settings", "what time do you remind me"\n'
+        f'create_goal: CREATE a new learning goal for a SUBJECT — "I want to learn React", "teach me Python", "I want to get better at X" '
+        f'(names a subject to learn, not an existing topic)\n'
+        f'chat: greeting, small talk, joke, feelings, general question — also the default when unsure\n\n'
+        f'Priority rules when multiple could match:\n'
+        f'1. reschedule_task > set_time when a specific task+time vs a system-wide category+time\n'
+        f'2. create_goal > start_study/study when user names a subject they want to LEARN OVER TIME ("I want to learn X", "I want to get better at X"). '
+        f'Use "study" only for an immediate educational question about a concept.\n'
+        f'3. breakdown > study when message says "break down"/"steps for"/"break X into steps"\n'
+        f'4. study_topic/skip_topic > others when a specific named topic + study/skip/jump verb\n'
+        f'5. done/skip_task/delete_task/pause_task/mark_important > others when a specific task name + that action verb\n'
+        f'6. task > delay when user says "remind me that/this in X mins" (context gives the subject)\n'
+        f'7. Use "task" for: (a) explicit tracking word: "add", "track", "remind me", "set a reminder", "every day", "daily", "ping me", "don\'t let me forget"; '
+        f'OR (b) [activity/event] + [time expression] — implicit reminders: '
+        f'"meeting at 6" -> task, "call at 3pm" -> task, "doctor at 9am" -> task, "dinner at 8" -> task, '
+        f'"drink water in 10" -> task, "meds in 30" -> task, "sleep in 2 hours" -> task, "gym at 7" -> task. '
+        f'NEVER "task" for: conversational statements, planning talk, suggestions, typos — '
+        f'"let\'s fix some things" -> chat, "let\'s do this" -> chat, "we should deploy" -> chat, '
+        f'"before deploying" -> chat, "shall we tackle something?" -> chat, '
+        f'"I should exercise more" -> chat, "im trying to lose weight" -> chat.\n'
+        f'8. task > study/create_goal/start_study when the message has a tracking/recurrence phrase '
+        f'("every day", "daily", "every morning", "every night") about a general HABIT/activity (read, exercise, meditate, mediation, yoga, journal, walk, run, pushups) — '
+        f'"i wanna read evry single day" -> task, "meditate every morning" -> task, "workout every day" -> task. '
+        f'Only use create_goal when a SPECIFIC learnable subject is named (Python, React, guitar theory, Spanish grammar, machine learning).\n'
+        f'9. delay > task when the message contains "snooze" or "snooze X by Y" pattern referring to an existing named reminder.\n'
+        f'10. show_graph > show_goals/show_progress when message asks about productivity, activity level, or "how have I been doing" (graph shows ACTIVITY data, not study progress).\n'
+        f'11. set_time > task/chat when the message says "I usually study at/around X", "I study at X", "I normally study at X" — these express a preferred study time, not a task to track.\n'
+        f'12. Default to "chat" when genuinely unsure.\n\n'
+        f'Return: {{"intent": "..."}}',
+        max_tokens=100,
     )
-    return result.get("intent", "chat")
+    if isinstance(result, dict):
+        return result.get("intent", "chat")
+    return "chat"
+
+
+def understand_message(text: str, context: str = "") -> dict:
+    """Single LLM call: classify intent AND extract task fields in one shot.
+    Returns {"intent": str, "task": dict|None}.
+    task = {"type": "reminder"|"habit", "title": str, "description": str,
+            "time_minutes": int|None, "recurrence_days": int, "clarify": str}
+    """
+    from datetime import datetime
+    import pytz
+    IST = pytz.timezone("Asia/Kolkata")
+    now_str = datetime.now(IST).strftime("%Y-%m-%d %H:%M %p IST (%A)")
+    context_block = f'Recent conversation:\n{context}\n\n' if context else ""
+    prompt = (
+        f'{context_block}'
+        f'Current time: {now_str} (IST = UTC+5:30)\n'
+        f'Analyze this message: "{text}"\n\n'
+        f'Step 1 — classify intent (exactly one):\n'
+        f'task: add a reminder/habit/todo — "add X", "track X", "remind me to X", "X every day", '
+        f'or [activity]+[time]: "meeting at 6", "drink water in 10", "meds in 30"\n'
+        f'show_tasks: "show my tasks", "list", "what am I tracking"\n'
+        f'show_schedule: "what\'s my day", "my schedule", "what should I do today"\n'
+        f'show_progress: "how am I doing with studies", "study stats"\n'
+        f'show_goals: "my goals", "what am I learning"\n'
+        f'show_graph: "my activity", "my streak", "how productive have I been"\n'
+        f'show_skipgraph: "what did I skip most"\n'
+        f'start_study: "let\'s study", "quiz me"\n'
+        f'study: educational question to answer NOW — "explain recursion", "what is a closure"\n'
+        f'show_topics: "show my topics", "list topics for Python"\n'
+        f'study_topic: study a SPECIFIC named topic — "study OOP Basics"\n'
+        f'skip_topic: skip a SPECIFIC named topic\n'
+        f'breakdown: "break down X", "steps for X", "roadmap for X"\n'
+        f'done: "I finished X", "done", "did it"\n'
+        f'skip_task: "skip X today", "not doing X today"\n'
+        f'delete_task: "delete X", "remove X", "cancel X", "cancel it/that" (cancel an existing task/reminder)\n'
+        f'pause_task: "pause X", "stop reminding me about X"\n'
+        f'reschedule_task: change time of a SPECIFIC named task — "move reading to 8pm"\n'
+        f'set_time: system-wide times (morning brief/study/EOD) — "set morning brief to 8am", "I usually study at 9pm"\n'
+        f'add_topic: "add recursion to my Python goal"\n'
+        f'delay: snooze EXISTING reminder — "delay", "snooze 30 mins", "remind me later"\n'
+        f'mark_important: "mark X important", "X is urgent", "flag it"\n'
+        f'manage_goal: "delete my Python goal", "pause my React goal"\n'
+        f'clear_data: "reset everything", "wipe my data"\n'
+        f'twilio: "turn on/off phone calls", "call alerts"\n'
+        f'show_help: "help", "what can you do"\n'
+        f'show_settings: "show my settings"\n'
+        f'create_goal: learn a SUBJECT over time — "I want to learn React", "teach me Python"\n'
+        f'chat: greeting, small talk, feelings, OR gibberish/typos with no clear meaning ("mo", "asdf") — default when unsure\n\n'
+        f'Key rules:\n'
+        f'- "cancel it/that" right after a task was added → delete_task (use conversation context)\n'
+        f'- Gibberish or 1-2 letter fragments → chat, NEVER task\n'
+        f'- done/skip/delete/pause need an EXISTING task reference; adding new → task\n'
+        f'- "remind me that/this in X mins" → task (not delay)\n'
+        f'- conversational statements ("I should exercise more", "let\'s fix things") → chat\n'
+        f'- recurrence phrase + general activity ("read every day") → task; named learnable subject ("learn Python") → create_goal\n\n'
+        f'Step 2 — IF AND ONLY IF intent is "task", also extract:\n'
+        f'- type: "habit" ONLY with explicit recurrence words (every day, daily, weekly); else "reminder"\n'
+        f'- title: 3-5 words, noun phrase, no action verbs (add/track/remind me to), no time in it. '
+        f'"add call mom" → "Call Mom", "meeting at 6" → "Meeting"\n'
+        f'- description: extra detail or ""\n'
+        f'- time_minutes: minutes from NOW until the stated time. "in 30 mins" → 30, "1 hr" → 60, '
+        f'"at 8pm" → compute from current IST time, "tomorrow 9am" → compute. '
+        f'NO time stated → null. NEVER guess a time.\n'
+        f'- recurrence_days: 1=daily, 7=weekly (habits only)\n'
+        f'- clarify: "" almost always. NEVER ask about time — missing time is fine (task stored unscheduled, '
+        f'bot follows up separately). Only fill clarify if the task itself is unintelligible.\n\n'
+        f'Step 3 — IF intent is done/skip_task/delete_task/pause_task/mark_important, set task_ref:\n'
+        f'the name of the task the user refers to. RESOLVE PRONOUNS from conversation context — '
+        f'"cancel it" right after "Added Stretch Break" → task_ref="Stretch Break". '
+        f'Bare "done"/"skip" with no referent anywhere → task_ref="".\n\n'
+        f'Return ONLY:\n'
+        f'{{"intent": "...", "task": {{"type": "...", "title": "...", "description": "", '
+        f'"time_minutes": null, "recurrence_days": 1, "clarify": ""}} or null, "task_ref": ""}}'
+    )
+    # 70B for routing (8B misclassifies); fall back to 8B if 70B daily quota exhausted
+    try:
+        result = _ask_json(prompt, max_tokens=250, model="llama-3.3-70b-versatile")
+    except Exception:
+        result = _ask_json(prompt, max_tokens=250)
+    if isinstance(result, dict) and result.get("intent"):
+        intent = result.get("intent", "chat")
+        task_ref = str(result.get("task_ref") or "").strip()
+        task = result.get("task")
+        # 8B model often puts the referenced task in task.title instead of task_ref
+        if (not task_ref and intent in ("done", "skip_task", "delete_task", "pause_task", "mark_important")
+                and isinstance(task, dict) and task.get("title")):
+            task_ref = str(task["title"]).strip()
+        return {"intent": intent, "task": task, "task_ref": task_ref}
+    return {"intent": "chat", "task": None, "task_ref": ""}
 
 
 def extract_task_name_from_message(text: str) -> str:
@@ -213,11 +316,31 @@ def extract_task_name_from_message(text: str) -> str:
         f'  "done with Python studying" -> {{"task_name": "Python studying"}}\n'
         f'  "skip meditation today" -> {{"task_name": "meditation"}}\n'
         f'  "delete my running habit" -> {{"task_name": "running"}}\n'
-        f'  "pause reading reminders" -> {{"task_name": "reading"}}\n\n'
-        f'Return just the task name as a short clean string.\n'
-        f'Return: {{"task_name": "..."}}'
+        f'  "pause reading reminders" -> {{"task_name": "reading"}}\n'
+        f'  "my therapy appointment is really important, flag it" -> {{"task_name": "therapy appointment"}}\n'
+        f'  "the morning workout is urgent, mark it" -> {{"task_name": "morning workout"}}\n'
+        f'  "my daily walk is super important" -> {{"task_name": "daily walk"}}\n'
+        f'  "yep did it" -> {{"task_name": ""}}\n'
+        f'  "done" -> {{"task_name": ""}}\n'
+        f'  "done!" -> {{"task_name": ""}}\n'
+        f'  "Done!" -> {{"task_name": ""}}\n'
+        f'  "skip" -> {{"task_name": ""}}\n'
+        f'  "yeah finished" -> {{"task_name": ""}}\n'
+        f'  "mark that as important" -> {{"task_name": ""}}\n'
+        f'  "skip it today" -> {{"task_name": ""}}\n'
+        f'  "mark it important" -> {{"task_name": ""}}\n'
+        f'  "skip that for today" -> {{"task_name": ""}}\n\n'
+        f'Key rule: when message names a SPECIFIC NOUN ("therapy appointment", "morning workout", "daily walk") '
+        f'followed by "flag it"/"mark it"/"important" — extract that noun as the task name.\n'
+        f'If ONLY a pronoun is used ("it", "that", "this") with NO preceding noun in the same message, return "".\n'
+        f'If message names NO specific task (bare confirmations like "did it"/"yep"/"done"/"done!"/"finished"/"skip"), return "".\n'
+        f'Return: {{"task_name": "..."}}',
+        max_tokens=100,
     )
-    return result.get("task_name", "").strip()
+    if isinstance(result, dict):
+        name = str(result.get("task_name", "")).strip()
+        return "" if name.lower() in ("none", "null", "n/a") else name
+    return ""
 
 
 def extract_topic_name(text: str) -> str:
@@ -231,9 +354,12 @@ def extract_topic_name(text: str) -> str:
         f'  "skip Error Handling topic" -> {{"topic_name": "Error Handling"}}\n'
         f'  "do Functions now" -> {{"topic_name": "Functions"}}\n\n'
         f'Return just the topic name as a short clean string.\n'
-        f'Return: {{"topic_name": "..."}}'
+        f'Return: {{"topic_name": "..."}}',
+        max_tokens=100,
     )
-    return result.get("topic_name", "").strip()
+    if isinstance(result, dict):
+        return result.get("topic_name", "").strip()
+    return ""
 
 
 def extract_breakdown_subject(text: str) -> str:
@@ -244,25 +370,27 @@ def extract_breakdown_subject(text: str) -> str:
         f'Return: {{"subject": "the thing to break down"}}\n'
         f'Example: "break down morning workout" -> {{"subject": "morning workout"}}\n'
         f'Example: "steps for Learn Python" -> {{"subject": "Learn Python"}}\n'
-        f'Just return the subject as a clean string, nothing else.'
+        f'Just return the subject as a clean string, nothing else.',
+        max_tokens=100,
     )
-    return result.get("subject", text).strip()
+    if isinstance(result, dict):
+        return result.get("subject", text).strip()
+    return text
 
 
 def breakdown_task(task_name: str) -> list[str]:
     """Returns list of 3-7 concrete step strings for a given task."""
-    result = _ask_json(
+    result = _ask_json_array(
         f'Generate 3 to 7 concrete, actionable steps to complete this task: "{task_name}"\n\n'
         f'Rules:\n'
         f'- Each step should be a short, action-oriented phrase (3-8 words)\n'
         f'- Steps should be ordered logically\n'
         f'- Do NOT number them — just the text\n'
-        f'- Return a JSON array of strings: ["step 1", "step 2", ...]\n'
         f'Example for "Morning workout": ["Warmup stretches", "5-minute jog", "Push-ups 3x15", "Cool down"]'
     )
-    if isinstance(result, list):
-        return [str(s).strip() for s in result if str(s).strip()]
-    raise ValueError("breakdown_task: expected JSON array")
+    if not isinstance(result, list):
+        raise ValueError("Expected JSON array of steps")
+    return [str(s).strip() for s in result if str(s).strip()]
 
 
 def breakdown_study_goal(goal_name: str, difficulty: str = "medium") -> list[str]:
@@ -273,7 +401,7 @@ def breakdown_study_goal(goal_name: str, difficulty: str = "medium") -> list[str
         "hard":   ("10 to 14", "thorough and comprehensive, include advanced and edge-case topics"),
     }
     count_range, depth_hint = _DIFFICULTY_SPECS.get(difficulty, _DIFFICULTY_SPECS["medium"])
-    result = _ask_json(
+    result = _ask_json_array(
         f'Generate an ordered learning path of {count_range} subtopics for this learning goal: "{goal_name}"\n\n'
         f'Depth: {depth_hint}\n'
         f'Rules:\n'
@@ -281,12 +409,11 @@ def breakdown_study_goal(goal_name: str, difficulty: str = "medium") -> list[str
         f'- Each subtopic should be a clear, concise phrase (2-6 words)\n'
         f'- Cover the most important aspects of the topic\n'
         f'- Do NOT number them — just the text\n'
-        f'- Return a JSON array of strings: ["topic 1", "topic 2", ...]\n'
         f'Example for "Learn Python": ["Variables & Data Types", "Control Flow", "Functions", "Lists & Dicts", "File I/O", "OOP Basics"]'
     )
-    if isinstance(result, list):
-        return [str(s).strip() for s in result if str(s).strip()]
-    raise ValueError("breakdown_study_goal: expected JSON array")
+    if not isinstance(result, list):
+        raise ValueError("Expected JSON array of topics")
+    return [str(s).strip() for s in result if str(s).strip()]
 
 
 def parse_task(text: str, context: str = "") -> dict:
@@ -306,38 +433,88 @@ def parse_task(text: str, context: str = "") -> dict:
         "  \"type\": \"reminder\" or \"habit\",\n"
         "  \"title\": \"short task name (3-5 words)\",\n"
         "  \"description\": \"optional detail or empty string\",\n"
-        "  \"delay_minutes\": integer (for reminders — how many minutes from now, e.g. 20),\n"
+        "  \"time_str\": \"ONLY if user explicitly stated a time/duration — e.g. '6:20pm', '9am', 'in 30 minutes', 'tomorrow 8am'. If NO time in message → empty string. NEVER infer or suggest a time.\",\n"
         "  \"recurrence_days\": integer (for habits — 1=daily, 7=weekly),\n"
         "  \"clarify\": \"one question if critical info is missing, else empty string\"\n"
         "}\n\n"
         "Rules:\n"
-        "- 'reminder': one-time — phrases like 'in 20 mins', 'in 2 hours', 'at 5pm', 'in 10', 'remind me in X'\n"
-        "- 'habit': daily/weekly or repeating pattern — 'every day', 'daily', 'every morning', 'every hour', "
-        "'remind me every X', or no time/delay specified. Treat 'every hour' and 'every X mins/hours' as habit with recurrence_days=1\n"
-        "- A bare number like 'in 10' or 'remind in 10' always means 10 minutes (reminder)\n"
-        "- For reminder: set delay_minutes as integer minutes from now, recurrence_days null\n"
-        "- For habit: set recurrence_days (default 1), delay_minutes null\n"
-        "- Convert hours to minutes: '2 hours' = 120, '1.5 hours' = 90\n"
+        "- 'reminder': DEFAULT type for any task/todo WITHOUT explicit recurrence.\n"
+        "  If time given → set time_str to clean normalized time. If NO time in message → time_str MUST be empty string. Do NOT add tomorrow, tonight, or any guessed time.\n"
+        "  Examples: 'meeting at 6' → time_str='6pm', 'call at 6 20' → time_str='6:20pm',\n"
+        "  'meeting zat 6 20' → time_str='6:20pm' (interpret typos), 'in 30 mins' → time_str='in 30 minutes'\n"
+        "- 'habit': ONLY with explicit recurrence words: 'every day', 'daily', 'every morning',\n"
+        "  'every night', 'every week', 'weekly', 'every Monday', 'each day', 'regularly', 'routine'\n"
+        "  Examples: 'drink water every day' → habit, 'remind me to drink water' → reminder\n"
+        "- Keep title short (3-5 words), noun-phrase, NO leading action verbs, NO time in title\n"
+        "  BAD: 'Meeting At 6', 'Add Daily Journaling', '6:20 Meeting'\n"
+        "  GOOD: 'Meeting', 'Daily Journaling', 'Call Dad'\n"
+        "  Strip: add, track, remind me to, set, schedule, create, start, do, ping me to, don't let me forget to\n"
         "- Only ask clarify if genuinely ambiguous\n"
-        "- Keep title short (3-5 words)\n"
-        "- If user says 'remind me to X' with NO time information, set type='reminder', delay_minutes=0, "
-        "and clarify='When? (e.g. \"in 30 mins\", \"at 8pm\")' — do NOT ask any other question\n"
-        "- Never ask 'How many minutes from now?' — always use the above phrasing"
+        "- Never include time in title field"
     )
-    return _ask_json(prompt)
+    result = _ask_json(prompt, max_tokens=200)
+    if isinstance(result, dict):
+        import re as _re_pt
+        title = result.get("title", "")
+        # Strip leading action verbs
+        title = _re_pt.sub(
+            r'^(?:add|track|set|create|schedule|start|do|get|make|build|ping me to|'
+            r'remind me to|remind me about|don\'t let me forget to|let me not forget to)\s+',
+            '', title, flags=_re_pt.IGNORECASE,
+        ).strip()
+        # Strip time expressions from title (LLM sometimes embeds them)
+        title = _re_pt.sub(
+            r'\b(?:at|by|@)\s*\d{1,2}(?::\d{2})?\s*(?:am|pm)?\b',
+            '', title, flags=_re_pt.IGNORECASE,
+        ).strip()
+        title = _re_pt.sub(
+            r'\b\d{1,2}:\d{2}\s*(?:am|pm)?\b',
+            '', title, flags=_re_pt.IGNORECASE,
+        ).strip()
+        title = _re_pt.sub(r'\s{2,}', ' ', title).strip()
+        if title:
+            result["title"] = title
+        return result
+    return {}
+
+
+def parse_time_only(text: str):
+    """Parse a natural language time expression into UTC datetime. Returns datetime or None."""
+    from datetime import datetime, timezone, timedelta
+    import pytz
+    IST = pytz.timezone("Asia/Kolkata")
+    now_ist = datetime.now(IST)
+    now_str = now_ist.strftime("%Y-%m-%d %H:%M %p IST (%A)")
+    result = _ask_json(
+        f'Current time: {now_str} (IST = UTC+5:30)\n'
+        f'Parse this time expression and return how many minutes from NOW until that time.\n'
+        f'Expression: "{text}"\n\n'
+        f'Examples:\n'
+        f'  "1 hr" → {{"minutes": 60}}\n'
+        f'  "30 mins" → {{"minutes": 30}}\n'
+        f'  "30m" → {{"minutes": 30}}\n'
+        f'  "next hour" → {{"minutes": 60}}\n'
+        f'  "2 hours" → {{"minutes": 120}}\n'
+        f'  "8pm" → compute minutes from current IST time until 8pm IST today (or tomorrow if already past)\n'
+        f'  "tomorrow 9am" → minutes from now until tomorrow 9am IST\n'
+        f'  "half hour" → {{"minutes": 30}}\n\n'
+        f'If not a valid time expression, return {{"minutes": 0}}\n'
+        f'Return ONLY: {{"minutes": N}}',
+        max_tokens=40,
+    )
+    if isinstance(result, dict):
+        mins = result.get("minutes", 0)
+        try:
+            mins = int(mins)
+        except (TypeError, ValueError):
+            mins = 0
+        if mins > 0:
+            return datetime.now(timezone.utc) + timedelta(minutes=mins)
+    return None
 
 
 def extract_set_time_info(text: str) -> dict:
-    """Extract which time to set (morning/study/eod) and the time value from a set_time message.
-
-    Covers natural language like:
-    - "I want to study at 9pm" → study
-    - "wake me up with a brief at 7am" → morning
-    - "I usually sleep by 11" → eod (bedtime implies EOD)
-    - "remind me about morning brief at 8" → morning
-
-    Returns: {"time_type": "morning"|"study"|"eod"|"", "time_value": "HH:MM"|""}
-    """
+    """Extract which time to set (morning/study/eod) and the time value from a set_time message."""
     result = _ask_json(
         f'Extract time-setting info from this message.\n'
         f'Message: "{text}"\n\n'
@@ -353,21 +530,16 @@ def extract_set_time_info(text: str) -> dict:
         f'Convert 12h to 24h (e.g. "8am" → "08:00", "9pm" → "21:00", "10:30pm" → "22:30", '
         f'"11" with sleep/night context → "23:00"). '
         f'Return empty string if no time given.\n\n'
-        f'Return: {{"time_type": "...", "time_value": "..."}}'
+        f'Return: {{"time_type": "...", "time_value": "..."}}',
+        max_tokens=100,
     )
-    return {"time_type": result.get("time_type", ""), "time_value": result.get("time_value", "")}
+    if isinstance(result, dict):
+        return {"time_type": result.get("time_type", ""), "time_value": result.get("time_value", "")}
+    return {"time_type": "", "time_value": ""}
 
 
 def extract_reschedule_info(text: str) -> dict:
-    """Extract task name and new time from a reschedule_task message.
-
-    Examples:
-      "remind me about workout at 6am" → {"task_name": "workout", "time": "06:00"}
-      "move my reading reminder to 8pm" → {"task_name": "reading", "time": "20:00"}
-      "change pushup time to 5pm" → {"task_name": "pushup", "time": "17:00"}
-
-    Returns: {"task_name": "...", "time": "HH:MM"}
-    """
+    """Extract task name and new time from a reschedule_task message."""
     result = _ask_json(
         f'Extract the specific task/habit name and new reminder time from this message.\n'
         f'Message: "{text}"\n\n'
@@ -380,9 +552,12 @@ def extract_reschedule_info(text: str) -> dict:
         f'task_name: the specific habit/task name (short, clean string)\n'
         f'time: new time as HH:MM in 24h format. Convert 12h → 24h. '
         f'Return empty string if no time given.\n\n'
-        f'Return: {{"task_name": "...", "time": "..."}}'
+        f'Return: {{"task_name": "...", "time": "..."}}',
+        max_tokens=100,
     )
-    return {"task_name": result.get("task_name", "").strip(), "time": result.get("time", "").strip()}
+    if isinstance(result, dict):
+        return {"task_name": result.get("task_name", "").strip(), "time": result.get("time", "").strip()}
+    return {"task_name": "", "time": ""}
 
 
 def extract_goal_name_from_message(text: str) -> str:
@@ -397,9 +572,12 @@ def extract_goal_name_from_message(text: str) -> str:
         f'  "pause my React goal" → {{"goal_name": "React"}}\n'
         f'  "edit my Machine Learning goal name" → {{"goal_name": "Machine Learning"}}\n\n'
         f'Return just the subject name as a clean string.\n'
-        f'Return: {{"goal_name": "..."}}'
+        f'Return: {{"goal_name": "..."}}',
+        max_tokens=100,
     )
-    return result.get("goal_name", "").strip()
+    if isinstance(result, dict):
+        return result.get("goal_name", "").strip()
+    return ""
 
 
 def extract_manage_goal_action(text: str) -> str:
@@ -412,16 +590,16 @@ def extract_manage_goal_action(text: str) -> str:
         f'- "pause": pause/stop/freeze the goal temporarily\n'
         f'- "edit": edit/rename/update/change the goal\n'
         f'- "": unclear\n\n'
-        f'Return: {{"action": "..."}}'
+        f'Return: {{"action": "..."}}',
+        max_tokens=100,
     )
-    return result.get("action", "").strip()
+    if isinstance(result, dict):
+        return result.get("action", "").strip()
+    return ""
 
 
 def extract_add_topic_info(text: str) -> dict:
-    """Extract topic name and goal name from an 'add_topic' message.
-
-    Returns: {"topic_name": "...", "goal_name": "..."}
-    """
+    """Extract topic name and goal name from an 'add_topic' message."""
     result = _ask_json(
         f'Extract topic and goal from this message.\n'
         f'Message: "{text}"\n\n'
@@ -430,25 +608,26 @@ def extract_add_topic_info(text: str) -> dict:
         f'  "add topic Binary Trees" → {{"topic_name": "Binary Trees", "goal_name": ""}}\n'
         f'  "I want to add Decorators to my learning" → {{"topic_name": "Decorators", "goal_name": ""}}\n\n'
         f'Return goal_name as empty string if not mentioned.\n'
-        f'Return: {{"topic_name": "...", "goal_name": "..."}}'
+        f'Return: {{"topic_name": "...", "goal_name": "..."}}',
+        max_tokens=100,
     )
-    return {"topic_name": result.get("topic_name", "").strip(), "goal_name": result.get("goal_name", "").strip()}
+    if isinstance(result, dict):
+        return {"topic_name": result.get("topic_name", "").strip(), "goal_name": result.get("goal_name", "").strip()}
+    return {"topic_name": "", "goal_name": ""}
 
 
 def transcribe_voice(file_path: str) -> str:
-    """Transcribe a voice/audio file using Gemini Files API.
+    """Transcribe a voice/audio file using Groq Whisper.
 
     Accepts .oga/.ogg (Telegram voice notes). Returns the transcribed text.
     """
-    audio_file = genai.upload_file(file_path, mime_type="audio/ogg")
-    response = _model.generate_content(
-        [
-            "Transcribe this audio to text exactly as spoken. "
-            "Return only the transcription, nothing else.",
-            audio_file,
-        ]
-    )
-    return response.text.strip()
+    with open(file_path, "rb") as f:
+        transcription = _get_client().audio.transcriptions.create(
+            model="whisper-large-v3",
+            file=f,
+            response_format="text",
+        )
+    return transcription.strip() if isinstance(transcription, str) else transcription.text.strip()
 
 
 def daily_summary(status: dict) -> str:

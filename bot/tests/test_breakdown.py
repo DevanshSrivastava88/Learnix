@@ -1,4 +1,4 @@
-"""Tests for the breakdown feature (claude_svc breakdown functions)."""
+﻿"""Tests for the breakdown feature (claude_svc breakdown functions)."""
 from unittest.mock import MagicMock, patch
 import pytest
 
@@ -15,20 +15,20 @@ with patch('supabase_svc.create_client'):
 
 def test_breakdown_task_returns_list_of_strings():
     steps = ["Warmup stretches", "5-minute jog", "Push-ups 3x15", "Cool down"]
-    with patch.object(claude_svc, '_ask_json', return_value=steps):
+    with patch.object(claude_svc, '_ask_json_array', return_value=steps):
         result = claude_svc.breakdown_task("Morning workout")
     assert result == steps
     assert all(isinstance(s, str) for s in result)
 
 
 def test_breakdown_task_filters_empty_strings():
-    with patch.object(claude_svc, '_ask_json', return_value=["Step 1", "", "Step 2", "  "]):
+    with patch.object(claude_svc, '_ask_json_array', return_value=["Step 1", "", "Step 2", "  "]):
         result = claude_svc.breakdown_task("Morning workout")
     assert result == ["Step 1", "Step 2"]
 
 
 def test_breakdown_task_raises_on_non_list():
-    with patch.object(claude_svc, '_ask_json', return_value={"error": "bad"}):
+    with patch.object(claude_svc, '_ask_json_array', return_value={"error": "bad"}):
         with pytest.raises(ValueError):
             claude_svc.breakdown_task("Morning workout")
 
@@ -39,20 +39,20 @@ def test_breakdown_task_raises_on_non_list():
 
 def test_breakdown_study_goal_returns_list_of_strings():
     topics = ["Variables & Data Types", "Control Flow", "Functions", "Lists & Dicts", "OOP Basics"]
-    with patch.object(claude_svc, '_ask_json', return_value=topics):
+    with patch.object(claude_svc, '_ask_json_array', return_value=topics):
         result = claude_svc.breakdown_study_goal("Learn Python")
     assert result == topics
     assert all(isinstance(s, str) for s in result)
 
 
 def test_breakdown_study_goal_filters_empty_strings():
-    with patch.object(claude_svc, '_ask_json', return_value=["Topic A", "", "Topic B"]):
+    with patch.object(claude_svc, '_ask_json_array', return_value=["Topic A", "", "Topic B"]):
         result = claude_svc.breakdown_study_goal("Learn Python")
     assert result == ["Topic A", "Topic B"]
 
 
 def test_breakdown_study_goal_raises_on_non_list():
-    with patch.object(claude_svc, '_ask_json', return_value={"error": "bad"}):
+    with patch.object(claude_svc, '_ask_json_array', return_value={"error": "bad"}):
         with pytest.raises(ValueError):
             claude_svc.breakdown_study_goal("Learn Python")
 
@@ -93,7 +93,7 @@ def test_classify_intent_breakdown_learning_path():
 
 def _task_row(**kwargs):
     base = {
-        'id': 'task-abc', 'user_id': 1, 'title': 'Morning workout — Step 1: Warmup',
+        'id': 'task-abc', 'user_id': 1, 'title': 'Morning workout â€” Step 1: Warmup',
         'task_type': 'habit', 'status': 'active', 'description': '',
         'next_reminder_at': None, 'recurrence_days': 1, 'target_date': None,
         'created_at': '2026-01-01T00:00:00'
@@ -115,7 +115,7 @@ def test_create_step_task_as_habit():
     with patch('tasks.svc.get_client', return_value=make_tasks_client(row)):
         result = tasks_svc.create_task(
             user_id=1,
-            title="Morning workout — Step 1: Warmup",
+            title="Morning workout â€” Step 1: Warmup",
             task_type="habit",
             recurrence_days=1,
         )
@@ -162,7 +162,7 @@ def test_breakdown_study_goal_easy_prompts_fewer_topics():
     def fake_ask_json(prompt):
         captured['prompt'] = prompt
         return ["Topic A", "Topic B", "Topic C", "Topic D"]
-    with patch.object(claude_svc, '_ask_json', side_effect=fake_ask_json):
+    with patch.object(claude_svc, '_ask_json_array', side_effect=fake_ask_json):
         result = claude_svc.breakdown_study_goal("Learn CSS", difficulty="easy")
     assert "4" in captured['prompt'] or "5" in captured['prompt']
     assert len(result) == 4
@@ -173,7 +173,7 @@ def test_breakdown_study_goal_hard_prompts_more_topics():
     def fake_ask_json(prompt):
         captured['prompt'] = prompt
         return [f"Topic {i}" for i in range(12)]
-    with patch.object(claude_svc, '_ask_json', side_effect=fake_ask_json):
+    with patch.object(claude_svc, '_ask_json_array', side_effect=fake_ask_json):
         result = claude_svc.breakdown_study_goal("Learn ML", difficulty="hard")
     assert "10" in captured['prompt'] or "14" in captured['prompt']
     assert len(result) == 12

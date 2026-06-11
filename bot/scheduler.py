@@ -166,6 +166,17 @@ def format_morning_brief(user_id: int) -> str:
     except Exception:
         pass  # Don't break the morning brief if this fails
 
+    # Unscheduled tasks
+    try:
+        unscheduled = [t for t in all_tasks if t.get("task_type") == "task" and not t.get("next_reminder_at")]
+        if unscheduled:
+            lines.append("\n📌 *Unscheduled tasks:*")
+            for t in unscheduled:
+                lines.append(f"• {t['title']}")
+            lines.append("_Unscheduled tasks are easy to forget — say \"set [task] to [time]\" to pin one._")
+    except Exception:
+        pass
+
     lines.append(f"\n🔥 Streak: {streak} day(s) — let's keep it going!")
     return "\n".join(lines)
 
@@ -301,6 +312,15 @@ async def reminder_poller(ctx: ContextTypes.DEFAULT_TYPE) -> None:
         task_type = task["task_type"]
         important = tasks_svc.is_important(task)
         try:
+            if task_type == "task":
+                # One-time task with a scheduled time — fire once, then complete
+                await ctx.bot.send_message(
+                    uid,
+                    f"⏰ Hey! Don't forget: *{title}*",
+                    parse_mode=ParseMode.MARKDOWN,
+                )
+                tasks_svc.update_task(task_id, status="completed")
+                continue
             if task_type == "habit":
                 now_ist = datetime.now(IST)
 

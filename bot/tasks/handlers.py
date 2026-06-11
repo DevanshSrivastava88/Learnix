@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import os
+import re
 
 import pytz
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
@@ -18,6 +19,14 @@ IST = pytz.timezone("Asia/Kolkata")
 
 # Conversation states
 NT_DESCRIBE, NT_CONFIRM = range(20, 22)
+
+# Matches an explicit time/duration in the user's own words — used to catch the model
+# hallucinating a delay_minutes when the message actually gave no time at all.
+_TIME_EXPR = re.compile(
+    r'\b(\d{1,2}(:\d{2})?\s*(am|pm)|in\s+\d+\s*(min(ute)?|hour|hr)s?|at\s+\d|by\s+\d|'
+    r'tonight|tomorrow|today|noon|midnight|morning|evening|afternoon|night)\b',
+    re.IGNORECASE,
+)
 DT_SELECT, DT_CONFIRM = range(30, 32)
 
 
@@ -45,39 +54,80 @@ async def nt_describe(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     return await _parse_and_respond(update, ctx, update.message.text.strip(), claude_svc)
 
 
-async def _parse_and_respond(update, ctx, text: str, claude_svc, context: str = "") -> int:
-    try:
-        parsed = claude_svc.parse_task(text, context=context)
-    except Exception as e:
-        logger.error(f"parse_task failed: {e}")
-        await update.message.reply_text("Hmm, didn't catch that — say it again?")
-        return NT_DESCRIBE
+async def _parse_and_respond(update, ctx, text: str, claude_svc, context: str = "",
+                             pre_parsed: dict = None) -> int:
+    import asyncio as _asyncio
+    if pre_parsed:
+        parsed = pre_parsed
+    else:
+        try:
+            parsed = await _asyncio.to_thread(claude_svc.parse_task, text, context)
+        except Exception as e:
+            logger.error(f"parse_task failed: {e}")
+            await update.message.reply_text("Hmm, didn't catch that — say it again?")
+            return NT_DESCRIBE
+
+    task_type = parsed.get("type", "reminder")
 
     if parsed.get("clarify"):
         await update.message.reply_text(parsed["clarify"])
         ctx.user_data["partial_task"] = parsed
         return NT_DESCRIBE
 
-    task_type = parsed.get("type", "habit")
     title = parsed.get("title", "")
     desc = parsed.get("description", "")
 
-    # One-time reminder — schedule a job, no DB needed
+    # One-time reminder
     if task_type == "reminder":
-        delay = parsed.get("delay_minutes") or 0
-        if delay <= 0:
-            await update.message.reply_text(
-                'When should I remind you? (e.g. \'in 30 mins\', \'at 6pm\', \'in 2 hours\')'
-            )
-            ctx.user_data["partial_task"] = parsed
-            return NT_DESCRIBE
         uid = update.effective_user.id
-        ctx.job_queue.run_once(
-            _reminder_fire,
-            when=delay * 60,
-            data={"user_id": uid, "title": title, "task_id": ""},
-            name=f"onetime_{uid}_{title}",
-        )
+        from datetime import timezone as _tz, datetime as _dt
+        if parsed.get("time_minutes") is not None:
+            # Unified LLM path — minutes computed by the model
+            try:
+                delay = max(0, int(parsed["time_minutes"]))
+            except (TypeError, ValueError):
+                delay = 0
+        else:
+            # Legacy path (/newtask flow) — LLM-normalized time_str, regex converts
+            import skip_time_parser as stp
+            time_str = (parsed.get("time_str") or "").strip()
+            parsed_dt = stp.parse_time_expression(time_str) if time_str else None
+            if parsed_dt:
+                delay = max(0, int((parsed_dt - _dt.now(_tz.utc)).total_seconds() / 60))
+            else:
+                delay = 0
+        from datetime import timedelta as _td
+        if delay == 0:
+            # No time — store unscheduled, ask for time
+            task_row = None
+            try:
+                task_row = db.create_task(
+                    user_id=uid, title=title, task_type="task",
+                    description=parsed.get("description", ""),
+                    recurrence_days=None, target_date=None, next_reminder_at=None,
+                )
+            except Exception as e:
+                logger.error(f"create unscheduled task failed: {e}")
+            if task_row is None:
+                await update.message.reply_text("Hmm, couldn't save that — try again?")
+                return ConversationHandler.END
+            ctx.user_data["pending_time_for"] = {"task_id": task_row["id"], "title": title}
+            await update.message.reply_text(
+                f"Added *{title}*. 📌 Want to set a time? Say `8pm`, `in 2 hours`, or `no`.",
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=ReplyKeyboardRemove(),
+            )
+            return ConversationHandler.END
+        # Timed — store with next_reminder_at
+        next_at = (_dt.now(_tz.utc) + _td(minutes=delay)).isoformat()
+        try:
+            db.create_task(
+                user_id=uid, title=title, task_type="task",
+                description=parsed.get("description", ""),
+                recurrence_days=None, target_date=None, next_reminder_at=next_at,
+            )
+        except Exception as e:
+            logger.error(f"create timed task failed: {e}")
         time_str = f"{delay} min" if delay < 60 else f"{delay // 60}h {delay % 60}m".replace(" 0m", "")
         await update.message.reply_text(f"⏰ Got it! I'll remind you about *{title}* in {time_str}.", parse_mode=ParseMode.MARKDOWN)
         return ConversationHandler.END
@@ -114,9 +164,9 @@ async def _parse_and_respond(update, ctx, text: str, claude_svc, context: str = 
     if desc:
         summary += f"\n_{desc}_"
 
-    buttons = [["✅ Yeah, add it"], ["✏️ Edit"], ["❌ Cancel"]]
+    buttons = [["⏭ No specific time"], ["✏️ Edit"], ["❌ Cancel"]]
     await update.message.reply_text(
-        f"Got it:\n\n{summary}\n\nLook right?",
+        f"Got it:\n\n{summary}\n\nAny specific time you want to schedule this? (e.g. `8pm`)\nOr press **No specific time**.",
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=ReplyKeyboardMarkup(buttons, one_time_keyboard=True, resize_keyboard=True),
     )
@@ -154,6 +204,20 @@ async def nt_confirm(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
 
     uid = update.effective_user.id
     recur = parsed.get("recurrence_days", 1)
+
+    # Try to parse a time from the user's reply before creating the task
+    import skip_time_parser as stp
+    is_skip = text.lower() in {"no specific time", "⏭ no specific time", "skip time", "skip", "default", "later", "no", "nope", "yeah, add it", "✅ yeah, add it", "yes", "yep", "add it", "sure", "ok", "okay", "add"}
+    parsed_time = None if is_skip else stp.parse_time_expression(text)
+
+    # If text is not skip, not a time, and not a confirm word — re-ask
+    if not is_skip and parsed_time is None:
+        await update.message.reply_text(
+            f"Didn't catch that as a time. Try `8pm`, `7:30am` — or press **Skip time** to add without one.",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+        return NT_CONFIRM
+
     try:
         task = db.create_task(
             user_id=uid,
@@ -168,18 +232,27 @@ async def nt_confirm(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
         await update.message.reply_text("Something went wrong saving that. Try again!", reply_markup=ReplyKeyboardRemove())
         ctx.user_data.clear()
         return ConversationHandler.END
+
     freq = "every day" if recur == 1 else f"every {recur} days"
-    # Ask for preferred reminder time before clearing state
     ctx.user_data.clear()
-    ctx.user_data["pending_habit_time_id"] = task["id"]
-    ctx.user_data["pending_habit_title"] = task["title"]
-    await update.message.reply_text(
-        f"Added! 🎉 *{task['title']}* — {freq}.\n\n"
-        f"⏰ What time should I remind you? (e.g. `7am`, `6:30pm`)\n"
-        f"Or say `skip` to use your default.",
-        parse_mode=ParseMode.MARKDOWN,
-        reply_markup=ReplyKeyboardRemove(),
-    )
+
+    if parsed_time:
+        db.set_custom_time(task["id"], parsed_time)
+        import pytz
+        IST = pytz.timezone("Asia/Kolkata")
+        time_label = parsed_time.astimezone(IST).strftime("%I:%M %p").lstrip("0")
+        await update.message.reply_text(
+            f"Added! 🎉 *{task['title']}* — {freq} at {time_label} IST. 🔔",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=ReplyKeyboardRemove(),
+        )
+    else:
+        await update.message.reply_text(
+            f"Added! 🎉 *{task['title']}* — {freq}.\n"
+            f"Set a time anytime: 'move {task['title'].lower()} to 8pm'",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=ReplyKeyboardRemove(),
+        )
     return ConversationHandler.END
 
 
@@ -195,12 +268,22 @@ async def cmd_tasks(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not tasks:
         await update.message.reply_text("No tasks yet! Just tell me what you want to track.")
         return
-    lines = ["<b>Here's what you're tracking:</b>\n"]
-    for t in tasks:
-        recur = t.get("recurrence_days", 1)
-        freq = "daily" if recur == 1 else f"every {recur}d"
-        lines.append(f"  • {t['title']} ({freq})")
-    lines.append('\nSay "done with [task]" or "skip [task]" — or use /deletetask, /pause to manage.')
+
+    from datetime import datetime
+    timed = [t for t in tasks if t.get("next_reminder_at")]
+    untimed = [t for t in tasks if not t.get("next_reminder_at")]
+    timed.sort(key=lambda t: t["next_reminder_at"])
+
+    lines = ["<b>📋 Your tasks</b>\n"]
+    for t in timed:
+        time_label = datetime.fromisoformat(t["next_reminder_at"]).astimezone(IST).strftime("%I:%M%p").lstrip("0").lower().replace(":00", "")
+        lines.append(f"  {time_label} → {t['title']}")
+    if untimed:
+        lines.append("\n________")
+        for t in untimed:
+            lines.append(f"  • {t['title']}")
+        lines.append("\n<i>Unscheduled tasks are often ignored — say \"set [task] to [time]\" to pin one.</i>")
+
     await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.HTML)
 
 
@@ -476,7 +559,7 @@ async def handle_skip_response(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -
         ctx.user_data["pending_skip"] = task
         return True
 
-    db.reschedule_task(task["id"], parsed_dt)
+    db.set_custom_time(task["id"], parsed_dt)
     db.log_skip(uid, task["id"], note=f"rescheduled_to:{parsed_dt.isoformat()}")
     time_str = parsed_dt.astimezone(IST).strftime("%I:%M %p IST")
     await update.message.reply_text(

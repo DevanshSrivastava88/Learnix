@@ -59,6 +59,7 @@ async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         "/editgoal, /deletegoal, /pausegoal — Manage goals\n\n"
         "*Tasks & Reminders:*\n"
         "Just talk naturally — or use /newtask\n"
+        "Say \"break X into steps\" to split a task or goal into a checklist\n"
         "/schedule — Full day view; reply with times to plan habits\n"
         "/tasks — List all tasks\n"
         "/skipgraph — Skip patterns graph\n"
@@ -181,6 +182,14 @@ async def _resolve_pending_task_action(update: Update, ctx: ContextTypes.DEFAULT
     action = pending["action"]
     candidates = pending["candidates"]  # list of {"id": ..., "title": ...}
 
+    # If message looks like a new action (long or contains action verbs), abandon disambiguation
+    _new_action_verbs = {"remind","snooze","delay","skip","add","show","mark","break","help","set","move","push","delete","pause","resume","track","schedule","study","quiz","teach"}
+    reply_words = set(reply.lower().split())
+    is_new_intent = len(reply.split()) > 4 or bool(reply_words & _new_action_verbs)
+    if is_new_intent:
+        ctx.user_data.pop("pending_task_action", None)
+        return False  # route message normally
+
     # Fuzzy match user's reply against candidate titles
     matched = _fuzzy_match_task(reply, candidates)
 
@@ -284,7 +293,7 @@ async def _resolve_pending_task_action(update: Update, ctx: ContextTypes.DEFAULT
         except Exception:
             await update.message.reply_text("Couldn't parse that time. Try something like '6am' or '20:30'.")
             return True
-        task_db.reschedule_task(task["id"], new_time_utc)
+        task_db.set_custom_time(task["id"], new_time_utc)
         when_label = new_time_utc.astimezone(IST).strftime("%I:%M %p")
         day_label = "today" if new_time_utc.astimezone(IST).date() == datetime.now(IST).date() else "tomorrow"
         await update.message.reply_text(
@@ -318,7 +327,7 @@ async def _handle_habit_time_response(update: Update, ctx: ContextTypes.DEFAULT_
         ctx.user_data["pending_habit_time_id"] = task_id
         ctx.user_data["pending_habit_title"] = title
         return True
-    task_db.reschedule_task(task_id, dt)
+    task_db.set_custom_time(task_id, dt)
     import pytz
     from datetime import timezone
     IST = pytz.timezone("Asia/Kolkata")
@@ -345,9 +354,10 @@ async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     uid = update.effective_user.id
     text = update.message.text.strip().lower()
 
-    # Study feature disabled — clear any stale study state
-    ctx.bot_data.get("pending_sessions", {}).pop(uid, None)
-    ctx.bot_data.get("quiz_state", {}).pop(uid, None)
+    # Mid-quiz answer takes priority over normal routing
+    if uid in ctx.bot_data.get("quiz_state", {}):
+        await study_handlers.handle_quiz_answer(update, ctx)
+        return
 
     # Clear confirmation flow
     if await handle_clear_confirm(update, ctx):
@@ -369,18 +379,14 @@ async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     # Pending task confirm/re-describe from free-text flow
     freetext_state = ctx.user_data.get("freetext_task_state")
     if freetext_state == "confirm":
-        # Only treat as confirmation if user explicitly confirms/edits/cancels
-        confirm_words = {"yeah, add it", "✅ yeah, add it", "yes", "yep", "add it", "sure", "ok", "okay", "add", "✏️ edit", "edit", "❌ cancel", "cancel", "no", "nope"}
-        if update.message.text.strip().lower() not in confirm_words:
-            # Not a confirm response — clear state and fall through to normal routing
-            ctx.user_data.pop("freetext_task_state", None)
-            ctx.user_data.pop("parsed_task", None)
-        else:
-            from tasks.handlers import nt_confirm, NT_DESCRIBE
-            result = await nt_confirm(update, ctx)
-            if result == NT_DESCRIBE:
-                ctx.user_data["freetext_task_state"] = "describe"
-            return
+        from tasks.handlers import nt_confirm, NT_DESCRIBE, NT_CONFIRM
+        result = await nt_confirm(update, ctx)
+        if result == NT_DESCRIBE:
+            ctx.user_data["freetext_task_state"] = "describe"
+        elif result == NT_CONFIRM:
+            # nt_confirm asked user to retry time input — keep state
+            ctx.user_data["freetext_task_state"] = "confirm"
+        return
     if freetext_state == "describe":
         import claude_svc as _cs
         from tasks.handlers import _parse_and_respond
@@ -459,10 +465,21 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
     if await _check_and_onboard_new_user(update, ctx):
         return
 
-    # Pre-check cancel words BEFORE classify_intent — instant response, no API call
+    # Pre-check common bare keywords — instant response, no API call
     ascii_text = text.encode("ascii", errors="ignore").decode().strip()
+    _bare = ascii_text.lower()
+    if _bare in {"list", "tasks", "my tasks", "show list", "show tasks"}:
+        from tasks.handlers import cmd_tasks
+        await cmd_tasks(update, ctx)
+        return
+    if _bare in {"help", "commands"}:
+        await cmd_help(update, ctx)
+        return
+    if _bare in {"clear", "clear all", "clear everything", "wipe", "reset all", "wipe everything"}:
+        await cmd_clear(update, ctx)
+        return
     cancel_words = {"cancel", "stop", "quit", "exit", "nevermind", "never mind", "forget it"}
-    if ascii_text.lower() in cancel_words:
+    if _bare in cancel_words:
         uid = update.effective_user.id
         # Clean up quiz state if active
         if uid in ctx.bot_data.get("quiz_state", {}):
@@ -475,6 +492,33 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
             ctx.user_data.clear()
             await update.message.reply_text("Cancelled! 👍", reply_markup=ReplyKeyboardRemove())
         return
+
+    # Pending time follow-up for unscheduled tasks
+    if ctx.user_data.get("pending_time_for"):
+        pending = ctx.user_data["pending_time_for"]
+        no_words = {"no", "nah", "nope", "skip", "later", "not now", "n"}
+        from datetime import timezone as _tz
+        import asyncio as _aio
+        if text.lower().strip() in no_words:
+            ctx.user_data.pop("pending_time_for", None)
+            await update.message.reply_text("Got it, I'll leave it unscheduled. 📌")
+            return
+        parsed_dt = await _aio.to_thread(claude_svc.parse_time_only, text)
+        if parsed_dt:
+            task_id = pending.get("task_id")
+            title = pending.get("title", "task")
+            if task_id:
+                import tasks.svc as _tsvc
+                _tsvc.update_task(task_id, next_reminder_at=parsed_dt.isoformat())
+            ctx.user_data.pop("pending_time_for", None)
+            import datetime as _dt_mod
+            delay = max(0, int((parsed_dt - _dt_mod.datetime.now(_tz.utc)).total_seconds() / 60))
+            time_str = f"{delay} min" if delay < 60 else f"{delay // 60}h {delay % 60}m".replace(" 0m", "")
+            await update.message.reply_text(f"⏰ Set! I'll remind you about *{title}* in {time_str}.", parse_mode=ParseMode.MARKDOWN)
+            return
+        else:
+            await update.message.reply_text("Didn't catch that as a time. Say something like `8pm`, `in 2 hours`, or `no`.")
+            return
 
     # Bulk topic import — numbered/bulleted list while user has an active goal
     parsed_list = _parse_bullet_list(text)
@@ -508,22 +552,45 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
         await update.message.reply_text("Hey! 👋 What do you want to track? Or say 'help' to see what I can do.")
         return
 
-    # Build rolling chat context (last 10 turns)
-    history = ctx.user_data.setdefault("chat_history", [])
+    # Build rolling chat context (last 12 lines, persisted in DB across restarts)
+    import asyncio as _aio_hist
+    import chat_history_svc as _chs
+    uid_hist = update.effective_user.id
+    past = await _aio_hist.to_thread(_chs.load_history, uid_hist)
+    context = "\n".join(past)  # context = everything before current message
+    history = _chs.DbHistory(uid_hist, past)
     history.append(f"User: {text}")
-    if len(history) > 12:
-        history[:] = history[-12:]
-    context = "\n".join(history[:-1])  # exclude current message
+
+    # Pre-check: "I usually/normally study at/around Xpm" → set study time directly
+    if _re.search(
+        r'\b(?:usually|normally|typically|generally)\s+(?:study|read|learn|revise)\s+(?:at|around|by)\b',
+        text, _re.IGNORECASE,
+    ):
+        await handle_set_time_freetext(update, ctx, text, claude_svc)
+        return
 
     await update.message.chat.send_action(ChatAction.TYPING)
     try:
-        intent = claude_svc.classify_intent(text, context=context)
+        import asyncio as _asyncio
+        understood = await _asyncio.to_thread(claude_svc.understand_message, text, context)
+        intent = understood["intent"]
+        # Deterministic guard: explicit tracking prefix always means task,
+        # even when the LLM misclassifies (8B model occasionally returns chat)
+        if intent == "chat" and _re.match(
+            r'^(?:add|track|remind me)\b', text.strip(), _re.IGNORECASE
+        ):
+            intent = "task"
+            understood["task"] = None  # force full parse below
+        logger.info(f"understand_message: text={text!r} -> {understood!r}")
     except Exception:
-        intent = "chat"
+        await update.message.reply_text("⚡ Had a hiccup — try that again?")
+        return
 
     if intent == "task":
-        await _parse_and_respond(update, ctx, text, claude_svc, context=context)
-        history.append("Bot: [created/asked about a task or reminder]")
+        await _parse_and_respond(update, ctx, text, claude_svc, context=context,
+                                 pre_parsed=understood.get("task"))
+        _t = understood.get("task") or {}
+        history.append(f"Bot: [added task: {_t.get('title') or text}]")
     elif intent == "breakdown":
         await handle_breakdown(update, ctx, text)
         history.append("Bot: [broke down a task into steps]")
@@ -533,25 +600,29 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
     elif intent == "show_schedule":
         await cmd_schedule(update, ctx)
         history.append("Bot: [showed day schedule]")
-    elif intent in ("show_progress", "show_goals", "show_topics", "study_topic",
-                    "skip_topic", "start_study", "create_goal", "study",
-                    "add_topic", "manage_goal"):
-        # Study feature disabled — treat as chat
-        intent = "chat"
-        # fall through to chat handler below
-        try:
-            context_block = f"Recent conversation:\n{context}\n\n" if context else ""
-            reply = claude_svc._ask(
-                f"{context_block}You are disrupto, a no-nonsense AI productivity coach. "
-                f"Study features are coming soon. Reply in 1 sentence acknowledging what the user said "
-                f"and redirect them to habits/reminders/tasks.\n\nUser: {text}",
-                max_tokens=200,
-            )
-            history.append(f"Bot: {reply[:200]}")
-            await update.message.reply_text(reply)
-        except Exception:
-            await update.message.reply_text("Study features coming soon! For now I'm focused on habits and tasks.")
-        return
+    elif intent == "show_progress":
+        await study_handlers.cmd_progress(update, ctx)
+        history.append("Bot: [showed study progress]")
+    elif intent == "show_goals":
+        await study_handlers.cmd_goals(update, ctx)
+        history.append("Bot: [showed study goals]")
+    elif intent == "show_topics":
+        await study_handlers.cmd_topics(update, ctx)
+        history.append("Bot: [showed topics]")
+    elif intent == "study_topic":
+        topic_name = claude_svc.extract_topic_name(text)
+        await study_handlers.handle_study_topic(update, ctx, topic_name)
+        history.append("Bot: [jumped to a study topic]")
+    elif intent == "skip_topic":
+        topic_name = claude_svc.extract_topic_name(text)
+        await study_handlers.handle_skip_topic_request(update, ctx, topic_name)
+        history.append("Bot: [asked to confirm skipping a topic]")
+    elif intent in ("start_study", "study"):
+        await study_handlers.cmd_study(update, ctx)
+        history.append("Bot: [started a study session]")
+    elif intent == "create_goal":
+        await handle_create_goal_freetext(update, ctx, text, claude_svc)
+        history.append("Bot: [started creating a study goal]")
     elif intent == "show_graph":
         await cmd_graph(update, ctx)
     elif intent == "show_skipgraph":
@@ -584,19 +655,32 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
             if last_id:
                 await handle_last_reminded_action(update, ctx, last_id, intent)
                 return
-        await handle_task_action_freetext(update, ctx, text, intent, claude_svc)
+        task_ref = understood.get("task_ref", "")
+        # Pronoun guard: bare "it/that/this" must resolve from history, never fuzzy-match
+        # (substring matching once deleted "Meditation Task" because it contains "it")
+        if task_ref.lower().strip() in ("it", "that", "this", "that one", "this one"):
+            m_hist = _re.findall(r'\[added task: ([^\]]+)\]', context)
+            task_ref = m_hist[-1].strip() if m_hist else ""
+        await handle_task_action_freetext(update, ctx, text, intent, claude_svc,
+                                          task_ref=task_ref)
+        history.append(f"Bot: [{intent} on: {task_ref or 'unnamed task'}]")
     else:
         # General chat — Learnix responds naturally
         try:
             context_block = f"Recent conversation:\n{context}\n\n" if context else ""
             reply = claude_svc._ask(
-                f"{context_block}You are Learnix, a friendly AI life coach. Reply casually and helpfully in 1-2 sentences.\n\nUser: {text}",
+                f"{context_block}You're Learnix — texting a friend, not coaching a client. "
+                f"Reply like a sharp, warm, witty buddy: short, real, a little playful — banter WITH them, never AT them. "
+                f"No therapy-speak ('that's a totally valid feeling', 'what challenges have you faced'), no generic pep talks, no restating their message back at them. "
+                f"Never mock, insult, or guilt-trip them — especially on sensitive stuff like weight, sleep, or how they're feeling. Tease situations, not the person. "
+                f"Don't invent personal experiences or a physical life of your own (no 'I just got back from brunch') — you're an AI, just a warm, funny one. "
+                f"1-2 sentences.\n\nUser: {text}",
                 max_tokens=4096,
             )
             history.append(f"Bot: {reply[:200]}")
             await update.message.reply_text(reply)
         except Exception:
-            await update.message.reply_text("I'm here! Say 'help' to see what I can do.")
+            await update.message.reply_text("😅 Glitched for a sec. Try again?")
 
 
 async def handle_voice(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
@@ -757,6 +841,18 @@ def _fuzzy_match_task(task_name: str, tasks: list[dict]) -> list[dict]:
     return [t for _, t in scored[:3]]
 
 
+async def _ask_which_task(update: Update, ctx: ContextTypes.DEFAULT_TYPE, task_name: str, tasks: list[dict]) -> None:
+    """No fuzzy match for task_name — show what the user's actually tracking instead of dead-ending.
+    Deliberately does NOT set pending_task_action: a spurious fuzzy-match on the user's NEXT
+    (unrelated) message could trigger the wrong destructive action against the wrong task."""
+    candidates = tasks[:5]
+    names = "\n".join(f"  • {t['title']}" for t in candidates)
+    await update.message.reply_text(
+        f"Don't see *{task_name}* on your list — here's what you've got:\n{names}\nSay the name again and I'll get it.",
+        parse_mode=ParseMode.MARKDOWN,
+    )
+
+
 async def handle_last_reminded_action(
     update: Update,
     ctx: ContextTypes.DEFAULT_TYPE,
@@ -808,8 +904,11 @@ async def handle_task_action_freetext(
     text: str,
     intent: str,
     claude_svc,
+    task_ref: str = None,
 ) -> None:
-    """Handle done/skip_task/delete_task/pause_task intents expressed in free text."""
+    """Handle done/skip_task/delete_task/pause_task intents expressed in free text.
+    task_ref: pre-resolved task name from understand_message (pronouns resolved
+    via conversation context); None falls back to a separate extraction call."""
     import tasks.svc as task_db
     import analytics_svc
     import settings_svc as settings_db
@@ -825,20 +924,26 @@ async def handle_task_action_freetext(
     if intent in ("done", "skip_task"):
         last_id = ctx.bot_data.get("last_reminded", {}).get(uid)
         if last_id:
-            # Extract task name to see if user is referring to something specific
-            try:
-                task_name = claude_svc.extract_task_name_from_message(text)
-            except Exception:
-                task_name = ""
+            # Check if user is referring to something specific
+            if task_ref is not None:
+                task_name = task_ref
+            else:
+                try:
+                    task_name = claude_svc.extract_task_name_from_message(text)
+                except Exception:
+                    task_name = ""
             if not task_name:
                 await handle_last_reminded_action(update, ctx, last_id, intent)
                 return
 
-    # Extract task name from message
-    try:
-        task_name = claude_svc.extract_task_name_from_message(text)
-    except Exception:
-        task_name = ""
+    # Resolve task name (pre-resolved by understand_message, or extract now)
+    if task_ref is not None:
+        task_name = task_ref
+    else:
+        try:
+            task_name = claude_svc.extract_task_name_from_message(text)
+        except Exception:
+            task_name = ""
 
     if not task_name:
         await update.message.reply_text(
@@ -849,10 +954,7 @@ async def handle_task_action_freetext(
     matches = _fuzzy_match_task(task_name, tasks)
 
     if not matches:
-        await update.message.reply_text(
-            f"Couldn't find a task matching *{task_name}*. Try /tasks to see your list.",
-            parse_mode=ParseMode.MARKDOWN,
-        )
+        await _ask_which_task(update, ctx, task_name, tasks)
         return
 
     if len(matches) > 1:
@@ -943,10 +1045,7 @@ async def handle_reschedule_task_freetext(
 
     matches = _fuzzy_match_task(task_name, tasks)
     if not matches:
-        await update.message.reply_text(
-            f"Couldn't find a task matching *{task_name}*. Say /tasks to see your list.",
-            parse_mode=ParseMode.MARKDOWN,
-        )
+        await _ask_which_task(update, ctx, task_name, tasks)
         return
 
     if len(matches) > 1:
@@ -985,7 +1084,7 @@ async def handle_reschedule_task_freetext(
         )
         return
 
-    task_db.reschedule_task(task["id"], new_time_utc)
+    task_db.set_custom_time(task["id"], new_time_utc)
 
     when_label = new_time_utc.astimezone(IST).strftime("%I:%M %p")
     day_label = "today" if new_time_utc.astimezone(IST).date() == datetime.now(IST).date() else "tomorrow"
@@ -1486,7 +1585,7 @@ async def handle_clear_confirm(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -
     _logger = _log.getLogger(__name__)
     sb = __import__("supabase_svc").get_client()
     # topics has no user_id — cascades when goals are deleted
-    tables = ["task_skips", "activity_log", "tasks", "goals", "motivation_log", "settings"]
+    tables = ["task_skips", "activity_log", "tasks", "goals", "motivation_log", "settings", "chat_history"]
     errors = []
     for table in tables:
         try:
@@ -1707,7 +1806,7 @@ async def handle_schedule_timesheet(update: Update, ctx: ContextTypes.DEFAULT_TY
         if dt is None:
             unmatched.append(f"{raw_name} (bad time: {time_str})")
             continue
-        task_db.reschedule_task(task["id"], dt)
+        task_db.set_custom_time(task["id"], dt)
         scheduled.append((task["title"], dt))
 
     if not scheduled:
@@ -1753,27 +1852,12 @@ async def handle_mark_important_freetext(
         task_name = ""
 
     if not task_name:
-        # Try last reminded task
-        last_id = ctx.bot_data.get("last_reminded", {}).get(uid)
-        if last_id:
-            task = next((t for t in tasks if t["id"] == last_id), None)
-            if task:
-                task_db.mark_important(task["id"])
-                await update.message.reply_text(
-                    f"Got it — *{task['title']}* is now marked ⚡ important. "
-                    f"I'll keep reminding you every hour until you do it.",
-                    parse_mode=ParseMode.MARKDOWN,
-                )
-                return
         await update.message.reply_text("Which task should I mark as important? Try: 'mark workout as important'.")
         return
 
     matches = _fuzzy_match_task(task_name, tasks)
     if not matches:
-        await update.message.reply_text(
-            f"Couldn't find a task matching *{task_name}*. Try /tasks to see your list.",
-            parse_mode=ParseMode.MARKDOWN,
-        )
+        await _ask_which_task(update, ctx, task_name, tasks)
         return
 
     if len(matches) > 1:
@@ -1958,9 +2042,23 @@ def main() -> None:
             await u.message.reply_text(
                 "Quiz cancelled. Come back whenever you're ready!",
             )
+            return
+        # Multi-step free-text flows are tracked via user_data flags, not ConversationHandler —
+        # /cancel must clear them too or the next message gets trapped re-asking the same prompt.
+        # Preserve "onboarded" — it's a persistent one-time flag, not flow state.
+        had_trap = any(k != "onboarded" for k in c.user_data)
+        onboarded = c.user_data.get("onboarded")
+        c.user_data.clear()
+        if onboarded is not None:
+            c.user_data["onboarded"] = onboarded
+        if had_trap:
+            await u.message.reply_text("Cancelled! 👍", reply_markup=ReplyKeyboardRemove())
         else:
             await u.message.reply_text("Nothing to cancel. 👍")
-    app.add_handler(CommandHandler("cancel", _global_cancel))
+    # group=1: let active ConversationHandlers (group 0, registered below) claim /cancel first —
+    # otherwise this catches it before the conversation's own fallback can transition it to END,
+    # leaving the conversation stuck in its current state (the "trap" bug).
+    app.add_handler(CommandHandler("cancel", _global_cancel), group=1)
 
     async def _cmd_reset(u, c):
         c.user_data.clear()
@@ -1968,9 +2066,9 @@ def main() -> None:
 
     app.add_handler(CommandHandler("reset", _cmd_reset))
 
-    # Study handlers — DISABLED (study feature off for now)
-    # for h in study_handlers.get_handlers():
-    #     app.add_handler(h)
+    # Study handlers
+    for h in study_handlers.get_handlers():
+        app.add_handler(h)
 
     # Task handlers
     for h in tasks_handlers.get_handlers():

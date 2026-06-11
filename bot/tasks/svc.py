@@ -5,7 +5,8 @@ from supabase_svc import get_client
 
 def create_task(user_id: int, title: str, task_type: str,
                 description: str = "", recurrence_days: Optional[int] = None,
-                target_date: Optional[str] = None) -> dict:
+                target_date: Optional[str] = None,
+                next_reminder_at: Optional[str] = None) -> dict:
     row = {
         "user_id": user_id,
         "title": title,
@@ -15,7 +16,9 @@ def create_task(user_id: int, title: str, task_type: str,
         "recurrence_days": recurrence_days,
         "target_date": target_date,
     }
-    if task_type == "habit" and recurrence_days:
+    if next_reminder_at:
+        row["next_reminder_at"] = next_reminder_at
+    elif task_type == "habit" and recurrence_days:
         row["next_reminder_at"] = datetime.now(timezone.utc).isoformat()
     elif task_type == "milestone" and target_date:
         from datetime import date
@@ -181,3 +184,8 @@ def log_skip(user_id: int, task_id: str, note: str = "outright") -> dict:
 
 def reschedule_task(task_id: str, new_time_utc) -> None:
     update_task(task_id, next_reminder_at=new_time_utc.isoformat())
+
+
+def set_custom_time(task_id: str, new_time_utc) -> None:
+    """User explicitly picked a reminder time — distinct from auto-advance on done/skip."""
+    update_task(task_id, next_reminder_at=new_time_utc.isoformat(), has_custom_time=True)
