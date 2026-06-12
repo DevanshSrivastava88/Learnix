@@ -33,6 +33,13 @@ _Auto-agent: enabled_
 
 ## ✅ Done (2026-06-12)
 
+- **Subtasks** — AI breakdown with review loop (yes/no/natural-language revision), manual
+  "add subtask Y to X", indented dash display under parent, done completes subtask, cascade
+  delete. Stored as "Parent — Step N: Title" rows, no migration. Commit 458f98df.
+- **Weekday dates** — "on monday at 5pm" etc; LLM names the weekday, Python computes offset
+  (LLM miscounted); plain "8am" replies computed deterministically (8B returned garbage).
+- **Token cuts** — log.txt learnix group compressed 218→145 lines; project memory file
+  trimmed to conciseness rule.
 - **Stress suite + 3 fixes** — 10-case live suite (test_edge_cases.py): inline-timed habits
   create immediately; done preserves custom clock time (was drifting 9pm → 2:52pm); delete
   searches paused tasks. Retest 3/3 (test_retest_fixes.py). Committed 2b7dc3a3.
