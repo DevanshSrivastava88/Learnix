@@ -33,6 +33,11 @@ _Auto-agent: enabled_
 
 ## ✅ Done (2026-06-12)
 
+- **Phantom time guard re-wired** — refactor had orphaned _TIME_EXPR (defined, uncalled);
+  "add fart" intermittently got a 23h59m reminder from a hallucinated time. Now any
+  model-provided time is discarded when the user's message has no time words. Regex widened
+  ("in 30", "next hour", "an hour", "half hour"). Title rule: keep activity verb
+  ("add cook X" no longer drops "Cook"). Committed 5ffc19d6.
 - **Absolute time fix** — "set [task] to [time]" now routes to reschedule_task (was creating a
   duplicate new task); absolute clock times returned as time_hhmm by the LLM, Python computes
   the exact IST datetime and stores it directly (LLM minute-arithmetic drifted: "11 pm" → 10:51pm).
