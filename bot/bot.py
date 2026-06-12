@@ -488,10 +488,16 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
                 "Quiz cancelled. Come back whenever you're ready!",
                 reply_markup=ReplyKeyboardRemove(),
             )
-        else:
-            ctx.user_data.clear()
+            return
+        # "onboarded" is a permanent flag, not a pending flow — ignore it
+        _pending_keys = [k for k in ctx.user_data if k != "onboarded"]
+        if _pending_keys:
+            for k in _pending_keys:
+                ctx.user_data.pop(k, None)
             await update.message.reply_text("Cancelled! 👍", reply_markup=ReplyKeyboardRemove())
-        return
+            return
+        # Nothing pending to abort — "cancel" means cancel a task/reminder.
+        # Fall through to LLM routing so context resolves which one.
 
     # Pending time follow-up for unscheduled tasks
     if ctx.user_data.get("pending_time_for"):
@@ -581,6 +587,11 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
         ):
             intent = "task"
             understood["task"] = None  # force full parse below
+        # Bare "cancel" that fell through the flow-abort pre-check always means
+        # delete the last-discussed task, never chat
+        if intent == "chat" and text.strip().lower() == "cancel":
+            intent = "delete_task"
+            understood["task_ref"] = ""
         logger.info(f"understand_message: text={text!r} -> {understood!r}")
     except Exception:
         await update.message.reply_text("⚡ Had a hiccup — try that again?")
@@ -656,11 +667,13 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
                 await handle_last_reminded_action(update, ctx, last_id, intent)
                 return
         task_ref = understood.get("task_ref", "")
-        # Pronoun guard: bare "it/that/this" must resolve from history, never fuzzy-match
-        # (substring matching once deleted "Meditation Task" because it contains "it")
-        if task_ref.lower().strip() in ("it", "that", "this", "that one", "this one"):
-            m_hist = _re.findall(r'\[added task: ([^\]]+)\]', context)
-            task_ref = m_hist[-1].strip() if m_hist else ""
+        # Pronoun/empty guard: bare "it/that/this" or no ref at all ("cancel") must
+        # resolve from history, never fuzzy-match (substring matching once deleted
+        # "Meditation Task" because it contains "it")
+        if not task_ref.strip() or task_ref.lower().strip() in ("it", "that", "this", "that one", "this one", "cancel", "stop"):
+            m_hist = _re.findall(r'\[(?:added task|\w+ on): ([^\]]+)\]', context)
+            names = [n.strip() for n in m_hist if n.strip().lower() != "unnamed task"]
+            task_ref = names[-1] if names else ""
         await handle_task_action_freetext(update, ctx, text, intent, claude_svc,
                                           task_ref=task_ref)
         history.append(f"Bot: [{intent} on: {task_ref or 'unnamed task'}]")
@@ -803,6 +816,12 @@ def _fuzzy_match_task(task_name: str, tasks: list[dict]) -> list[dict]:
     needle = task_name.lower().strip()
     if not needle:
         return []
+
+    # Try 0: exact title match wins outright (a resolved task_ref is the full
+    # title — substring matching would drag in "Call Shreyash" for "Call Shreyash Test")
+    exact = [t for t in tasks if t["title"].lower().strip() == needle]
+    if exact:
+        return exact
 
     # Try 1: substring match (original or reversed)
     matches = []

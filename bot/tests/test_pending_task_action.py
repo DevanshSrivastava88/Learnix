@@ -104,9 +104,21 @@ def test_fuzzy_exact_substring():
 
 
 def test_fuzzy_returns_step_task_too():
-    matches = bot._fuzzy_match_task("Morning workout", TASKS)
+    # Partial name (no exact title match) matches base task and its step task
+    matches = bot._fuzzy_match_task("workout", TASKS)
     ids = {t["id"] for t in matches}
     assert "1" in ids and "2" in ids
+
+
+def test_fuzzy_exact_title_wins_over_substring():
+    # Exact title must return only that task — substring matching once dragged
+    # "Call Shreyash" into disambiguation for "Call Shreyash Test"
+    tasks = [
+        {"id": "1", "title": "Call Shreyash"},
+        {"id": "2", "title": "Call Shreyash Test"},
+    ]
+    matches = bot._fuzzy_match_task("call shreyash test", tasks)
+    assert [t["id"] for t in matches] == ["2"]
 
 
 def test_fuzzy_no_match_returns_empty():
@@ -123,7 +135,7 @@ async def test_handle_task_action_freetext_stores_pending_on_ambiguous():
     # Both titles must survive the "— Step " filter in handle_task_action_freetext
     # and both must fuzzy-match "morning workout" to trigger the ambiguous path.
     tasks_in_db = [
-        {"id": "1", "title": "Morning workout", "recurrence_days": 1},
+        {"id": "1", "title": "Morning workout daily", "recurrence_days": 1},
         {"id": "2", "title": "Morning workout at home", "recurrence_days": 1},
     ]
 
@@ -238,7 +250,7 @@ async def test_resolve_returns_false_when_no_pending():
 @pytest.mark.asyncio
 async def test_handle_mark_important_stores_pending_on_ambiguous():
     tasks_in_db = [
-        {"id": "1", "title": "Morning workout"},
+        {"id": "1", "title": "Morning workout daily"},
         {"id": "2", "title": "Morning workout — Step 1: Warmup"},
     ]
 
@@ -269,7 +281,7 @@ async def test_handle_mark_important_stores_pending_on_ambiguous():
 @pytest.mark.asyncio
 async def test_handle_reschedule_stores_pending_on_ambiguous():
     tasks_in_db = [
-        {"id": "1", "title": "Morning workout"},
+        {"id": "1", "title": "Morning workout daily"},
         {"id": "2", "title": "Morning workout — Step 1: Warmup"},
     ]
 

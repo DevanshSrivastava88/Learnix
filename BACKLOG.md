@@ -1,11 +1,14 @@
 # Learnix Backlog
 
-_Last updated: 2026-06-11_
+_Last updated: 2026-06-12_
 _Project status: workInProgress_
 _Auto-agent: enabled_
 
 ## 🔥 Immediate (next session)
 
+- [ ] **Monitor 70B quota** — understand_message uses llama-3.3-70b-versatile with 8B fallback; if quota exhausts midday, routing quality drops (8B misclassifies). Watch logs for fallback hits.
+- [ ] **chat_history table growth** — rows accumulate forever; add periodic cleanup (delete rows older than 7 days)
+- [ ] **Remove dead code** — classify_intent + parse_task in claude_svc.py are now only used by /newtask conversation flow + tests; skip_time_parser only by legacy time_str path. Consolidate later.
 - [ ] **Test new features live** — skip flow, /timesheet, /skipgraph in Telegram
 - [x] **Fix "Cancel" pre-check bug** — bare "Cancel" text gets Gemini-classified as a task; needs string check before hitting Gemini in `handle_free_text`
 - [ ] **Deploy to Railway** — still failing: "Failed to read app source directory" from nixpacks. Railway incident not resolved. Retry later.
@@ -24,6 +27,37 @@ _Auto-agent: enabled_
 - [ ] Multi-user data view with new schema (goals, habits, skips, motivation log)
 - [ ] Activity graph embed
 - [ ] Skip analytics embed
+
+## ✅ Done (2026-06-12)
+
+- **Bare "cancel" fake-success fix** — pre-LLM cancel shortcut said "Cancelled! 👍" without
+  doing anything when no flow was pending (the permanent `onboarded` flag made user_data always
+  look non-empty). Now: quiz/pending flows still abort instantly; otherwise "cancel" falls
+  through to LLM routing and deletes the last-discussed task from history. Also: empty task_ref
+  resolves from history like pronouns, and exact title match wins in _fuzzy_match_task (substring
+  matching dragged "Call Shreyash" into disambiguation for "Call Shreyash Test"). Live tested
+  (test_bare_cancel.py: add → 1h → cancel → deleted). 170/170 tests.
+
+- **Unified LLM routing** — `understand_message()` in claude_svc.py: ONE call returns intent +
+  task fields (title/type/time_minutes) + task_ref (pronoun resolution). Replaces
+  classify_intent + parse_task + regex time parsing per message (3 calls → 1).
+  Uses llama-3.3-70b-versatile (8B misclassified "add water the plants" → chat,
+  returned literal "it" as task_ref) with automatic 8B fallback on quota exhaustion.
+- **Persistent chat history** — migration 008 `chat_history` table; `chat_history_svc.py`
+  DbHistory write-through list. Context survives Railway redeploys — "cancel it" after a
+  deploy now resolves. Bot history lines carry real task titles ("[added task: X]") instead
+  of generic placeholders. Wiped on "confirm delete".
+- **Safety guards** — explicit add/track/remind prefix always routes to task (LLM override);
+  bare pronouns (it/that/this) resolve from history or ask, NEVER fuzzy-match (8B once
+  deleted "Meditation Task" because it contains "it"); clarify must never ask for time.
+- **Earlier same session:** migration 007 (task_type='task' allowed — inserts were silently
+  failing the CHECK constraint while bot said "Added"), honest error replies on Groq 429
+  and failed inserts, LLM time parsing for bare "1 hr" follow-ups, retry bump (4 tries, 1s base).
+- **Tests:** fixed 8 test_breakdown tests patching wrong function (_ask_json vs _ask_json_array,
+  drifted after a prior session's refactor — tests were making real network calls); added
+  isinstance list validation in breakdown fns. 105/105 green. Live Telethon suite: inline time,
+  bare "1 hr", "cancel it" context resolution, gibberish rejection — all PASS.
+- Committed 75282e22 (rebased onto slave1's [auto] commits), pushed.
 
 ## ✅ Done (2026-06-11)
 
