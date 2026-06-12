@@ -23,7 +23,8 @@ NT_DESCRIBE, NT_CONFIRM = range(20, 22)
 # Matches an explicit time/duration in the user's own words — used to catch the model
 # hallucinating a delay_minutes when the message actually gave no time at all.
 _TIME_EXPR = re.compile(
-    r'\b(\d{1,2}(:\d{2})?\s*(am|pm)|in\s+\d+\s*(min(ute)?|hour|hr)s?|at\s+\d|by\s+\d|'
+    r'\b(\d{1,2}(:\d{2})?\s*(am|pm)|in\s+\d+|in\s+(an?|a few|half)\b|next\s+hour|'
+    r'half\s+(an\s+)?hour|an\s+hour|at\s+\d|by\s+\d|'
     r'tonight|tomorrow|today|noon|midnight|morning|evening|afternoon|night)\b',
     re.IGNORECASE,
 )
@@ -83,7 +84,11 @@ async def _parse_and_respond(update, ctx, text: str, claude_svc, context: str = 
         from datetime import timezone as _tz, datetime as _dt, timedelta as _td
         when_label = None
         exact_at = None
-        if parsed.get("time_hhmm"):
+        if not _TIME_EXPR.search(text):
+            # User's own words contain no time expression — ignore any
+            # model-invented time ("add fart" once got a 23h59m reminder)
+            delay = 0
+        elif parsed.get("time_hhmm"):
             # Absolute clock time — LLM names it, Python computes (LLM arithmetic drifts)
             import pytz as _pytz
             _IST = _pytz.timezone("Asia/Kolkata")
