@@ -251,6 +251,8 @@ async def _resolve_pending_task_action(update: Update, ctx: ContextTypes.DEFAULT
 
     elif action == "delete_task":
         task_db.delete_task(task["id"])
+        if " — Step " not in task["title"]:
+            task_db.delete_subtasks(update.effective_user.id, task["title"])
         await update.message.reply_text(
             f"Gone! 🗑️ *{task['title']}* has been deleted.",
             parse_mode=ParseMode.MARKDOWN,
@@ -556,6 +558,46 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
             await update.message.reply_text("Didn't catch that as a time. Say something like `8pm`, `in 2 hours`, or `no`.")
             return
 
+    # Pending subtask-breakdown review (yes = create, no = drop, anything else = revise)
+    if ctx.user_data.get("pending_breakdown"):
+        pb = ctx.user_data["pending_breakdown"]
+        low = text.lower().strip()
+        import asyncio as _aio_pb
+        if low in {"yes", "y", "yep", "yeah", "add", "add them", "add all", "ok", "okay", "sure", "go", "do it", "confirm"}:
+            ctx.user_data.pop("pending_breakdown", None)
+            import tasks.svc as _tsvc_pb
+            uid_pb = update.effective_user.id
+            # Make sure the parent task exists so subtasks have a home in the list
+            existing = [t for t in _tsvc_pb.list_tasks(uid_pb) if " — Step " not in t.get("title", "")]
+            parent_row = next((t for t in existing if t["title"].lower() == pb["parent"].lower()), None)
+            parent_title = parent_row["title"] if parent_row else pb["parent"].title()
+            if not parent_row:
+                _tsvc_pb.create_task(user_id=uid_pb, title=parent_title, task_type="task")
+            for i, s in enumerate(pb["steps"], 1):
+                _tsvc_pb.create_task(user_id=uid_pb, title=f"{parent_title} — Step {i}: {s}", task_type="task")
+            await update.message.reply_text(
+                f"Added {len(pb['steps'])} subtasks under *{parent_title}* ✅\n"
+                f"Knock them off with *done [subtask]* — see /tasks.",
+                parse_mode=ParseMode.MARKDOWN,
+            )
+            return
+        if low in {"no", "nah", "nope", "drop", "discard", "forget it"}:
+            ctx.user_data.pop("pending_breakdown", None)
+            await update.message.reply_text("Dropped — nothing added. 👍")
+            return
+        try:
+            new_steps = await _aio_pb.to_thread(claude_svc.revise_subtasks, pb["parent"], pb["steps"], text)
+            pb["steps"] = new_steps
+            numbered = "\n".join(f"  {i}. {s}" for i, s in enumerate(new_steps, 1))
+            await update.message.reply_text(
+                f"Updated 👇\n\n{numbered}\n\nSay *yes* to add, *no* to drop, or keep tweaking.",
+                parse_mode=ParseMode.MARKDOWN,
+            )
+        except Exception as e:
+            logger.error(f"revise_subtasks failed: {e}")
+            await update.message.reply_text("Couldn't revise that — say *yes* to add as-is or *no* to drop.")
+        return
+
     # Bulk topic import — numbered/bulleted list while user has an active goal
     parsed_list = _parse_bullet_list(text)
     if parsed_list:
@@ -686,6 +728,28 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
         await tasks_handlers.cmd_settings(update, ctx)
     elif intent == "mark_important":
         await handle_mark_important_freetext(update, ctx, text, claude_svc)
+    elif intent == "add_subtask":
+        import tasks.svc as _tsvc_as
+        uid_as = update.effective_user.id
+        parent_ref = (understood.get("task_ref") or "").strip()
+        sub_title = ((understood.get("task") or {}).get("title") or "").strip()
+        parents = [t for t in _tsvc_as.list_tasks(uid_as) if " — Step " not in t.get("title", "")]
+        matches = _fuzzy_match_task(parent_ref, parents) if parent_ref else []
+        if not sub_title or len(matches) != 1:
+            await update.message.reply_text(
+                "Tell me like: *add subtask buy nails to build shelf*",
+                parse_mode=ParseMode.MARKDOWN,
+            )
+        else:
+            parent = matches[0]
+            prefix = parent["title"].lower() + " — step "
+            n = sum(1 for t in _tsvc_as.list_tasks(uid_as) if t["title"].lower().startswith(prefix)) + 1
+            _tsvc_as.create_task(user_id=uid_as, title=f"{parent['title']} — Step {n}: {sub_title}", task_type="task")
+            await update.message.reply_text(
+                f"Added *{sub_title}* under *{parent['title']}* ✅",
+                parse_mode=ParseMode.MARKDOWN,
+            )
+            history.append(f"Bot: [added subtask {sub_title} under {parent['title']}]")
     elif intent == "delay":
         await handle_delay_intent(update, ctx, text)
     elif intent in ("done", "skip_task", "delete_task", "pause_task"):
@@ -925,17 +989,25 @@ async def handle_last_reminded_action(
         return
 
     if intent == "done":
-        task_db.mark_done(task["id"])
         analytics_svc.log_activity(uid, "habit", note=task["title"])
         settings_db.update_streak(uid, __import__("datetime").date.today())
         settings = settings_db.get_settings(uid)
         streak = settings.get("streak", 0) or 0
         streak_line = f"🔥 {streak} day streak!" if streak > 1 else "Nice, keep it up!"
-        recur = task.get("recurrence_days", 1)
-        await update.message.reply_text(
-            f"Done! ✅ *{task['title']}*  {streak_line}\nI'll remind you again in {recur} day(s).",
-            parse_mode=ParseMode.MARKDOWN,
-        )
+        if task.get("task_type") == "habit":
+            task_db.mark_done(task["id"])
+            recur = task.get("recurrence_days", 1)
+            await update.message.reply_text(
+                f"Done! ✅ *{task['title']}*  {streak_line}\nI'll remind you again in {recur} day(s).",
+                parse_mode=ParseMode.MARKDOWN,
+            )
+        else:
+            # One-time task / subtask — completing removes it from the list
+            task_db.update_task(task["id"], status="completed")
+            await update.message.reply_text(
+                f"Done! ✅ *{task['title']}*  {streak_line}",
+                parse_mode=ParseMode.MARKDOWN,
+            )
     elif intent == "skip_task":
         from datetime import datetime, timezone, timedelta
         task_db.log_skip(uid, task["id"], note="outright")
@@ -963,12 +1035,13 @@ async def handle_task_action_freetext(
     import settings_svc as settings_db
 
     uid = update.effective_user.id
-    # Exclude breakdown step tasks — they're internal and shouldn't appear in disambiguation
     all_rows = task_db.list_tasks(uid)
     if intent == "delete_task":
         # Paused tasks are deletable too
         all_rows = all_rows + task_db.list_tasks(uid, status="paused")
-    tasks = [t for t in all_rows if " — Step " not in t.get("title", "")]
+    # Subtasks ("Parent — Step N: X") are actionable — exact-title-first matching
+    # keeps "done gym" from colliding with "Gym — Step 1: ..."
+    tasks = all_rows
     if not tasks:
         await update.message.reply_text("You don't have any active tasks right now.")
         return
@@ -1026,17 +1099,25 @@ async def handle_task_action_freetext(
     task = matches[0]
 
     if intent == "done":
-        task_db.mark_done(task["id"])
         analytics_svc.log_activity(uid, "habit", note=task["title"])
         settings_db.update_streak(uid, __import__("datetime").date.today())
         settings = settings_db.get_settings(uid)
         streak = settings.get("streak", 0) or 0
         streak_line = f"🔥 {streak} day streak!" if streak > 1 else "Nice, keep it up!"
-        recur = task.get("recurrence_days", 1)
-        await update.message.reply_text(
-            f"Done! ✅ *{task['title']}*  {streak_line}\nI'll remind you again in {recur} day(s).",
-            parse_mode=ParseMode.MARKDOWN,
-        )
+        if task.get("task_type") == "habit":
+            task_db.mark_done(task["id"])
+            recur = task.get("recurrence_days", 1)
+            await update.message.reply_text(
+                f"Done! ✅ *{task['title']}*  {streak_line}\nI'll remind you again in {recur} day(s).",
+                parse_mode=ParseMode.MARKDOWN,
+            )
+        else:
+            # One-time task / subtask — completing removes it from the list
+            task_db.update_task(task["id"], status="completed")
+            await update.message.reply_text(
+                f"Done! ✅ *{task['title']}*  {streak_line}",
+                parse_mode=ParseMode.MARKDOWN,
+            )
 
     elif intent == "skip_task":
         from datetime import datetime, timezone, timedelta
@@ -1050,6 +1131,8 @@ async def handle_task_action_freetext(
 
     elif intent == "delete_task":
         task_db.delete_task(task["id"])
+        if " — Step " not in task["title"]:
+            task_db.delete_subtasks(uid, task["title"])
         await update.message.reply_text(
             f"Gone! 🗑️ *{task['title']}* has been deleted.",
             parse_mode=ParseMode.MARKDOWN,
@@ -1537,7 +1620,7 @@ async def handle_breakdown(update: Update, ctx: ContextTypes.DEFAULT_TYPE, text:
             parse_mode=ParseMode.MARKDOWN,
         )
     else:
-        # Task breakdown — generate steps as habit tasks
+        # Task breakdown — propose subtasks, user reviews before anything is created
         await update.message.reply_text(f"Breaking *{subject}* into steps... ⚡", parse_mode=ParseMode.MARKDOWN)
         try:
             steps = claude_svc.breakdown_task(subject)
@@ -1545,22 +1628,12 @@ async def handle_breakdown(update: Update, ctx: ContextTypes.DEFAULT_TYPE, text:
             logger.error(f"breakdown_task failed: {e}")
             await update.message.reply_text("Couldn't generate steps right now. Try again in a moment.")
             return
-
-        created = []
-        for i, step in enumerate(steps, start=1):
-            title = f"{subject} — Step {i}: {step}"
-            tasks_svc.create_task(
-                user_id=uid,
-                title=title,
-                task_type="habit",
-                recurrence_days=1,
-            )
-            created.append(step)
-
-        bullet_lines = "\n".join(f"• Step {i+1}: {s}" for i, s in enumerate(created))
+        ctx.user_data["pending_breakdown"] = {"parent": subject, "steps": steps}
+        numbered = "\n".join(f"  {i}. {s}" for i, s in enumerate(steps, 1))
         await update.message.reply_text(
-            f"Done! Created {len(created)} steps for *{subject}* 👇\n\n{bullet_lines}\n\n"
-            f"They're now in your /tasks and you'll get reminders like any habit.",
+            f"Here's my plan for *{subject}* 👇\n\n{numbered}\n\n"
+            f"Say *yes* to add these as subtasks, *no* to drop — or tell me changes "
+            f"(\"remove 2\", \"add buy paint\").",
             parse_mode=ParseMode.MARKDOWN,
         )
 

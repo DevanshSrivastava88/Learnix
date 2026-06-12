@@ -247,6 +247,8 @@ def understand_message(text: str, context: str = "") -> dict:
         f'study_topic: study a SPECIFIC named topic — "study OOP Basics"\n'
         f'skip_topic: skip a SPECIFIC named topic\n'
         f'breakdown: "break down X", "steps for X", "roadmap for X"\n'
+        f'add_subtask: add ONE step under an existing task — "add subtask buy nails to build shelf", '
+        f'"add step sand wood under build shelf"\n'
         f'done: "I finished X", "done", "did it"\n'
         f'skip_task: "skip X today", "not doing X today"\n'
         f'delete_task: "delete X", "remove X", "cancel X", "cancel it/that" (cancel an existing task/reminder)\n'
@@ -282,7 +284,9 @@ def understand_message(text: str, context: str = "") -> dict:
         f'Absolute clock time or no time → null. NEVER guess a time.\n'
         f'- time_hhmm: ONLY for absolute clock times, 24h format — "at 8pm" → "20:00", '
         f'"at 11 pm" → "23:00". Do NOT compute minutes for these. Relative or no time → null.\n'
-        f'- day_offset: 1 for "tomorrow", 2 for "day after tomorrow", null for today/unstated. '
+        f'- day_offset: days from today. "tomorrow" → 1, "day after tomorrow" → 2. '
+        f'Weekday names → count days from today (shown above with its weekday) to the NEXT such weekday '
+        f'(1-7, never 0). null for today/unstated. '
         f'Set this even when no clock time is given ("remind me to X tomorrow" → day_offset 1, time_hhmm null).\n'
         f'- recurrence_days: 1=daily, 7=weekly (habits only)\n'
         f'- clarify: "" almost always. NEVER ask about time — missing time is fine (task stored unscheduled, '
@@ -290,7 +294,9 @@ def understand_message(text: str, context: str = "") -> dict:
         f'Step 3 — IF intent is done/skip_task/delete_task/pause_task/mark_important, set task_ref:\n'
         f'the name of the task the user refers to. RESOLVE PRONOUNS from conversation context — '
         f'"cancel it" right after "Added Stretch Break" → task_ref="Stretch Break". '
-        f'Bare "done"/"skip" with no referent anywhere → task_ref="".\n\n'
+        f'Bare "done"/"skip" with no referent anywhere → task_ref="".\n'
+        f'IF intent is add_subtask: task_ref = the PARENT task name, and task.title = the subtask text '
+        f'("add subtask buy nails to build shelf" → task_ref="build shelf", task.title="Buy Nails").\n\n'
         f'Return ONLY:\n'
         f'{{"intent": "...", "task": {{"type": "...", "title": "...", "description": "", '
         f'"time_minutes": null, "time_hhmm": null, "day_offset": null, "recurrence_days": 1, "clarify": ""}} or null, "task_ref": ""}}'
@@ -399,6 +405,20 @@ def breakdown_task(task_name: str) -> list[str]:
     return [str(s).strip() for s in result if str(s).strip()]
 
 
+def revise_subtasks(parent: str, steps: list[str], feedback: str) -> list[str]:
+    """Apply user's natural-language edits to a proposed subtask list."""
+    numbered = "\n".join(f"{i}. {s}" for i, s in enumerate(steps, 1))
+    result = _ask_json_array(
+        f'Proposed subtask list for "{parent}":\n{numbered}\n\n'
+        f'The user wants changes: "{feedback}"\n'
+        f'Apply the changes and return the FULL revised list as a JSON array of strings. '
+        f'Each item a short action phrase (3-8 words), no numbering. Keep untouched steps as-is.'
+    )
+    if not isinstance(result, list):
+        raise ValueError("Expected JSON array of steps")
+    return [str(s).strip() for s in result if str(s).strip()][:10]
+
+
 def breakdown_study_goal(goal_name: str, difficulty: str = "medium") -> list[str]:
     """Returns ordered topic list. Difficulty controls depth."""
     _DIFFICULTY_SPECS = {
@@ -490,9 +510,21 @@ def parse_time_only(text: str, day_offset: int = None):
     """Parse a natural language time expression into UTC datetime. Returns datetime or None.
     day_offset: known target day from earlier context ("remind me X tomorrow" → 1)."""
     from datetime import datetime, timezone, timedelta
+    import re as _re_t
     import pytz
     IST = pytz.timezone("Asia/Kolkata")
     now_ist = datetime.now(IST)
+    # Plain clock time ("8am", "9:30 pm") — compute directly, the 8B fallback
+    # has returned garbage minutes for these
+    m = _re_t.fullmatch(r'\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)\s*', text, _re_t.IGNORECASE)
+    if m:
+        h = int(m.group(1)) % 12 + (12 if m.group(3).lower() == "pm" else 0)
+        target = now_ist.replace(hour=h, minute=int(m.group(2) or 0), second=0, microsecond=0)
+        if day_offset:
+            target += timedelta(days=int(day_offset))
+        elif target <= now_ist:
+            target += timedelta(days=1)
+        return target.astimezone(timezone.utc)
     now_str = now_ist.strftime("%Y-%m-%d %H:%M %p IST (%A)")
     result = _ask_json(
         f'Current time: {now_str} (IST = UTC+5:30)\n'

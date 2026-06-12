@@ -55,6 +55,18 @@ def delete_task(task_id: str) -> None:
     get_client().table("tasks").delete().eq("id", task_id).execute()
 
 
+def delete_subtasks(user_id: int, parent_title: str) -> int:
+    """Delete all '<parent> — Step N: x' rows under a parent. Returns count."""
+    prefix = parent_title.lower() + " — step "
+    n = 0
+    for status in ("active", "paused"):
+        for t in list_tasks(user_id, status=status):
+            if t["title"].lower().startswith(prefix):
+                delete_task(t["id"])
+                n += 1
+    return n
+
+
 def mark_done(task_id: str) -> None:
     """Mark habit done and auto-schedule next reminder."""
     task = get_task(task_id)

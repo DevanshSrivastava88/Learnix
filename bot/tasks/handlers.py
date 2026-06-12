@@ -25,10 +25,30 @@ NT_DESCRIBE, NT_CONFIRM = range(20, 22)
 _TIME_EXPR = re.compile(
     r'\b(\d{1,2}(:\d{2})?\s*(am|pm)|in\s+\d+|in\s+(an?|a few|half)\b|next\s+hour|'
     r'half\s+(an\s+)?hour|an\s+hour|at\s+\d|by\s+\d|'
-    r'tonight|tomorrow|today|noon|midnight|morning|evening|afternoon|night)\b',
+    r'tonight|tomorrow|today|noon|midnight|morning|evening|afternoon|night|'
+    r'mon(day)?|tues?(day)?|wed(nesday)?|thur?s?(day)?|fri(day)?|sat(urday)?|sun(day)?)\b',
     re.IGNORECASE,
 )
 DT_SELECT, DT_CONFIRM = range(30, 32)
+
+_WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+_WEEKDAY_RE = re.compile(
+    r'\b(mon|tues?|wed(?:nes)?|thur?s?|fri|sat(?:ur)?|sun)(?:day)?\b', re.IGNORECASE)
+
+
+def _weekday_offset_from_text(text: str):
+    """Days from today (IST) to the weekday named in text, 1-7. None if no weekday named.
+    The LLM names the day; this computes the arithmetic it gets wrong."""
+    m = _WEEKDAY_RE.search(text)
+    if not m:
+        return None
+    import pytz
+    from datetime import datetime
+    prefix = m.group(1).lower()[:3]
+    target = next(i for i, d in enumerate(_WEEKDAYS) if d.startswith(prefix))
+    today = datetime.now(pytz.timezone("Asia/Kolkata")).weekday()
+    offset = (target - today) % 7
+    return offset or 7  # "friday" said on a Friday means next Friday
 
 
 # ---------------------------------------------------------------------------
@@ -88,6 +108,10 @@ async def _parse_and_respond(update, ctx, text: str, claude_svc, context: str = 
             day_offset = int(parsed.get("day_offset")) if parsed.get("day_offset") else None
         except (TypeError, ValueError):
             day_offset = None
+        # Deterministic weekday override — LLM miscounts day arithmetic ("sunday" → Monday)
+        _wd = _weekday_offset_from_text(text)
+        if _wd is not None:
+            day_offset = _wd
         if not _TIME_EXPR.search(text):
             # User's own words contain no time expression — ignore any
             # model-invented time ("add fart" once got a 23h59m reminder)
@@ -145,7 +169,9 @@ async def _parse_and_respond(update, ctx, text: str, claude_svc, context: str = 
             pending = {"task_id": task_row["id"], "title": title}
             if day_offset:
                 pending["day_offset"] = day_offset
-                day_word = "tomorrow" if day_offset == 1 else f"in {day_offset} days"
+                import pytz as _pytz3
+                _ist_day = (_dt.now(_pytz3.timezone("Asia/Kolkata")) + _td(days=day_offset))
+                day_word = "tomorrow" if day_offset == 1 else _ist_day.strftime("%A")
                 msg = f"Added *{title}* for {day_word}. ⏰ What time? Say `9am`, or `no` and I'll go with 9am."
             else:
                 msg = f"Added *{title}*. 📌 Want to set a time? Say `8pm`, `in 2 hours`, or `no`."
@@ -339,11 +365,30 @@ async def nt_confirm(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
 async def cmd_tasks(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     uid = update.effective_user.id
     all_tasks = db.list_tasks(uid)
-    # Filter out breakdown step tasks — they clutter the tasks view
+    # Subtasks ("Parent — Step N: X") render indented under their parent
+    steps = [t for t in all_tasks if " — Step " in t.get("title", "")]
     tasks = [t for t in all_tasks if " — Step " not in t.get("title", "")]
-    if not tasks:
+    if not tasks and not steps:
         await update.message.reply_text("No tasks yet! Just tell me what you want to track.")
         return
+
+    parent_titles = {t["title"].lower() for t in tasks}
+
+    def _step_lines(parent_title):
+        subs = []
+        for s in steps:
+            pre, _, rest = s["title"].partition(" — Step ")
+            if pre.lower() == parent_title.lower():
+                n_str, _, lbl = rest.partition(": ")
+                try:
+                    n = int(n_str)
+                except ValueError:
+                    n = 99
+                subs.append((n, lbl or rest))
+        return [f"      - {lbl}" for _, lbl in sorted(subs)]
+
+    # Orphan steps (parent deleted outside cascade) render as plain tasks
+    orphans = [s for s in steps if s["title"].partition(" — Step ")[0].lower() not in parent_titles]
 
     from datetime import datetime, timedelta
     timed = [t for t in tasks if t.get("next_reminder_at")]
@@ -371,18 +416,23 @@ async def cmd_tasks(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         lines.append("\n<b>Today</b>")
         for t in today_tasks:
             lines.append(f"  {_tlabel(t)} → {_mark(t)}{t['title']}")
+            lines.extend(_step_lines(t["title"]))
     if upcoming or untimed_habits:
         lines.append("\n<b>📅 Upcoming</b>")
         for t in upcoming:
             d = datetime.fromisoformat(t["next_reminder_at"]).astimezone(IST).date()
             day_label = "tomorrow" if d == today_ist + timedelta(days=1) else d.strftime("%a %d %b")
             lines.append(f"  {day_label} {_tlabel(t)} → {_mark(t)}{t['title']}")
+            lines.extend(_step_lines(t["title"]))
         for t in untimed_habits:
             # Reminder-less habits recur regardless — show tomorrow's occurrence
             lines.append(f"  tomorrow → 🔁 {t['title']}")
-    if untimed:
+    if untimed or orphans:
         lines.append("\n<b>Unscheduled</b>")
         for t in untimed_tasks:
+            lines.append(f"  • {t['title']}")
+            lines.extend(_step_lines(t["title"]))
+        for t in orphans:
             lines.append(f"  • {t['title']}")
         for t in untimed_habits:
             recur = t.get("recurrence_days") or 1
