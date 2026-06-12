@@ -38,12 +38,21 @@ def test_create_milestone_returns_task():
         assert result['task_type'] == 'milestone'
 
 def test_mark_done_sets_next_reminder():
-    with patch.object(tasks_svc, 'get_task', return_value=_row(recurrence_days=2)), \
+    scheduled = _row(recurrence_days=2,
+                     next_reminder_at=datetime.now(timezone.utc).isoformat())
+    with patch.object(tasks_svc, 'get_task', return_value=scheduled), \
          patch.object(tasks_svc, 'update_task') as mock_update:
         tasks_svc.mark_done('task-1')
         mock_update.assert_called_once()
         _, kwargs = mock_update.call_args
         assert 'next_reminder_at' in kwargs
+
+def test_mark_done_keeps_reminderless_habit_reminderless():
+    # No time = no reminder — done must not invent a next reminder
+    with patch.object(tasks_svc, 'get_task', return_value=_row(recurrence_days=2)), \
+         patch.object(tasks_svc, 'update_task') as mock_update:
+        tasks_svc.mark_done('task-1')
+        mock_update.assert_not_called()
 
 def test_get_due_tasks_returns_overdue():
     overdue = _row(next_reminder_at=(datetime.now(timezone.utc) - timedelta(hours=1)).isoformat())

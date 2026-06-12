@@ -291,6 +291,40 @@ async def eod_poller(ctx: ContextTypes.DEFAULT_TYPE) -> None:
             logger.error(f"EOD failed for {uid}: {e}")
 
 
+def format_evening_digest(user_id: int) -> str:
+    """7pm check-in: unscheduled tasks + reminder-less habits. Empty string if nothing."""
+    all_tasks = tasks_svc.list_tasks(user_id)
+    unscheduled = [
+        t for t in all_tasks
+        if not t.get("next_reminder_at") and " — Step " not in t.get("title", "")
+        and t.get("task_type") in ("task", "habit")
+    ]
+    if not unscheduled:
+        return ""
+    lines = ["🌆 *Evening check-in* — these never got a time today:\n"]
+    for t in unscheduled:
+        mark = "🔁" if t.get("task_type") == "habit" else "•"
+        lines.append(f"  {mark} {t['title']}")
+    lines.append("\nGot a free moment? Knock one out and say *done [task]* 💪")
+    return "\n".join(lines)
+
+
+async def evening_digest_poller(ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    """Every 60s: at 19:00 IST send the unscheduled-work digest to all users."""
+    now_ist = datetime.now(IST)
+    if now_ist.strftime("%H:%M") != "19:00":
+        return
+    users = settings_svc.get_all_users()
+    for user in users:
+        uid = user["user_id"]
+        try:
+            msg = format_evening_digest(uid)
+            if msg:
+                await ctx.bot.send_message(uid, msg, parse_mode=ParseMode.MARKDOWN)
+        except Exception as e:
+            logger.error(f"Evening digest failed for {uid}: {e}")
+
+
 async def reminder_poller(ctx: ContextTypes.DEFAULT_TYPE) -> None:
     """Every 300s: send habit/milestone reminders for all due tasks.
 
@@ -431,4 +465,5 @@ def register_jobs(app: Application) -> None:
     jq.run_repeating(eod_poller, interval=60, first=20, name="eod_poller")
     jq.run_repeating(reminder_poller, interval=300, first=30, name="reminder_poller")
     jq.run_repeating(motivation_poller, interval=300, first=60, name="motivation_poller")
+    jq.run_repeating(evening_digest_poller, interval=60, first=25, name="evening_digest_poller")
     logger.info("All scheduler jobs registered.")

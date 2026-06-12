@@ -18,8 +18,8 @@ def create_task(user_id: int, title: str, task_type: str,
     }
     if next_reminder_at:
         row["next_reminder_at"] = next_reminder_at
-    elif task_type == "habit" and recurrence_days:
-        row["next_reminder_at"] = datetime.now(timezone.utc).isoformat()
+    # Habits with no stated time stay reminder-less (no time = no reminder;
+    # the 7pm evening digest mentions them instead)
     elif task_type == "milestone" and target_date:
         from datetime import date
         target = date.fromisoformat(target_date)
@@ -60,6 +60,8 @@ def mark_done(task_id: str) -> None:
     task = get_task(task_id)
     if not task:
         return
+    if not task.get("next_reminder_at") and not task.get("has_custom_time"):
+        return  # reminder-less habit stays reminder-less
     recurrence = task.get("recurrence_days", 1) or 1
     next_at = datetime.now(timezone.utc) + timedelta(days=recurrence)
     update_task(task_id, next_reminder_at=next_at.isoformat())

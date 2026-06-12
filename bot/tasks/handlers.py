@@ -320,26 +320,39 @@ async def cmd_tasks(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     def _tlabel(t):
         return datetime.fromisoformat(t["next_reminder_at"]).astimezone(IST).strftime("%I:%M%p").lstrip("0").lower().replace(":00", "")
 
+    def _mark(t):
+        return "🔁 " if t.get("task_type") == "habit" else ""
+
     today_tasks, upcoming = [], []
     for t in timed:
         d = datetime.fromisoformat(t["next_reminder_at"]).astimezone(IST).date()
         (today_tasks if d <= today_ist else upcoming).append(t)
 
+    untimed_habits = [t for t in untimed if t.get("task_type") == "habit"]
+    untimed_tasks = [t for t in untimed if t.get("task_type") != "habit"]
+
     lines = ["<b>📋 Your tasks</b>"]
     if today_tasks:
         lines.append("\n<b>Today</b>")
         for t in today_tasks:
-            lines.append(f"  {_tlabel(t)} → {t['title']}")
-    if upcoming:
+            lines.append(f"  {_tlabel(t)} → {_mark(t)}{t['title']}")
+    if upcoming or untimed_habits:
         lines.append("\n<b>📅 Upcoming</b>")
         for t in upcoming:
             d = datetime.fromisoformat(t["next_reminder_at"]).astimezone(IST).date()
             day_label = "tomorrow" if d == today_ist + timedelta(days=1) else d.strftime("%a %d %b")
-            lines.append(f"  {day_label} {_tlabel(t)} → {t['title']}")
+            lines.append(f"  {day_label} {_tlabel(t)} → {_mark(t)}{t['title']}")
+        for t in untimed_habits:
+            # Reminder-less habits recur regardless — show tomorrow's occurrence
+            lines.append(f"  tomorrow → 🔁 {t['title']}")
     if untimed:
         lines.append("\n<b>Unscheduled</b>")
-        for t in untimed:
+        for t in untimed_tasks:
             lines.append(f"  • {t['title']}")
+        for t in untimed_habits:
+            recur = t.get("recurrence_days") or 1
+            freq = "every day" if recur == 1 else f"every {recur} days"
+            lines.append(f"  🔁 {t['title']} — {freq}")
         lines.append("\n<i>Unscheduled tasks are often ignored — say \"set [task] to [time]\" to pin one.</i>")
 
     await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.HTML)

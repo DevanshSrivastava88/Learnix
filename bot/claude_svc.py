@@ -273,9 +273,10 @@ def understand_message(text: str, context: str = "") -> dict:
         f'- recurrence phrase + general activity ("read every day") → task; named learnable subject ("learn Python") → create_goal\n\n'
         f'Step 2 — IF AND ONLY IF intent is "task", also extract:\n'
         f'- type: "habit" ONLY with explicit recurrence words (every day, daily, weekly); else "reminder"\n'
-        f'- title: 3-5 words. Strip ONLY the command prefix (add/track/remind me to) — KEEP the '
-        f'activity verb. "add call mom" → "Call Mom", "add cook dinner" → "Cook Dinner", '
-        f'"meeting at 6" → "Meeting". No time in title.\n'
+        f'- title: 3-5 words. Strip ONLY the command prefix (add/track/remind me to) and type words '
+        f'(habit/habbit/daily) — KEEP the activity verb. "add call mom" → "Call Mom", '
+        f'"add cook dinner" → "Cook Dinner", "add habbit gym" → "Gym", "meeting at 6" → "Meeting". '
+        f'No time in title.\n'
         f'- description: extra detail or ""\n'
         f'- time_minutes: ONLY for relative durations — "in 30 mins" → 30, "1 hr" → 60. '
         f'Absolute clock time or no time → null. NEVER guess a time.\n'
@@ -467,6 +468,8 @@ def parse_task(text: str, context: str = "") -> dict:
             r'remind me to|remind me about|don\'t let me forget to|let me not forget to)\s+',
             '', title, flags=_re_pt.IGNORECASE,
         ).strip()
+        # Strip type words the user said but that aren't part of the activity name
+        title = _re_pt.sub(r'^(?:habbits?|habits?|daily)\s+', '', title, flags=_re_pt.IGNORECASE).strip()
         # Strip time expressions from title (LLM sometimes embeds them)
         title = _re_pt.sub(
             r'\b(?:at|by|@)\s*\d{1,2}(?::\d{2})?\s*(?:am|pm)?\b',
