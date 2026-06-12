@@ -89,14 +89,23 @@ async def _parse_and_respond(update, ctx, text: str, claude_svc, context: str = 
             return NT_DESCRIBE
 
     task_type = parsed.get("type", "reminder")
+    # User literally said "habit" — believe them over the model (8B returns reminder)
+    if task_type == "reminder" and re.search(r'\bhabb?its?\b|\bevery (day|morning|night|week)\b|\bdaily\b', text, re.IGNORECASE):
+        task_type = "habit"
+        parsed.setdefault("recurrence_days", 1)
+        if not parsed.get("recurrence_days"):
+            parsed["recurrence_days"] = 1
 
     if parsed.get("clarify"):
         await update.message.reply_text(parsed["clarify"])
         ctx.user_data["partial_task"] = parsed
         return NT_DESCRIBE
 
-    title = parsed.get("title", "")
+    title = (parsed.get("title") or "").strip()
     desc = parsed.get("description", "")
+    if not title:
+        await update.message.reply_text("Hmm, didn't catch what to call that — say it again?")
+        return ConversationHandler.END
 
     # One-time reminder
     if task_type == "reminder":

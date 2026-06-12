@@ -314,6 +314,12 @@ async def evening_digest_poller(ctx: ContextTypes.DEFAULT_TYPE) -> None:
     now_ist = datetime.now(IST)
     if now_ist.strftime("%H:%M") != "19:00":
         return
+    # Daily housekeeping piggybacks on this once-a-day tick
+    try:
+        import chat_history_svc
+        chat_history_svc.cleanup_old(days=7)
+    except Exception as e:
+        logger.error(f"chat_history cleanup failed: {e}")
     users = settings_svc.get_all_users()
     for user in users:
         uid = user["user_id"]

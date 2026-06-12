@@ -502,6 +502,11 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
         # Fall through to LLM routing so context resolves which one.
 
     # Pending time follow-up for unscheduled tasks
+    if ctx.user_data.get("pending_time_for") and _re.match(
+            r'^(add|delete|remove|pause|resume|done|skip|cancel|list|show|remind|track|mark|move|break)\b',
+            text.strip(), _re.IGNORECASE):
+        # User moved on to a new command — leave the task unscheduled, route normally
+        ctx.user_data.pop("pending_time_for", None)
     if ctx.user_data.get("pending_time_for"):
         pending = ctx.user_data["pending_time_for"]
         day_offset = pending.get("day_offset")
@@ -664,6 +669,19 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
         if intent == "chat" and text.strip().lower() == "cancel":
             intent = "delete_task"
             understood["task_ref"] = ""
+        # Action-verb prefix always wins — the 8B fallback routed "pause pushups"
+        # to a new task called "Pause Pushups"
+        _m_act = _re.match(
+            r'^(pause|resume|unpause|delete|remove|done|skip)\s+(.+)', text.strip(), _re.IGNORECASE)
+        if _m_act and intent in ("task", "chat"):
+            _verb = _m_act.group(1).lower()
+            _rest = _m_act.group(2).strip()
+            if _rest.lower() not in ("everything", "all", "my data", "all my data"):
+                intent = {"pause": "pause_task", "resume": "resume_task", "unpause": "resume_task",
+                          "delete": "delete_task", "remove": "delete_task",
+                          "done": "done", "skip": "skip_task"}[_verb]
+                understood["task_ref"] = _rest
+                understood["task"] = None
         logger.info(f"understand_message: text={text!r} -> {understood!r}")
     except Exception:
         await update.message.reply_text("⚡ Had a hiccup — try that again?")
@@ -674,6 +692,11 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
                                  pre_parsed=understood.get("task"))
         _t = understood.get("task") or {}
         history.append(f"Bot: [added task: {_t.get('title') or text}]")
+        # "add X in 1h and Y in 2h" — create the remaining tasks too
+        for _extra in understood.get("extra_tasks") or []:
+            await _parse_and_respond(update, ctx, text, claude_svc, context=context,
+                                     pre_parsed=_extra)
+            history.append(f"Bot: [added task: {_extra.get('title')}]")
     elif intent == "breakdown":
         await handle_breakdown(update, ctx, text)
         history.append("Bot: [broke down a task into steps]")
@@ -752,7 +775,7 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
             history.append(f"Bot: [added subtask {sub_title} under {parent['title']}]")
     elif intent == "delay":
         await handle_delay_intent(update, ctx, text)
-    elif intent in ("done", "skip_task", "delete_task", "pause_task"):
+    elif intent in ("done", "skip_task", "delete_task", "pause_task", "resume_task"):
         # Bare "done"/"skip" with no task name — check last reminded task first
         if intent in ("done", "skip_task") and text.lower().strip() in ("done", "skip"):
             uid2 = update.effective_user.id
@@ -1036,8 +1059,8 @@ async def handle_task_action_freetext(
 
     uid = update.effective_user.id
     all_rows = task_db.list_tasks(uid)
-    if intent == "delete_task":
-        # Paused tasks are deletable too
+    if intent in ("delete_task", "resume_task"):
+        # Paused tasks are deletable and resumable
         all_rows = all_rows + task_db.list_tasks(uid, status="paused")
     # Subtasks ("Parent — Step N: X") are actionable — exact-title-first matching
     # keeps "done gym" from colliding with "Gym — Step 1: ..."
@@ -1141,7 +1164,14 @@ async def handle_task_action_freetext(
     elif intent == "pause_task":
         task_db.update_task(task["id"], status="paused")
         await update.message.reply_text(
-            f"Paused ⏸️ *{task['title']}*. Use /resume when you're ready to pick it up again.",
+            f"Paused ⏸️ *{task['title']}*. Say *resume {task['title'].lower()}* when you're ready.",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+
+    elif intent == "resume_task":
+        task_db.update_task(task["id"], status="active")
+        await update.message.reply_text(
+            f"Back on! ▶️ *{task['title']}* is active again.",
             parse_mode=ParseMode.MARKDOWN,
         )
 

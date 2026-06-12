@@ -31,6 +31,16 @@ def save_line(user_id: int, line: str) -> None:
         logger.error(f"save_line failed for {user_id}: {e}")
 
 
+def cleanup_old(days: int = 7) -> None:
+    """Purge history rows older than N days — context never reaches back that far."""
+    from datetime import datetime, timezone, timedelta
+    try:
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+        get_client().table("chat_history").delete().lt("created_at", cutoff).execute()
+    except Exception as e:
+        logger.error(f"chat_history cleanup failed: {e}")
+
+
 class DbHistory(list):
     """List that write-through persists appends to the chat_history table."""
 

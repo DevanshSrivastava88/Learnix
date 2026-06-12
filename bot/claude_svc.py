@@ -62,12 +62,14 @@ def _ask_json(prompt: str, max_tokens: int = 512, model: str = None) -> dict | l
     ))
     text = resp.choices[0].message.content.strip()
     result = json.loads(text)
-    # If wrapped in a list, unwrap
-    if isinstance(result, dict):
-        # Check if it's actually a list stored under a key
-        for v in result.values():
-            if isinstance(v, list):
-                return v
+    # Unwrap ONLY the single-key array wrapper ({"items": [...]}) — multi-key
+    # dicts with list fields (e.g. understand_message's extra_tasks) must
+    # come back intact; blanket unwrapping once turned every routing result
+    # into [] and sent all intents to chat
+    if isinstance(result, dict) and len(result) == 1:
+        only = next(iter(result.values()))
+        if isinstance(only, list):
+            return only
     return result
 
 
@@ -253,6 +255,7 @@ def understand_message(text: str, context: str = "") -> dict:
         f'skip_task: "skip X today", "not doing X today"\n'
         f'delete_task: "delete X", "remove X", "cancel X", "cancel it/that" (cancel an existing task/reminder)\n'
         f'pause_task: "pause X", "stop reminding me about X"\n'
+        f'resume_task: "resume X", "unpause X", "start X again"\n'
         f'reschedule_task: change time of an EXISTING named task — "move reading to 8pm", '
         f'"set drink water to 11pm", "set [task] to [time]"\n'
         f'set_time: system-wide times (morning brief/study/EOD) — "set morning brief to 8am", "I usually study at 9pm"\n'
@@ -291,7 +294,9 @@ def understand_message(text: str, context: str = "") -> dict:
         f'- recurrence_days: 1=daily, 7=weekly (habits only)\n'
         f'- clarify: "" almost always. NEVER ask about time — missing time is fine (task stored unscheduled, '
         f'bot follows up separately). Only fill clarify if the task itself is unintelligible.\n\n'
-        f'Step 3 — IF intent is done/skip_task/delete_task/pause_task/mark_important, set task_ref:\n'
+        f'Step 2b — If the message contains MULTIPLE tasks ("add X in 1h and Y in 2h"), put the '
+        f'first in task and the rest in extra_tasks (array of the same task fields). Usually [].\n\n'
+        f'Step 3 — IF intent is done/skip_task/delete_task/pause_task/resume_task/mark_important, set task_ref:\n'
         f'the name of the task the user refers to. RESOLVE PRONOUNS from conversation context — '
         f'"cancel it" right after "Added Stretch Break" → task_ref="Stretch Break". '
         f'Bare "done"/"skip" with no referent anywhere → task_ref="".\n'
@@ -299,7 +304,8 @@ def understand_message(text: str, context: str = "") -> dict:
         f'("add subtask buy nails to build shelf" → task_ref="build shelf", task.title="Buy Nails").\n\n'
         f'Return ONLY:\n'
         f'{{"intent": "...", "task": {{"type": "...", "title": "...", "description": "", '
-        f'"time_minutes": null, "time_hhmm": null, "day_offset": null, "recurrence_days": 1, "clarify": ""}} or null, "task_ref": ""}}'
+        f'"time_minutes": null, "time_hhmm": null, "day_offset": null, "recurrence_days": 1, "clarify": ""}} or null, '
+        f'"extra_tasks": [], "task_ref": ""}}'
     )
     # 70B for routing (8B misclassifies); fall back to 8B if 70B daily quota exhausted
     try:
@@ -311,11 +317,13 @@ def understand_message(text: str, context: str = "") -> dict:
         task_ref = str(result.get("task_ref") or "").strip()
         task = result.get("task")
         # 8B model often puts the referenced task in task.title instead of task_ref
-        if (not task_ref and intent in ("done", "skip_task", "delete_task", "pause_task", "mark_important")
+        if (not task_ref and intent in ("done", "skip_task", "delete_task", "pause_task", "resume_task", "mark_important")
                 and isinstance(task, dict) and task.get("title")):
             task_ref = str(task["title"]).strip()
-        return {"intent": intent, "task": task, "task_ref": task_ref}
-    return {"intent": "chat", "task": None, "task_ref": ""}
+        extra = result.get("extra_tasks")
+        extra = [t for t in extra if isinstance(t, dict) and t.get("title")] if isinstance(extra, list) else []
+        return {"intent": intent, "task": task, "task_ref": task_ref, "extra_tasks": extra}
+    return {"intent": "chat", "task": None, "task_ref": "", "extra_tasks": []}
 
 
 def extract_task_name_from_message(text: str) -> str:
