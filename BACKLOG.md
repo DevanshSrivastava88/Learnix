@@ -33,6 +33,9 @@ _Auto-agent: enabled_
 
 ## ✅ Done (2026-06-12)
 
+- **Stress suite + 3 fixes** — 10-case live suite (test_edge_cases.py): inline-timed habits
+  create immediately; done preserves custom clock time (was drifting 9pm → 2:52pm); delete
+  searches paused tasks. Retest 3/3 (test_retest_fixes.py). Committed 2b7dc3a3.
 - **Habit logic overhaul** — no-time habit = no reminder (was reminding at creation minute);
   7pm IST evening digest of unscheduled tasks + reminder-less habits; 🔁 marker in list,
   no-time habits in Upcoming ("tomorrow") + Unscheduled (with frequency); type words stripped
