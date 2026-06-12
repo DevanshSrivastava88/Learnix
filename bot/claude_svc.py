@@ -251,7 +251,8 @@ def understand_message(text: str, context: str = "") -> dict:
         f'skip_task: "skip X today", "not doing X today"\n'
         f'delete_task: "delete X", "remove X", "cancel X", "cancel it/that" (cancel an existing task/reminder)\n'
         f'pause_task: "pause X", "stop reminding me about X"\n'
-        f'reschedule_task: change time of a SPECIFIC named task — "move reading to 8pm"\n'
+        f'reschedule_task: change time of an EXISTING named task — "move reading to 8pm", '
+        f'"set drink water to 11pm", "set [task] to [time]"\n'
         f'set_time: system-wide times (morning brief/study/EOD) — "set morning brief to 8am", "I usually study at 9pm"\n'
         f'add_topic: "add recursion to my Python goal"\n'
         f'delay: snooze EXISTING reminder — "delay", "snooze 30 mins", "remind me later"\n'
@@ -275,9 +276,10 @@ def understand_message(text: str, context: str = "") -> dict:
         f'- title: 3-5 words, noun phrase, no action verbs (add/track/remind me to), no time in it. '
         f'"add call mom" → "Call Mom", "meeting at 6" → "Meeting"\n'
         f'- description: extra detail or ""\n'
-        f'- time_minutes: minutes from NOW until the stated time. "in 30 mins" → 30, "1 hr" → 60, '
-        f'"at 8pm" → compute from current IST time, "tomorrow 9am" → compute. '
-        f'NO time stated → null. NEVER guess a time.\n'
+        f'- time_minutes: ONLY for relative durations — "in 30 mins" → 30, "1 hr" → 60. '
+        f'Absolute clock time or no time → null. NEVER guess a time.\n'
+        f'- time_hhmm: ONLY for absolute clock times, 24h format — "at 8pm" → "20:00", '
+        f'"at 11 pm" → "23:00". Do NOT compute minutes for these. Relative or no time → null.\n'
         f'- recurrence_days: 1=daily, 7=weekly (habits only)\n'
         f'- clarify: "" almost always. NEVER ask about time — missing time is fine (task stored unscheduled, '
         f'bot follows up separately). Only fill clarify if the task itself is unintelligible.\n\n'
@@ -287,7 +289,7 @@ def understand_message(text: str, context: str = "") -> dict:
         f'Bare "done"/"skip" with no referent anywhere → task_ref="".\n\n'
         f'Return ONLY:\n'
         f'{{"intent": "...", "task": {{"type": "...", "title": "...", "description": "", '
-        f'"time_minutes": null, "recurrence_days": 1, "clarify": ""}} or null, "task_ref": ""}}'
+        f'"time_minutes": null, "time_hhmm": null, "recurrence_days": 1, "clarify": ""}} or null, "task_ref": ""}}'
     )
     # 70B for routing (8B misclassifies); fall back to 8B if 70B daily quota exhausted
     try:
@@ -487,22 +489,31 @@ def parse_time_only(text: str):
     now_str = now_ist.strftime("%Y-%m-%d %H:%M %p IST (%A)")
     result = _ask_json(
         f'Current time: {now_str} (IST = UTC+5:30)\n'
-        f'Parse this time expression and return how many minutes from NOW until that time.\n'
+        f'Parse this time expression.\n'
         f'Expression: "{text}"\n\n'
-        f'Examples:\n'
+        f'RELATIVE durations → minutes:\n'
         f'  "1 hr" → {{"minutes": 60}}\n'
-        f'  "30 mins" → {{"minutes": 30}}\n'
-        f'  "30m" → {{"minutes": 30}}\n'
+        f'  "30 mins" / "30m" / "half hour" → {{"minutes": 30}}\n'
         f'  "next hour" → {{"minutes": 60}}\n'
-        f'  "2 hours" → {{"minutes": 120}}\n'
-        f'  "8pm" → compute minutes from current IST time until 8pm IST today (or tomorrow if already past)\n'
-        f'  "tomorrow 9am" → minutes from now until tomorrow 9am IST\n'
-        f'  "half hour" → {{"minutes": 30}}\n\n'
+        f'ABSOLUTE clock times → 24h HH:MM (do NOT compute minutes yourself):\n'
+        f'  "8pm" → {{"hhmm": "20:00"}}\n'
+        f'  "11 pm" → {{"hhmm": "23:00"}}\n'
+        f'  "tomorrow 9am" → {{"hhmm": "09:00", "tomorrow": true}}\n\n'
         f'If not a valid time expression, return {{"minutes": 0}}\n'
-        f'Return ONLY: {{"minutes": N}}',
+        f'Return ONLY one JSON object.',
         max_tokens=40,
     )
     if isinstance(result, dict):
+        hhmm = result.get("hhmm")
+        if hhmm:
+            try:
+                h, m = map(int, str(hhmm).split(":"))
+                target = now_ist.replace(hour=h, minute=m, second=0, microsecond=0)
+                if result.get("tomorrow") or target <= now_ist:
+                    target += timedelta(days=1)
+                return target.astimezone(timezone.utc)
+            except (TypeError, ValueError):
+                pass
         mins = result.get("minutes", 0)
         try:
             mins = int(mins)

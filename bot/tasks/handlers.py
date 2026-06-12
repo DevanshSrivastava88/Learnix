@@ -80,8 +80,25 @@ async def _parse_and_respond(update, ctx, text: str, claude_svc, context: str = 
     # One-time reminder
     if task_type == "reminder":
         uid = update.effective_user.id
-        from datetime import timezone as _tz, datetime as _dt
-        if parsed.get("time_minutes") is not None:
+        from datetime import timezone as _tz, datetime as _dt, timedelta as _td
+        when_label = None
+        exact_at = None
+        if parsed.get("time_hhmm"):
+            # Absolute clock time — LLM names it, Python computes (LLM arithmetic drifts)
+            import pytz as _pytz
+            _IST = _pytz.timezone("Asia/Kolkata")
+            try:
+                h, m = map(int, str(parsed["time_hhmm"]).split(":"))
+                now_ist = _dt.now(_IST)
+                target = now_ist.replace(hour=h, minute=m, second=0, microsecond=0)
+                if target <= now_ist:
+                    target += _td(days=1)
+                delay = max(0, int((target - now_ist).total_seconds() / 60))
+                when_label = target.strftime("%I:%M %p").lstrip("0")
+                exact_at = target.astimezone(_tz.utc)
+            except (TypeError, ValueError):
+                delay = 0
+        elif parsed.get("time_minutes") is not None:
             # Unified LLM path — minutes computed by the model
             try:
                 delay = max(0, int(parsed["time_minutes"]))
@@ -96,7 +113,6 @@ async def _parse_and_respond(update, ctx, text: str, claude_svc, context: str = 
                 delay = max(0, int((parsed_dt - _dt.now(_tz.utc)).total_seconds() / 60))
             else:
                 delay = 0
-        from datetime import timedelta as _td
         if delay == 0:
             # No time — store unscheduled, ask for time
             task_row = None
@@ -118,8 +134,8 @@ async def _parse_and_respond(update, ctx, text: str, claude_svc, context: str = 
                 reply_markup=ReplyKeyboardRemove(),
             )
             return ConversationHandler.END
-        # Timed — store with next_reminder_at
-        next_at = (_dt.now(_tz.utc) + _td(minutes=delay)).isoformat()
+        # Timed — store with next_reminder_at (exact clock time when given, else now+delay)
+        next_at = (exact_at or (_dt.now(_tz.utc) + _td(minutes=delay))).isoformat()
         try:
             db.create_task(
                 user_id=uid, title=title, task_type="task",
@@ -128,8 +144,11 @@ async def _parse_and_respond(update, ctx, text: str, claude_svc, context: str = 
             )
         except Exception as e:
             logger.error(f"create timed task failed: {e}")
-        time_str = f"{delay} min" if delay < 60 else f"{delay // 60}h {delay % 60}m".replace(" 0m", "")
-        await update.message.reply_text(f"⏰ Got it! I'll remind you about *{title}* in {time_str}.", parse_mode=ParseMode.MARKDOWN)
+        if when_label:
+            when_str = f"at {when_label}"
+        else:
+            when_str = "in " + (f"{delay} min" if delay < 60 else f"{delay // 60}h {delay % 60}m".replace(" 0m", ""))
+        await update.message.reply_text(f"⏰ Got it! I'll remind you about *{title}* {when_str}.", parse_mode=ParseMode.MARKDOWN)
         return ConversationHandler.END
 
     # Interval reminder — repeating every X minutes
