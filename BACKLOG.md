@@ -6,6 +6,9 @@ _Auto-agent: enabled_
 
 ## 🔥 Immediate (next session)
 
+- [ ] **Multi-task in one message** — "add call shreysh in 1 h and mum in 2 h" only creates the
+  first task; understand_message returns a single task object. Needs tasks: [] array support.
+
 - [ ] **Monitor 70B quota** — understand_message uses llama-3.3-70b-versatile with 8B fallback; if quota exhausts midday, routing quality drops (8B misclassifies). Watch logs for fallback hits.
 - [ ] **chat_history table growth** — rows accumulate forever; add periodic cleanup (delete rows older than 7 days)
 - [ ] **Remove dead code** — classify_intent + parse_task in claude_svc.py are now only used by /newtask conversation flow + tests; skip_time_parser only by legacy time_str path. Consolidate later.
@@ -30,6 +33,11 @@ _Auto-agent: enabled_
 
 ## ✅ Done (2026-06-12)
 
+- **Absolute time fix** — "set [task] to [time]" now routes to reschedule_task (was creating a
+  duplicate new task); absolute clock times returned as time_hhmm by the LLM, Python computes
+  the exact IST datetime and stores it directly (LLM minute-arithmetic drifted: "11 pm" → 10:51pm).
+  parse_time_only got the same hhmm/minutes split. Reply says "at 8:00 PM" for clock times.
+  Live tested (test_set_time.py, test_exact_time.py). Committed d925cc0a.
 - **Bare "cancel" fake-success fix** — pre-LLM cancel shortcut said "Cancelled! 👍" without
   doing anything when no flow was pending (the permanent `onboarded` flag made user_data always
   look non-empty). Now: quiz/pending flows still abort instantly; otherwise "cancel" falls
