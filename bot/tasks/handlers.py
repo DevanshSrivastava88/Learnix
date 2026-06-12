@@ -197,6 +197,41 @@ async def _parse_and_respond(update, ctx, text: str, claude_svc, context: str = 
         return ConversationHandler.END
 
     # Habit
+    # Time already given inline ("add habit reading at 9pm") — create now, skip confirm
+    if parsed.get("time_hhmm"):
+        from datetime import datetime as _dt2, timedelta as _td2, timezone as _tz2
+        import pytz as _pytz2
+        _IST2 = _pytz2.timezone("Asia/Kolkata")
+        try:
+            h, m = map(int, str(parsed["time_hhmm"]).split(":"))
+            now_ist = _dt2.now(_IST2)
+            target = now_ist.replace(hour=h, minute=m, second=0, microsecond=0)
+            if target <= now_ist:
+                target += _td2(days=1)
+        except (TypeError, ValueError):
+            target = None
+        if target:
+            uid = update.effective_user.id
+            recur = parsed.get("recurrence_days", 1) or 1
+            try:
+                task_row = db.create_task(
+                    user_id=uid, title=title, task_type="habit",
+                    description=desc, recurrence_days=recur, target_date=None,
+                )
+                db.set_custom_time(task_row["id"], target.astimezone(_tz2.utc))
+            except Exception as e:
+                logger.error(f"create timed habit failed: {e}")
+                await update.message.reply_text("Hmm, couldn't save that — try again?")
+                return ConversationHandler.END
+            freq = "every day" if recur == 1 else f"every {recur} days"
+            label = target.strftime("%I:%M %p").lstrip("0")
+            await update.message.reply_text(
+                f"Added! 🎉 *{title}* — {freq} at {label} IST. 🔔",
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=ReplyKeyboardRemove(),
+            )
+            return ConversationHandler.END
+
     ctx.user_data["parsed_task"] = parsed
     ctx.user_data["freetext_task_state"] = "confirm"
     recur = parsed.get("recurrence_days", 1)

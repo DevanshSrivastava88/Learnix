@@ -63,7 +63,14 @@ def mark_done(task_id: str) -> None:
     if not task.get("next_reminder_at") and not task.get("has_custom_time"):
         return  # reminder-less habit stays reminder-less
     recurrence = task.get("recurrence_days", 1) or 1
-    next_at = datetime.now(timezone.utc) + timedelta(days=recurrence)
+    if task.get("has_custom_time") and task.get("next_reminder_at"):
+        # Preserve the user's chosen clock time — advance whole days, don't
+        # reset to "now + N days" (done at 2:52pm was drifting a 9pm habit)
+        next_at = datetime.fromisoformat(task["next_reminder_at"]) + timedelta(days=recurrence)
+        while next_at <= datetime.now(timezone.utc):
+            next_at += timedelta(days=recurrence)
+    else:
+        next_at = datetime.now(timezone.utc) + timedelta(days=recurrence)
     update_task(task_id, next_reminder_at=next_at.isoformat())
 
 

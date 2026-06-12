@@ -964,7 +964,11 @@ async def handle_task_action_freetext(
 
     uid = update.effective_user.id
     # Exclude breakdown step tasks — they're internal and shouldn't appear in disambiguation
-    tasks = [t for t in task_db.list_tasks(uid) if " — Step " not in t.get("title", "")]
+    all_rows = task_db.list_tasks(uid)
+    if intent == "delete_task":
+        # Paused tasks are deletable too
+        all_rows = all_rows + task_db.list_tasks(uid, status="paused")
+    tasks = [t for t in all_rows if " — Step " not in t.get("title", "")]
     if not tasks:
         await update.message.reply_text("You don't have any active tasks right now.")
         return
@@ -1135,7 +1139,7 @@ async def handle_reschedule_task_freetext(
 
     task_db.set_custom_time(task["id"], new_time_utc)
 
-    when_label = new_time_utc.astimezone(IST).strftime("%I:%M %p")
+    when_label = new_time_utc.astimezone(IST).strftime("%I:%M %p").lstrip("0")
     day_label = "today" if new_time_utc.astimezone(IST).date() == datetime.now(IST).date() else "tomorrow"
     await update.message.reply_text(
         f"Done! I'll remind you about *{task['title']}* at {when_label} {day_label} 👍",
