@@ -281,6 +281,8 @@ def understand_message(text: str, context: str = "") -> dict:
         f'Absolute clock time or no time → null. NEVER guess a time.\n'
         f'- time_hhmm: ONLY for absolute clock times, 24h format — "at 8pm" → "20:00", '
         f'"at 11 pm" → "23:00". Do NOT compute minutes for these. Relative or no time → null.\n'
+        f'- day_offset: 1 for "tomorrow", 2 for "day after tomorrow", null for today/unstated. '
+        f'Set this even when no clock time is given ("remind me to X tomorrow" → day_offset 1, time_hhmm null).\n'
         f'- recurrence_days: 1=daily, 7=weekly (habits only)\n'
         f'- clarify: "" almost always. NEVER ask about time — missing time is fine (task stored unscheduled, '
         f'bot follows up separately). Only fill clarify if the task itself is unintelligible.\n\n'
@@ -290,7 +292,7 @@ def understand_message(text: str, context: str = "") -> dict:
         f'Bare "done"/"skip" with no referent anywhere → task_ref="".\n\n'
         f'Return ONLY:\n'
         f'{{"intent": "...", "task": {{"type": "...", "title": "...", "description": "", '
-        f'"time_minutes": null, "time_hhmm": null, "recurrence_days": 1, "clarify": ""}} or null, "task_ref": ""}}'
+        f'"time_minutes": null, "time_hhmm": null, "day_offset": null, "recurrence_days": 1, "clarify": ""}} or null, "task_ref": ""}}'
     )
     # 70B for routing (8B misclassifies); fall back to 8B if 70B daily quota exhausted
     try:
@@ -481,8 +483,9 @@ def parse_task(text: str, context: str = "") -> dict:
     return {}
 
 
-def parse_time_only(text: str):
-    """Parse a natural language time expression into UTC datetime. Returns datetime or None."""
+def parse_time_only(text: str, day_offset: int = None):
+    """Parse a natural language time expression into UTC datetime. Returns datetime or None.
+    day_offset: known target day from earlier context ("remind me X tomorrow" → 1)."""
     from datetime import datetime, timezone, timedelta
     import pytz
     IST = pytz.timezone("Asia/Kolkata")
@@ -510,7 +513,9 @@ def parse_time_only(text: str):
             try:
                 h, m = map(int, str(hhmm).split(":"))
                 target = now_ist.replace(hour=h, minute=m, second=0, microsecond=0)
-                if result.get("tomorrow") or target <= now_ist:
+                if day_offset:
+                    target += timedelta(days=int(day_offset))
+                elif result.get("tomorrow") or target <= now_ist:
                     target += timedelta(days=1)
                 return target.astimezone(timezone.utc)
             except (TypeError, ValueError):

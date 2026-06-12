@@ -84,10 +84,15 @@ async def _parse_and_respond(update, ctx, text: str, claude_svc, context: str = 
         from datetime import timezone as _tz, datetime as _dt, timedelta as _td
         when_label = None
         exact_at = None
+        try:
+            day_offset = int(parsed.get("day_offset")) if parsed.get("day_offset") else None
+        except (TypeError, ValueError):
+            day_offset = None
         if not _TIME_EXPR.search(text):
             # User's own words contain no time expression — ignore any
             # model-invented time ("add fart" once got a 23h59m reminder)
             delay = 0
+            day_offset = None
         elif parsed.get("time_hhmm"):
             # Absolute clock time — LLM names it, Python computes (LLM arithmetic drifts)
             import pytz as _pytz
@@ -96,10 +101,15 @@ async def _parse_and_respond(update, ctx, text: str, claude_svc, context: str = 
                 h, m = map(int, str(parsed["time_hhmm"]).split(":"))
                 now_ist = _dt.now(_IST)
                 target = now_ist.replace(hour=h, minute=m, second=0, microsecond=0)
-                if target <= now_ist:
+                if day_offset:
+                    target += _td(days=day_offset)
+                elif target <= now_ist:
                     target += _td(days=1)
                 delay = max(0, int((target - now_ist).total_seconds() / 60))
                 when_label = target.strftime("%I:%M %p").lstrip("0")
+                if target.date() != now_ist.date():
+                    day_lbl = "tomorrow" if (target.date() - now_ist.date()).days == 1 else target.strftime("%a %d %b")
+                    when_label += f" {day_lbl}"
                 exact_at = target.astimezone(_tz.utc)
             except (TypeError, ValueError):
                 delay = 0
@@ -132,9 +142,16 @@ async def _parse_and_respond(update, ctx, text: str, claude_svc, context: str = 
             if task_row is None:
                 await update.message.reply_text("Hmm, couldn't save that — try again?")
                 return ConversationHandler.END
-            ctx.user_data["pending_time_for"] = {"task_id": task_row["id"], "title": title}
+            pending = {"task_id": task_row["id"], "title": title}
+            if day_offset:
+                pending["day_offset"] = day_offset
+                day_word = "tomorrow" if day_offset == 1 else f"in {day_offset} days"
+                msg = f"Added *{title}* for {day_word}. ⏰ What time? Say `9am`, or `no` and I'll go with 9am."
+            else:
+                msg = f"Added *{title}*. 📌 Want to set a time? Say `8pm`, `in 2 hours`, or `no`."
+            ctx.user_data["pending_time_for"] = pending
             await update.message.reply_text(
-                f"Added *{title}*. 📌 Want to set a time? Say `8pm`, `in 2 hours`, or `no`.",
+                msg,
                 parse_mode=ParseMode.MARKDOWN,
                 reply_markup=ReplyKeyboardRemove(),
             )
@@ -293,17 +310,34 @@ async def cmd_tasks(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text("No tasks yet! Just tell me what you want to track.")
         return
 
-    from datetime import datetime
+    from datetime import datetime, timedelta
     timed = [t for t in tasks if t.get("next_reminder_at")]
     untimed = [t for t in tasks if not t.get("next_reminder_at")]
     timed.sort(key=lambda t: t["next_reminder_at"])
 
-    lines = ["<b>📋 Your tasks</b>\n"]
+    today_ist = datetime.now(IST).date()
+
+    def _tlabel(t):
+        return datetime.fromisoformat(t["next_reminder_at"]).astimezone(IST).strftime("%I:%M%p").lstrip("0").lower().replace(":00", "")
+
+    today_tasks, upcoming = [], []
     for t in timed:
-        time_label = datetime.fromisoformat(t["next_reminder_at"]).astimezone(IST).strftime("%I:%M%p").lstrip("0").lower().replace(":00", "")
-        lines.append(f"  {time_label} → {t['title']}")
+        d = datetime.fromisoformat(t["next_reminder_at"]).astimezone(IST).date()
+        (today_tasks if d <= today_ist else upcoming).append(t)
+
+    lines = ["<b>📋 Your tasks</b>"]
+    if today_tasks:
+        lines.append("\n<b>Today</b>")
+        for t in today_tasks:
+            lines.append(f"  {_tlabel(t)} → {t['title']}")
+    if upcoming:
+        lines.append("\n<b>📅 Upcoming</b>")
+        for t in upcoming:
+            d = datetime.fromisoformat(t["next_reminder_at"]).astimezone(IST).date()
+            day_label = "tomorrow" if d == today_ist + timedelta(days=1) else d.strftime("%a %d %b")
+            lines.append(f"  {day_label} {_tlabel(t)} → {t['title']}")
     if untimed:
-        lines.append("\n________")
+        lines.append("\n<b>Unscheduled</b>")
         for t in untimed:
             lines.append(f"  • {t['title']}")
         lines.append("\n<i>Unscheduled tasks are often ignored — say \"set [task] to [time]\" to pin one.</i>")

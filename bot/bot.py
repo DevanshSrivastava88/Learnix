@@ -502,14 +502,42 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
     # Pending time follow-up for unscheduled tasks
     if ctx.user_data.get("pending_time_for"):
         pending = ctx.user_data["pending_time_for"]
+        day_offset = pending.get("day_offset")
         no_words = {"no", "nah", "nope", "skip", "later", "not now", "n"}
-        from datetime import timezone as _tz
+        from datetime import timezone as _tz, timedelta as _tdelta
         import asyncio as _aio
+        import datetime as _dt_mod
+        import pytz as _pytz
+
+        def _when_label(dt_utc):
+            ist = dt_utc.astimezone(_pytz.timezone("Asia/Kolkata"))
+            now_ist = _dt_mod.datetime.now(_pytz.timezone("Asia/Kolkata"))
+            label = ist.strftime("%I:%M %p").lstrip("0")
+            days_ahead = (ist.date() - now_ist.date()).days
+            if days_ahead == 1:
+                label += " tomorrow"
+            elif days_ahead > 1:
+                label += ist.strftime(" %a %d %b")
+            return label
+
         if text.lower().strip() in no_words:
             ctx.user_data.pop("pending_time_for", None)
-            await update.message.reply_text("Got it, I'll leave it unscheduled. 📌")
+            if day_offset:
+                # Date was given ("tomorrow") — default 9am that day, never drop the date
+                _IST = _pytz.timezone("Asia/Kolkata")
+                target = (_dt_mod.datetime.now(_IST) + _tdelta(days=int(day_offset))).replace(
+                    hour=9, minute=0, second=0, microsecond=0)
+                task_id = pending.get("task_id")
+                if task_id:
+                    import tasks.svc as _tsvc
+                    _tsvc.update_task(task_id, next_reminder_at=target.astimezone(_tz.utc).isoformat())
+                await update.message.reply_text(
+                    f"⏰ Set! I'll remind you about *{pending.get('title', 'it')}* at {_when_label(target.astimezone(_tz.utc))}.",
+                    parse_mode=ParseMode.MARKDOWN)
+            else:
+                await update.message.reply_text("Got it, I'll leave it unscheduled. 📌")
             return
-        parsed_dt = await _aio.to_thread(claude_svc.parse_time_only, text)
+        parsed_dt = await _aio.to_thread(claude_svc.parse_time_only, text, day_offset)
         if parsed_dt:
             task_id = pending.get("task_id")
             title = pending.get("title", "task")
@@ -517,10 +545,12 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
                 import tasks.svc as _tsvc
                 _tsvc.update_task(task_id, next_reminder_at=parsed_dt.isoformat())
             ctx.user_data.pop("pending_time_for", None)
-            import datetime as _dt_mod
             delay = max(0, int((parsed_dt - _dt_mod.datetime.now(_tz.utc)).total_seconds() / 60))
-            time_str = f"{delay} min" if delay < 60 else f"{delay // 60}h {delay % 60}m".replace(" 0m", "")
-            await update.message.reply_text(f"⏰ Set! I'll remind you about *{title}* in {time_str}.", parse_mode=ParseMode.MARKDOWN)
+            if delay >= 60 * 10 or day_offset:
+                when_str = f"at {_when_label(parsed_dt)}"
+            else:
+                when_str = "in " + (f"{delay} min" if delay < 60 else f"{delay // 60}h {delay % 60}m".replace(" 0m", ""))
+            await update.message.reply_text(f"⏰ Set! I'll remind you about *{title}* {when_str}.", parse_mode=ParseMode.MARKDOWN)
             return
         else:
             await update.message.reply_text("Didn't catch that as a time. Say something like `8pm`, `in 2 hours`, or `no`.")
