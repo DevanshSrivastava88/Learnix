@@ -33,6 +33,10 @@ _Auto-agent: enabled_
 
 ## ✅ Done (2026-06-12)
 
+- **Habit logic overhaul** — no-time habit = no reminder (was reminding at creation minute);
+  7pm IST evening digest of unscheduled tasks + reminder-less habits; 🔁 marker in list,
+  no-time habits in Upcoming ("tomorrow") + Unscheduled (with frequency); type words stripped
+  from titles. Live tested 4/4. Committed 2c1d9dbc.
 - **Day support + list sections** — day_offset from LLM ("tomorrow"=1, works without clock time);
   date survives the time follow-up, "no" → 9am default that day; inline "tomorrow at 7am" exact;
   /tasks grouped Today / 📅 Upcoming / Unscheduled. Live tested 4/4. Committed a46e7768.
