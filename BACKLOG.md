@@ -33,6 +33,9 @@ _Auto-agent: enabled_
 
 ## ✅ Done (2026-06-12)
 
+- **Day support + list sections** — day_offset from LLM ("tomorrow"=1, works without clock time);
+  date survives the time follow-up, "no" → 9am default that day; inline "tomorrow at 7am" exact;
+  /tasks grouped Today / 📅 Upcoming / Unscheduled. Live tested 4/4. Committed a46e7768.
 - **Phantom time guard re-wired** — refactor had orphaned _TIME_EXPR (defined, uncalled);
   "add fart" intermittently got a 23h59m reminder from a hallucinated time. Now any
   model-provided time is discarded when the user's message has no time words. Regex widened
