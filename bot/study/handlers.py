@@ -37,6 +37,38 @@ def format_plan(goal_name: str, scheduled: list, difficulty: str = "medium") -> 
     return "\n".join(lines)
 
 
+async def cmd_plan(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show the full dated study plan + on-track status for planned goals."""
+    from datetime import date
+    uid = update.effective_user.id
+    goals = db.list_goals(uid)
+    planned = [g for g in goals if db.get_plan_status(g["id"])]
+    if not planned:
+        await update.message.reply_text(
+            "No study plan yet. Say *I want to learn X* and give a target date — "
+            "I'll map out a day-by-day plan.", parse_mode=ParseMode.MARKDOWN)
+        return
+    today = date.today()
+    out = []
+    for g in planned:
+        plan = db.get_plan_status(g["id"])
+        track = "on track ✅" if plan["on_track"] else "behind ⏳"
+        out.append(f"📚 *{g['name']}* — Day {plan['day']}/{plan['total_days']} ({track})")
+        roots = sorted([t for t in db.list_topics_for_goal(g["id"]) if not t.get("parent_id")],
+                       key=lambda t: t["order_index"])
+        for t in roots:
+            icon = {"completed": "✅", "needs_revision": "🔁", "skipped": "⏭"}.get(t["status"], "⬜")
+            sd = t.get("scheduled_date")
+            if sd:
+                d = date.fromisoformat(str(sd)[:10])
+                when = "today" if d == today else d.strftime("%a %d %b")
+            else:
+                when = "—"
+            out.append(f"  {icon} {t['title']} · {when}")
+        out.append("")
+    await update.message.reply_text("\n".join(out).strip(), parse_mode=ParseMode.MARKDOWN)
+
+
 async def finalize_goal_with_plan(update, ctx, uid, name, desc, difficulty, deadline):
     """Create a goal, auto-generate its topics, build the dated plan, and show it.
     Shared by the /goal conversation and the free-text create_goal flow."""
@@ -835,6 +867,7 @@ def get_handlers():
         CommandHandler("topics", cmd_topics),
         CommandHandler("study", cmd_study),
         CommandHandler("progress", cmd_progress),
+        CommandHandler("plan", cmd_plan),
         CommandHandler("pausegoal", cmd_pausegoal),
         MessageHandler(filters.Regex(r"^/togglegoal_"), handle_togglegoal),
     ]

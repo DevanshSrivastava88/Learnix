@@ -477,6 +477,9 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
     if _bare in {"help", "commands"}:
         await cmd_help(update, ctx)
         return
+    if _bare in {"plan", "my plan", "study plan", "my study plan", "show my plan", "show plan"}:
+        await study_handlers.cmd_plan(update, ctx)
+        return
     if _bare in {"clear", "clear all", "clear everything", "wipe", "reset all", "wipe everything"}:
         await cmd_clear(update, ctx)
         return
