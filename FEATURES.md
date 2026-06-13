@@ -3,7 +3,7 @@
 _Single source of truth for what the bot does. Update it when a feature is added or
 changed. Every code change must keep everything below working._
 
-Bot: **@Quest3131Bot** (disrupto) · LIVE on Railway · 195 unit tests · `test_all.py` = 32/32 live.
+Bot: **@Quest3131Bot** (disrupto) · LIVE on Railway · 201 unit tests · `test_all.py` = 37/37 live.
 
 > **Full live regression:** `python test_all.py` runs all 32 feature checks end-to-end
 > (robust harness: per-run session copy, settle-based replies, DB pre-clean). Last: 32/32.
@@ -80,6 +80,14 @@ Bot: **@Quest3131Bot** (disrupto) · LIVE on Railway · 195 unit tests · `test_
 - Normal tasks: 2 reminders/day then auto-skip; important: hourly till EOD
 - **Morning brief** (08:00), **EOD check-in** (21:00), **7pm evening digest** (unscheduled + reminder-less habits)
 - **Twilio** calls + IVR (press-1 done / press-2 skip), missed-call webhook — opt-in /twilio on
+
+### Motivation engine (`motivation_svc.py`)
+- **Proactive** (poller, ≤1/24h, hour-gated): daily_skip_burst, streak_broken, low_weekly_rate, no_activity
+- **Reactive (in-the-moment):** "i keep failing" / "feel like giving up" / "i'm overwhelmed" / "this is
+  too much" → validates the feeling, references their real streak, and ALWAYS offers concrete help
+  (pause a habit / push reminders to tomorrow / scale a goal back). Persona-aware. Offer is
+  deterministic — survives LLM omission/failure.
+- **Comeback note on skips:** 2nd/3rd+ skip today appends a warm, non-judgmental line.
 
 ### Personality (option)
 - **/persona flirty** (sexy/spicy) | **/persona normal** — flavors the chat tone; default friendly. Per-user in DB (migration 009)
