@@ -515,6 +515,44 @@ def parse_task(text: str, context: str = "") -> dict:
     return {}
 
 
+def parse_deadline(text: str):
+    """Parse a goal deadline → ISO date string, or None (no/unclear deadline).
+    Handles ISO dates, relative phrases ('next month', 'in 3 weeks'), and month names.
+    Never raises — unclear input returns None so callers can proceed without a deadline."""
+    from datetime import datetime, timedelta
+    import re as _re_d
+    import pytz
+    low = text.strip().lower()
+    if low in {"-", "no", "none", "skip", "no deadline", "nope", "na", "n/a", "no date", "whenever"}:
+        return None
+    # Fast path: already an ISO date
+    m = _re_d.match(r'(\d{4}-\d{2}-\d{2})', text.strip())
+    if m:
+        try:
+            datetime.fromisoformat(m.group(1)); return m.group(1)
+        except ValueError:
+            pass
+    today = datetime.now(pytz.timezone("Asia/Kolkata"))
+    now_str = today.strftime("%Y-%m-%d (%A)")
+    result = _ask_json(
+        f'Today is {now_str}. Convert this deadline phrase to a calendar date.\n'
+        f'Phrase: "{text}"\n\n'
+        f'Examples: "next month" → ~30 days out; "in 3 weeks" → +21 days; '
+        f'"by August" → first of that month (next year if already past); "end of the month"; '
+        f'"next friday". If there is no real deadline or it is unclear, use null.\n'
+        f'Return ONLY: {{"date": "YYYY-MM-DD" or null}}',
+        max_tokens=40,
+    )
+    if isinstance(result, dict) and result.get("date"):
+        try:
+            d = str(result["date"])[:10]
+            datetime.fromisoformat(d)
+            return d
+        except (ValueError, TypeError):
+            return None
+    return None
+
+
 def parse_time_only(text: str, day_offset: int = None):
     """Parse a natural language time expression into UTC datetime. Returns datetime or None.
     day_offset: known target day from earlier context ("remind me X tomorrow" → 1)."""

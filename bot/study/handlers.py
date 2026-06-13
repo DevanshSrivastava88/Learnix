@@ -322,21 +322,20 @@ async def goal_get_difficulty(update: Update, ctx: ContextTypes.DEFAULT_TYPE) ->
         return GOAL_DIFFICULTY
     ctx.user_data["goal_difficulty"] = choice
     await update.message.reply_text(
-        "Target date? (YYYY-MM-DD, e.g. 2026-12-01) Or '-' to skip:",
-        reply_markup=ReplyKeyboardRemove(),
+        "When do you want to finish by? Say *next month*, *in 3 weeks*, *by August*, "
+        "*2026-12-01* — or *no deadline*.",
+        parse_mode=ParseMode.MARKDOWN, reply_markup=ReplyKeyboardRemove(),
     )
     return GOAL_DEADLINE
 
 
 async def goal_get_deadline(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
-    deadline = update.message.text.strip()
-    if deadline != "-":
-        try:
-            datetime.fromisoformat(deadline)
-        except ValueError:
-            await update.message.reply_text("Hmm, that date doesn't look right. Use YYYY-MM-DD or '-' to skip:")
-            return GOAL_DEADLINE
-    else:
+    import asyncio as _aio_d
+    # Natural-language deadline ("next month", "by August", ISO, or "no deadline").
+    # Unclear input → no deadline; never trap re-asking.
+    try:
+        deadline = await _aio_d.to_thread(claude.parse_deadline, update.message.text.strip())
+    except Exception:
         deadline = None
     uid = update.effective_user.id
     name = ctx.user_data["goal_name"]

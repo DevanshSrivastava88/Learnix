@@ -1710,23 +1710,19 @@ async def _handle_freetext_goal_flow(update: Update, ctx: ContextTypes.DEFAULT_T
         ctx.user_data["goal_difficulty"] = choice
         ctx.user_data["freetext_goal_state"] = "deadline"
         await update.message.reply_text(
-            "Target date? (YYYY-MM-DD, e.g. 2026-12-01) Or '-' to skip:",
-            reply_markup=ReplyKeyboardRemove(),
+            "When do you want to finish by? Say a date like *next month*, *in 3 weeks*, "
+            "*by August*, *2026-12-01* — or *no deadline*.",
+            parse_mode=ParseMode.MARKDOWN, reply_markup=ReplyKeyboardRemove(),
         )
         return True
 
     if state == "deadline":
-        from datetime import datetime as _dt
         import study.svc as study_svc
-
-        deadline = text
-        if deadline != "-":
-            try:
-                _dt.fromisoformat(deadline)
-            except ValueError:
-                await update.message.reply_text("Hmm, that date doesn't look right. Use YYYY-MM-DD or '-' to skip:")
-                return True
-        else:
+        import asyncio as _aio_d
+        # Natural-language deadline; unclear input → no deadline (never trap re-asking)
+        try:
+            deadline = await _aio_d.to_thread(claude_svc.parse_deadline, text)
+        except Exception:
             deadline = None
 
         uid = update.effective_user.id
