@@ -1,12 +1,12 @@
 # Learnix Backlog
 
-_Last updated: 2026-06-12_
+_Last updated: 2026-06-13_
 _Project status: workInProgress_
 _Auto-agent: enabled_
 
 ## 🔥 Immediate (next session)
 
-- [ ] **Multi-task in one message** — "add call shreysh in 1 h and mum in 2 h" only creates the
+- [x] **Multi-task in one message** — "add call shreysh in 1 h and mum in 2 h" only creates the
   first task; understand_message returns a single task object. Needs tasks: [] array support.
 
 - [ ] **Monitor 70B quota** — understand_message uses llama-3.3-70b-versatile with 8B fallback; if quota exhausts midday, routing quality drops (8B misclassifies). Watch logs for fallback hits.

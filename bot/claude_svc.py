@@ -307,11 +307,12 @@ def understand_message(text: str, context: str = "") -> dict:
         f'"time_minutes": null, "time_hhmm": null, "day_offset": null, "recurrence_days": 1, "clarify": ""}} or null, '
         f'"extra_tasks": [], "task_ref": ""}}'
     )
-    # 70B for routing (8B misclassifies); fall back to 8B if 70B daily quota exhausted
+    # 70B for routing (8B misclassifies); fall back to 8B if 70B daily quota exhausted.
+    # 400 tokens needed for multi-task responses (extra_tasks array adds ~100 tokens per task).
     try:
-        result = _ask_json(prompt, max_tokens=250, model="llama-3.3-70b-versatile")
+        result = _ask_json(prompt, max_tokens=400, model="llama-3.3-70b-versatile")
     except Exception:
-        result = _ask_json(prompt, max_tokens=250)
+        result = _ask_json(prompt, max_tokens=400)
     if isinstance(result, dict) and result.get("intent"):
         intent = result.get("intent", "chat")
         task_ref = str(result.get("task_ref") or "").strip()
