@@ -253,6 +253,126 @@ def get_study_progress(user_id: int) -> Optional[dict]:
 
 
 # ---------------------------------------------------------------------------
+# Guided study plan — spread root topics across calendar days
+# ---------------------------------------------------------------------------
+
+def _plan_offsets(n: int, span: int) -> list[int]:
+    """Day-offsets for n topics across `span` days (0 = start day).
+    span<=0 (no usable target) → one topic per day: [0,1,2,...]."""
+    if n <= 0:
+        return []
+    if span <= 0:
+        return list(range(n))
+    if n == 1:
+        return [0]
+    return [round(i * span / (n - 1)) for i in range(n)]
+
+
+def generate_plan(goal_id: str, start_date=None) -> list[dict]:
+    """Assign each root topic a scheduled_date evenly spread from start_date to the
+    goal's target_date (inclusive). One topic per study-day; if there are more topics
+    than days, they stack one-per-day from the start. Returns the scheduled root topics."""
+    from datetime import date, timedelta
+
+    goal = get_goal(goal_id)
+    if not goal:
+        return []
+    start = start_date or date.today()
+    if isinstance(start, str):
+        start = date.fromisoformat(start)
+
+    topics = list_topics_for_goal(goal_id)
+    roots = sorted([t for t in topics if not t.get("parent_id")],
+                   key=lambda t: t["order_index"])
+    if not roots:
+        return []
+
+    target = None
+    if goal.get("target_date"):
+        try:
+            target = date.fromisoformat(str(goal["target_date"])[:10])
+        except (ValueError, TypeError):
+            target = None
+
+    n = len(roots)
+    span = (target - start).days if (target and target > start) else 0
+    offsets = _plan_offsets(n, span)
+
+    update_goal(goal_id, start_date=start.isoformat())
+    scheduled = []
+    for topic, off in zip(roots, offsets):
+        d = (start + timedelta(days=off)).isoformat()
+        get_client().table("topics").update({"scheduled_date": d}).eq("id", topic["id"]).execute()
+        topic["scheduled_date"] = d
+        scheduled.append(topic)
+    return scheduled
+
+
+def get_plan_status(goal_id: str) -> Optional[dict]:
+    """On-track snapshot for a planned goal. None if the goal has no plan yet.
+    Keys: day, total_days, total, completed, expected, on_track, today_topic, behind_topics."""
+    from datetime import date
+
+    goal = get_goal(goal_id)
+    if not goal or not goal.get("start_date"):
+        return None
+    topics = list_topics_for_goal(goal_id)
+    roots = sorted([t for t in topics if not t.get("parent_id")],
+                   key=lambda t: t["order_index"])
+    if not roots:
+        return None
+
+    today = date.today()
+    start = date.fromisoformat(str(goal["start_date"])[:10])
+    target = None
+    if goal.get("target_date"):
+        try:
+            target = date.fromisoformat(str(goal["target_date"])[:10])
+        except (ValueError, TypeError):
+            target = None
+
+    day = (today - start).days + 1
+    total_days = ((target - start).days + 1) if target else len(roots)
+    total = len(roots)
+    completed = sum(1 for t in roots if t["status"] == "completed")
+
+    def _sched(t):
+        return date.fromisoformat(str(t["scheduled_date"])[:10]) if t.get("scheduled_date") else None
+
+    pending = [t for t in roots if t["status"] in ("not_started", "needs_revision")]
+    # "Expected by now" = topics whose day has PASSED (strictly before today). Today's
+    # topic isn't overdue yet — you have all day — so it doesn't count against on-track.
+    expected = sum(1 for t in roots if _sched(t) and _sched(t) < today)
+    due = [t for t in pending if _sched(t) and _sched(t) <= today]
+    today_topic = (due or pending or [None])[0]
+    behind_topics = [t for t in pending if _sched(t) and _sched(t) < today]
+
+    return {
+        "goal_name": goal["name"],
+        "day": max(day, 1),
+        "total_days": total_days,
+        "total": total,
+        "completed": completed,
+        "expected": expected,
+        "on_track": completed >= expected,
+        "today_topic": today_topic,
+        "behind_topics": behind_topics,
+    }
+
+
+def get_weak_topics(goal_id: str, threshold: int = 60) -> list[dict]:
+    """Completed topics whose most recent quiz score is below threshold — due for review."""
+    weak = []
+    for t in list_topics_for_goal(goal_id):
+        if t["status"] != "completed":
+            continue
+        attempts = get_attempts_for_topic(t["id"])
+        if attempts and attempts[0].get("score", 100) < threshold:
+            weak.append(t)
+    return weak
+
+
+# ---------------------------------------------------------------------------
 # Quiz attempts
 # ---------------------------------------------------------------------------
 

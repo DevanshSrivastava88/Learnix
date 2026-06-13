@@ -1632,18 +1632,13 @@ async def _handle_freetext_goal_flow(update: Update, ctx: ContextTypes.DEFAULT_T
         name = ctx.user_data.get("goal_name", "New Goal")
         desc = ctx.user_data.get("goal_desc", "")
         difficulty = ctx.user_data.get("goal_difficulty", "medium")
-        study_svc.create_goal(uid, name, desc, deadline, difficulty=difficulty)
-        diff_label = {"easy": "Easy 🟢", "medium": "Medium 🟡", "hard": "Hard 🔴"}.get(difficulty, "Medium 🟡")
 
-        # Clean up
+        # Clean up state before the (slow) plan build
         for key in ("goal_name", "goal_desc", "goal_difficulty", "freetext_goal_state"):
             ctx.user_data.pop(key, None)
 
-        await update.message.reply_text(
-            f"Goal created! 🎯 *{name}* ({diff_label}) is on the list.\n\n"
-            f"Say 'break down {name}' to auto-generate topics, or 'add topic X' to add manually.",
-            parse_mode=ParseMode.MARKDOWN,
-        )
+        await update.message.reply_text("Building your study plan... 📚")
+        await study_handlers.finalize_goal_with_plan(update, ctx, uid, name, desc, difficulty, deadline)
         return True
 
     return False

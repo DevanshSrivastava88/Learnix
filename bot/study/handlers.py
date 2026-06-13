@@ -18,6 +18,52 @@ import settings_svc
 logger = logging.getLogger(__name__)
 IST = pytz.timezone("Asia/Kolkata")
 
+def format_plan(goal_name: str, scheduled: list, difficulty: str = "medium") -> str:
+    """Render a freshly-built dated study plan."""
+    from datetime import date
+    diff_label = {"easy": "Easy 🟢", "medium": "Medium 🟡", "hard": "Hard 🔴"}.get(difficulty, "Medium 🟡")
+    lines = [f"📚 *Study plan: {goal_name}* ({diff_label})\n"]
+    today = date.today()
+    for i, t in enumerate(scheduled, 1):
+        sd = t.get("scheduled_date")
+        if sd:
+            d = date.fromisoformat(str(sd)[:10])
+            when = "today" if d == today else d.strftime("%a %d %b")
+        else:
+            when = "—"
+        lines.append(f"  {i}. *{t['title']}* · {when}")
+    lines.append(f"\n{len(scheduled)} topics mapped out. I'll send you today's topic at your study time — "
+                 f"or say *study {goal_name}* to start now.")
+    return "\n".join(lines)
+
+
+async def finalize_goal_with_plan(update, ctx, uid, name, desc, difficulty, deadline):
+    """Create a goal, auto-generate its topics, build the dated plan, and show it.
+    Shared by the /goal conversation and the free-text create_goal flow."""
+    import asyncio as _aio
+    goal = db.create_goal(uid, name, desc, deadline, difficulty=difficulty)
+    # Auto-generate topics (the professional flow — no separate 'break it down' step)
+    try:
+        titles = await _aio.to_thread(claude.breakdown_study_goal, name, difficulty)
+    except Exception as e:
+        logger.error(f"plan topic generation failed: {e}")
+        titles = []
+    if not titles:
+        diff_label = {"easy": "Easy 🟢", "medium": "Medium 🟡", "hard": "Hard 🔴"}.get(difficulty, "Medium 🟡")
+        await update.message.reply_text(
+            f"Goal created! 🎯 *{name}* ({diff_label}).\n"
+            f"Couldn't auto-generate topics just now — say 'break down {name}' to retry.",
+            parse_mode=ParseMode.MARKDOWN, reply_markup=ReplyKeyboardRemove(),
+        )
+        return
+    db.bulk_create_topics(goal["id"], titles)
+    scheduled = db.generate_plan(goal["id"])
+    await update.message.reply_text(
+        format_plan(name, scheduled, difficulty),
+        parse_mode=ParseMode.MARKDOWN, reply_markup=ReplyKeyboardRemove(),
+    )
+
+
 # Conversation states
 GOAL_NAME, GOAL_DESC, GOAL_DEADLINE, GOAL_DIFFICULTY = range(4)
 AT_GOAL_SELECT, AT_PARENT_SELECT, AT_TITLE, AT_DESC, AT_NOTES = range(5, 10)
@@ -264,12 +310,8 @@ async def goal_get_deadline(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> i
     name = ctx.user_data["goal_name"]
     desc = ctx.user_data.get("goal_desc", "")
     difficulty = ctx.user_data.get("goal_difficulty", "medium")
-    db.create_goal(uid, name, desc, deadline, difficulty=difficulty)
-    diff_label = {"easy": "Easy 🟢", "medium": "Medium 🟡", "hard": "Hard 🔴"}.get(difficulty, "Medium 🟡")
-    await update.message.reply_text(
-        f"Goal created! 🎯 *{name}* ({diff_label}) is on the list.\n\nUse /addtopic to add topics, or say 'break down {name}' to auto-generate them.",
-        parse_mode=ParseMode.MARKDOWN,
-    )
+    await update.message.reply_text("Building your study plan... 📚")
+    await finalize_goal_with_plan(update, ctx, uid, name, desc, difficulty, deadline)
     ctx.user_data.clear()
     return ConversationHandler.END
 
@@ -531,6 +573,23 @@ async def cmd_progress(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         return
     lines = ["*📊 Your progress*\n"]
     for goal in goals:
+        # Planned goals get the guided day-X/N on-track header
+        plan = db.get_plan_status(goal["id"])
+        if plan:
+            track = "on track ✅" if plan["on_track"] else "behind ⏳"
+            lines.append(f"🎯 *{plan['goal_name']}* — Day {plan['day']}/{plan['total_days']} ({track})")
+            lines.append(f"   {plan['completed']}/{plan['total']} topics done")
+            if plan["today_topic"]:
+                lines.append(f"   👉 Up next: *{plan['today_topic']['title']}* — say *study {goal['name']}*")
+            if plan["behind_topics"]:
+                names = ", ".join(t["title"] for t in plan["behind_topics"][:3])
+                lines.append(f"   ⏳ Catch up: {names}")
+            weak = db.get_weak_topics(goal["id"])
+            if weak:
+                lines.append(f"   🔁 Review (shaky): {', '.join(t['title'] for t in weak[:3])}")
+            lines.append("")
+            continue
+        # Unplanned goals — original topic-tree view
         lines.append(_format_goal_status(goal))
         topics = db.list_topics_for_goal(goal["id"])
         if topics:
