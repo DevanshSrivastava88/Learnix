@@ -81,7 +81,6 @@ Bot: **@Quest3131Bot** (disrupto) · LIVE on Railway · 174 unit tests.
 
 ---
 
-## 🐞 Known open bugs (fix carefully, don't regress the above)
-- `mark X as important` sometimes creates a new task "Mark X" instead of flagging (8B misroute — needs verb guard)
-- `skip X today` can throw "Oops, something broke" (crash — investigate handler)
-- `I want to learn X` can route to task instead of create_goal (8B misroute)
+## 🐞 Known open bugs
+_(none currently — last sweep's 3 bugs fixed in 98312744: skip-crash on one-time tasks,
+mark-important misroute, learn→goal misroute. All re-verified live.)_

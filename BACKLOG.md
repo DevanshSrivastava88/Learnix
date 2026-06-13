@@ -31,6 +31,20 @@ _Auto-agent: enabled_
 - [ ] Activity graph embed
 - [ ] Skip analytics embed
 
+## ✅ Done (2026-06-13)
+
+- **FEATURES.md baseline** — full feature list + change guidelines (regression guard). Commit 17082fca.
+- **Persona option** — /persona flirty|normal, per-user (migration 009). Commit 17082fca.
+- **Conversation-trap fix** — habit time-prompt no longer swallows following messages.
+- **3 sweep bugs fixed (98312744)** — skip one-time task crash (timedelta(days=None) → status=skipped,
+  migration 010); "mark X important" misroute (verb guard); "I want to learn X" → create_goal.
+- **Multi-task / resume / JSON-unwrap** (54094241) — extra_tasks[], resume_task intent; CRITICAL:
+  _ask_json blanket-unwrap sent every intent to chat — now only single-key {"items":[...]} unwraps.
+
+## 🔜 Next big piece
+- **Study system rebuild** — user wants it reshaped professionally (plan→guided daily sessions→
+  progress/on-track→weak-topic revision). Scoped: study/svc.py (273 lines) + study/handlers.py (765).
+
 ## ✅ Done (2026-06-12)
 
 - **Subtasks** — AI breakdown with review loop (yes/no/natural-language revision), manual
