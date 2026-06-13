@@ -4,7 +4,28 @@ _Last updated: 2026-06-15_
 _Project status: workInProgress_
 _Auto-agent: enabled_
 
-## 🎯 NEXT BIG: Motivation engine 10x (user's headline ask)
+## ✅ Done (2026-06-14, autonomous overnight)
+- **Motivation 10x — Increment 1 (context engine)** — `gather_user_context()` pulls real
+  history (most-avoided task by name, best/worst weekday, recent wins, streak, skip-rate,
+  persona; best-effort, never raises). Rewired `generate_motivation_message` +
+  `generate_struggle_support` → real specifics + identity framing. Grounded in Exocortex
+  (`D:\Projects\moto_moto`) research. 16 new tests, 217 green. Commit f99c24f2.
+- **Web UI — cute cross-out task list** (`web/`) — FastAPI over `bot/tasks/svc.py` (own venv) +
+  Vite/React/TS/Tailwind/Motion, warm-paper aesthetic, hand-drawn strikethrough. Single user
+  (`LEARNIX_WEB_UID`). Same Supabase data. Verified live add→cross-out→delete. Commit 71a71588.
+  Run: `web/run.ps1` (or README). **Next polish ideas:** habit/study type badges, due-date chips,
+  drag-reorder, dark mode toggle, deploy (Railway/Vercel static + API).
+
+## 🎯 Motivation engine 10x — remaining increments
+
+**Increment 2 (next):** Memory-of-what-works — add outcome tracking to `motivation_log` (did
+the user re-engage within 24h of a nudge? needs a migration adding a column) + **comeback
+celebration** trigger (anti-AVE: returning after a 2+ day gap / rebuilding a streak = a moment).
+Then bias future tone toward what landed.
+**Parked (memory `project_learnix_motivation_10x.md`):** #4 adaptive timing, full #6 pattern
+engine, #8 sentiment read, Exocortex crisis classifier (safety — fold in soon).
+
+### Original 10x reference
 
 **Goal:** make motivation feel personal, earned, and genuinely helpful — not generic coach lines.
 
