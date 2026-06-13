@@ -65,8 +65,11 @@ Bot: **@Quest3131Bot** (disrupto) · LIVE on Railway · 174 unit tests.
   runs today's scheduled topic: lesson → 5-question quiz → pass (≥3) completes + advances, else needs_revision
 - **On-track tracking** — `get_plan_status`: behind only if topics are *past-due* (today's isn't overdue)
 - **Weak-topic review** — completed topics with quiz ratio < 0.8 (or needs_revision) resurface FIRST
+- **/plan** (or "my plan") — full dated schedule with status icons (✅🔁⏭⬜) + on-track header
 - **/progress** — Day N/Total header, up-next topic, catch-up list, review hints (planned goals);
   topic-tree view for unplanned goals
+- **Morning brief** shows the plan's Day N/Total + today's topic
+- **Manage by text** — "delete/pause my X goal" act on the matched goal (delete asks confirm)
 - **/goals /topics**, study/skip a specific topic, /addtopic, /editgoal, /deletegoal, /pausegoal
 - breakdown a goal into subtopics; bulk topic import from bullet lists; streak; bubble-up completion
 
@@ -87,6 +90,10 @@ Bot: **@Quest3131Bot** (disrupto) · LIVE on Railway · 174 unit tests.
 ---
 
 ## 🐞 Known open bugs
-- `delete my X goal` / `delete my french goal` — manage_goal name extraction mangles the goal
-  name (turned "french" into "My French Goal"), so the goal isn't found. Needs the same
-  strip-the-prefix treatment as task titles. (Low severity; /deletegoal works.)
+_(none currently — "delete/pause my X goal" fixed; goal names title-cased; full guided study
+loop verified: plan build → study → advance → /plan → morning brief.)_
+
+## ⚠️ Known limitations (not bugs)
+- Guided study uses the FIRST in-progress goal (goals[0]). Multiple concurrent planned goals
+  aren't interleaved — second goal won't get daily nudges until the first is done/paused.
+- Goal resume is via /pausegoal toggle only (no free-text "resume X goal" yet).
