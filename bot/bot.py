@@ -682,6 +682,22 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
                           "done": "done", "skip": "skip_task"}[_verb]
                 understood["task_ref"] = _rest
                 understood["task"] = None
+        # "mark X (as) important/urgent/priority" — 8B made a new task "Mark X"
+        _m_imp = _re.match(
+            r'^(?:mark|flag)\s+(.+?)\s+(?:as\s+)?(?:important|urgent|priority|a priority)\s*$',
+            text.strip(), _re.IGNORECASE)
+        if _m_imp and intent in ("task", "chat"):
+            intent = "mark_important"
+            understood["task_ref"] = _m_imp.group(1).strip()
+            understood["task"] = None
+        # "I want to learn/master X", "teach me X", "get better at X" → study goal,
+        # not a task (8B routes these to task). Skip if it's clearly a reminder.
+        if intent in ("task", "chat") and not _re.match(r'^(add|remind|track|ping)\b', text.strip(), _re.IGNORECASE):
+            if _re.search(r'\b(?:want to|wanna|like to|need to)\s+(?:learn|master|study)\b'
+                          r'|^teach me\b|\bget better at\b|\bget good at\b|\blearn how to\b',
+                          text.strip(), _re.IGNORECASE):
+                intent = "create_goal"
+                understood["task"] = None
         logger.info(f"understand_message: text={text!r} -> {understood!r}")
     except Exception:
         await update.message.reply_text("⚡ Had a hiccup — try that again?")
@@ -750,7 +766,8 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
     elif intent == "show_settings":
         await tasks_handlers.cmd_settings(update, ctx)
     elif intent == "mark_important":
-        await handle_mark_important_freetext(update, ctx, text, claude_svc)
+        await handle_mark_important_freetext(update, ctx, text, claude_svc,
+                                             task_ref=understood.get("task_ref") or None)
     elif intent == "add_subtask":
         import tasks.svc as _tsvc_as
         uid_as = update.effective_user.id
@@ -1046,12 +1063,22 @@ async def handle_last_reminded_action(
     elif intent == "skip_task":
         from datetime import datetime, timezone, timedelta
         task_db.log_skip(uid, task["id"], note="outright")
-        next_at = datetime.now(timezone.utc) + timedelta(days=task.get("recurrence_days", 1))
-        task_db.reschedule_task(task["id"], next_at)
-        await update.message.reply_text(
-            f"Skipped! I'll remind you about *{task['title']}* again in {task.get('recurrence_days', 1)} day(s).",
-            parse_mode=ParseMode.MARKDOWN,
-        )
+        if task.get("task_type") == "habit":
+            recur = task.get("recurrence_days") or 1
+            next_at = datetime.now(timezone.utc) + timedelta(days=recur)
+            task_db.reschedule_task(task["id"], next_at)
+            await update.message.reply_text(
+                f"Skipped! I'll remind you about *{task['title']}* again in {recur} day(s).",
+                parse_mode=ParseMode.MARKDOWN,
+            )
+        else:
+            # One-time task — skipping drops it for good (recurrence_days is None
+            # here; timedelta(days=None) used to crash the whole handler)
+            task_db.update_task(task["id"], status="skipped")
+            await update.message.reply_text(
+                f"Skipped *{task['title']}* — taken off your list. 👍",
+                parse_mode=ParseMode.MARKDOWN,
+            )
 
 
 async def handle_task_action_freetext(
@@ -1157,12 +1184,22 @@ async def handle_task_action_freetext(
     elif intent == "skip_task":
         from datetime import datetime, timezone, timedelta
         task_db.log_skip(uid, task["id"], note="outright")
-        next_at = datetime.now(timezone.utc) + timedelta(days=task.get("recurrence_days", 1))
-        task_db.reschedule_task(task["id"], next_at)
-        await update.message.reply_text(
-            f"Skipped! I'll remind you about *{task['title']}* again in {task.get('recurrence_days', 1)} day(s).",
-            parse_mode=ParseMode.MARKDOWN,
-        )
+        if task.get("task_type") == "habit":
+            recur = task.get("recurrence_days") or 1
+            next_at = datetime.now(timezone.utc) + timedelta(days=recur)
+            task_db.reschedule_task(task["id"], next_at)
+            await update.message.reply_text(
+                f"Skipped! I'll remind you about *{task['title']}* again in {recur} day(s).",
+                parse_mode=ParseMode.MARKDOWN,
+            )
+        else:
+            # One-time task — skipping drops it for good (recurrence_days is None
+            # here; timedelta(days=None) used to crash the whole handler)
+            task_db.update_task(task["id"], status="skipped")
+            await update.message.reply_text(
+                f"Skipped *{task['title']}* — taken off your list. 👍",
+                parse_mode=ParseMode.MARKDOWN,
+            )
 
     elif intent == "delete_task":
         task_db.delete_task(task["id"])
@@ -2003,8 +2040,10 @@ async def handle_mark_important_freetext(
     ctx: ContextTypes.DEFAULT_TYPE,
     text: str,
     claude_svc,
+    task_ref: str = None,
 ) -> None:
-    """Handle 'mark_important' intent: mark a task as important."""
+    """Handle 'mark_important' intent: mark a task as important.
+    task_ref: pre-resolved task name from understand_message; None falls back to extraction."""
     import tasks.svc as task_db
 
     uid = update.effective_user.id
@@ -2013,11 +2052,14 @@ async def handle_mark_important_freetext(
         await update.message.reply_text("You don't have any active tasks right now.")
         return
 
-    # Extract task name from message
-    try:
-        task_name = claude_svc.extract_task_name_from_message(text)
-    except Exception:
-        task_name = ""
+    # Use the pre-resolved name when present, else extract from the message
+    if task_ref:
+        task_name = task_ref
+    else:
+        try:
+            task_name = claude_svc.extract_task_name_from_message(text)
+        except Exception:
+            task_name = ""
 
     if not task_name:
         await update.message.reply_text("Which task should I mark as important? Try: 'mark workout as important'.")
