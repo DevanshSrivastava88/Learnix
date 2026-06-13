@@ -41,9 +41,17 @@ _Auto-agent: enabled_
 - **Multi-task / resume / JSON-unwrap** (54094241) — extra_tasks[], resume_task intent; CRITICAL:
   _ask_json blanket-unwrap sent every intent to chat — now only single-key {"items":[...]} unwraps.
 
-## 🔜 Next big piece
-- **Study system rebuild** — user wants it reshaped professionally (plan→guided daily sessions→
-  progress/on-track→weak-topic revision). Scoped: study/svc.py (273 lines) + study/handlers.py (765).
+## ✅ Study system rebuilt (2026-06-13) — guided daily plan
+- Goal + target date → auto topics + dated plan; "study X"/daily nudge → Day N/Total on-track
+  header + lesson + quiz; weak topics resurface; /progress shows track. Migrations 010, 011.
+  Commits 5f84c667, ce608a20. (3 increments shipped + live-verified.)
+
+## 🔜 Next
+- **"delete my X goal" NL bug** — manage_goal name extraction mangles goal name; apply
+  strip-prefix like task titles.
+- **Study E2E**: verify full quiz completion advances day + marks topic done in a live run
+  (unit-covered; header/lesson live-verified).
+- **Phase 2 web dashboard** (Next.js).
 
 ## ✅ Done (2026-06-12)
 

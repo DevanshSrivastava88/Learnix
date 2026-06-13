@@ -58,12 +58,17 @@ Bot: **@Quest3131Bot** (disrupto) · LIVE on Railway · 174 unit tests.
 - **/settings** — study/morning/EOD times, call reminders, **personality**
 - **/help** /info — command + capability list
 
-### Study (⚠️ being rebuilt — see BACKLOG)
-- **create goal** — "I want to learn X" → goal with difficulty (Easy/Medium/Hard)
-- **/goals /topics /study /progress** — goal list, topic tree, quiz session, progress
-- **breakdown a goal** — AI subtopics; bulk topic import from bullet lists
-- **study/skip a specific topic**, /addtopic, /editgoal, /deletegoal, /pausegoal
-- Quiz: AI questions + scoring; streak; bubble-up completion
+### Study — Guided Daily Plan ✨ (rebuilt 2026-06-13)
+- **create goal** — "I want to learn X" → pick difficulty + target date → bot AUTO-generates
+  topics and builds a **dated study plan** (topics spread evenly start→target via `_plan_offsets`)
+- **Guided session** — "study X" (or the daily nudge at study time) shows **Day N/Total (on track/behind)**,
+  runs today's scheduled topic: lesson → 5-question quiz → pass (≥3) completes + advances, else needs_revision
+- **On-track tracking** — `get_plan_status`: behind only if topics are *past-due* (today's isn't overdue)
+- **Weak-topic review** — completed topics with quiz ratio < 0.8 (or needs_revision) resurface FIRST
+- **/progress** — Day N/Total header, up-next topic, catch-up list, review hints (planned goals);
+  topic-tree view for unplanned goals
+- **/goals /topics**, study/skip a specific topic, /addtopic, /editgoal, /deletegoal, /pausegoal
+- breakdown a goal into subtopics; bulk topic import from bullet lists; streak; bubble-up completion
 
 ### Reminders engine (scheduler)
 - Normal tasks: 2 reminders/day then auto-skip; important: hourly till EOD
@@ -82,5 +87,6 @@ Bot: **@Quest3131Bot** (disrupto) · LIVE on Railway · 174 unit tests.
 ---
 
 ## 🐞 Known open bugs
-_(none currently — last sweep's 3 bugs fixed in 98312744: skip-crash on one-time tasks,
-mark-important misroute, learn→goal misroute. All re-verified live.)_
+- `delete my X goal` / `delete my french goal` — manage_goal name extraction mangles the goal
+  name (turned "french" into "My French Goal"), so the goal isn't found. Needs the same
+  strip-the-prefix treatment as task titles. (Low severity; /deletegoal works.)
