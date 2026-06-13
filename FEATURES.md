@@ -69,7 +69,7 @@ Bot: **@Quest3131Bot** (disrupto) · LIVE on Railway · 174 unit tests.
 - **/progress** — Day N/Total header, up-next topic, catch-up list, review hints (planned goals);
   topic-tree view for unplanned goals
 - **Morning brief** shows the plan's Day N/Total + today's topic
-- **Manage by text** — "delete/pause my X goal" act on the matched goal (delete asks confirm)
+- **Manage by text** — "delete/pause/resume my X goal" act on the matched goal (delete asks confirm)
 - **/goals /topics**, study/skip a specific topic, /addtopic, /editgoal, /deletegoal, /pausegoal
 - breakdown a goal into subtopics; bulk topic import from bullet lists; streak; bubble-up completion
 
@@ -96,4 +96,3 @@ loop verified: plan build → study → advance → /plan → morning brief.)_
 ## ⚠️ Known limitations (not bugs)
 - Guided study uses the FIRST in-progress goal (goals[0]). Multiple concurrent planned goals
   aren't interleaved — second goal won't get daily nudges until the first is done/paused.
-- Goal resume is via /pausegoal toggle only (no free-text "resume X goal" yet).
