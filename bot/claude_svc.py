@@ -636,9 +636,13 @@ def extract_goal_name_from_message(text: str) -> str:
         f'Return: {{"goal_name": "..."}}',
         max_tokens=100,
     )
-    if isinstance(result, dict):
-        return result.get("goal_name", "").strip()
-    return ""
+    name = result.get("goal_name", "").strip() if isinstance(result, dict) else ""
+    # Deterministic cleanup — 8B sometimes keeps filler ("delete my french goal"
+    # → "My French Goal"). Strip leading my/the and a trailing "goal".
+    import re as _re_g
+    name = _re_g.sub(r'^(?:my|the)\s+', '', name, flags=_re_g.IGNORECASE)
+    name = _re_g.sub(r'\s+goals?$', '', name, flags=_re_g.IGNORECASE).strip()
+    return name
 
 
 def extract_manage_goal_action(text: str) -> str:

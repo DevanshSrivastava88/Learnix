@@ -563,6 +563,20 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
             await update.message.reply_text("Didn't catch that as a time. Say something like `8pm`, `in 2 hours`, or `no`.")
             return
 
+    # Pending goal-delete confirmation
+    if ctx.user_data.get("pending_goal_delete"):
+        pgd = ctx.user_data.pop("pending_goal_delete")
+        low = text.lower().strip()
+        if low in {"yes", "y", "yep", "yeah", "delete", "confirm", "do it", "sure"}:
+            import study.svc as _ssvc_d
+            for _t in _ssvc_d.list_topics_for_goal(pgd["id"]):
+                _ssvc_d.get_client().table("topics").delete().eq("id", _t["id"]).execute()
+            _ssvc_d.delete_goal(pgd["id"])
+            await update.message.reply_text(f"Gone! 🗑️ *{pgd['name']}* deleted.", parse_mode=ParseMode.MARKDOWN)
+        else:
+            await update.message.reply_text(f"Kept *{pgd['name']}*. 👍", parse_mode=ParseMode.MARKDOWN)
+        return
+
     # Pending subtask-breakdown review (yes = create, no = drop, anything else = revise)
     if ctx.user_data.get("pending_breakdown"):
         pb = ctx.user_data["pending_breakdown"]
@@ -671,9 +685,12 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
             understood["task_ref"] = ""
         # Action-verb prefix always wins — the 8B fallback routed "pause pushups"
         # to a new task called "Pause Pushups"
+        # ...but "delete/pause my X goal" is goal management, not a task action —
+        # don't hijack it (the word "goal"/"topic" is the signal)
+        _is_goal_cmd = bool(_re.search(r'\b(goal|topic)s?\b', text, _re.IGNORECASE))
         _m_act = _re.match(
             r'^(pause|resume|unpause|delete|remove|done|skip)\s+(.+)', text.strip(), _re.IGNORECASE)
-        if _m_act and intent in ("task", "chat"):
+        if _m_act and intent in ("task", "chat") and not _is_goal_cmd:
             _verb = _m_act.group(1).lower()
             _rest = _m_act.group(2).strip()
             if _rest.lower() not in ("everything", "all", "my data", "all my data"):
@@ -682,6 +699,11 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
                           "done": "done", "skip": "skip_task"}[_verb]
                 understood["task_ref"] = _rest
                 understood["task"] = None
+        # "delete/pause/edit my X goal" → goal management (8B sometimes routes to task)
+        if intent in ("task", "chat", "delete_task", "pause_task") and _re.match(
+                r'^(delete|remove|pause|edit|rename)\b.*\bgoal', text.strip(), _re.IGNORECASE):
+            intent = "manage_goal"
+            understood["task"] = None
         # "mark X (as) important/urgent/priority" — 8B made a new task "Mark X"
         _m_imp = _re.match(
             r'^(?:mark|flag)\s+(.+?)\s+(?:as\s+)?(?:important|urgent|priority|a priority)\s*$',
@@ -1554,10 +1576,26 @@ async def handle_manage_goal_freetext(
         matched_goal = all_goals[0]
 
     if action == "delete":
-        # Route to deletegoal conversation
-        await study_handlers.cmd_deletegoal(update, ctx)
+        if matched_goal:
+            # Act on the matched goal directly — inline confirm (resolved in the pre-check)
+            n_topics = len(study_svc.list_topics_for_goal(matched_goal["id"]))
+            ctx.user_data["pending_goal_delete"] = {"id": matched_goal["id"], "name": matched_goal["name"]}
+            extra = f" and its {n_topics} topic(s)" if n_topics else ""
+            await update.message.reply_text(
+                f"Delete *{matched_goal['name']}*{extra}? Say *yes* to confirm or *no* to keep it.",
+                parse_mode=ParseMode.MARKDOWN,
+            )
+        else:
+            await study_handlers.cmd_deletegoal(update, ctx)  # couldn't match → menu
     elif action == "pause":
-        await study_handlers.cmd_pausegoal(update, ctx)
+        if matched_goal:
+            study_svc.update_goal_status(matched_goal["id"], "paused")
+            await update.message.reply_text(
+                f"Paused ⏸️ *{matched_goal['name']}*. Pick it back up anytime with /pausegoal.",
+                parse_mode=ParseMode.MARKDOWN,
+            )
+        else:
+            await study_handlers.cmd_pausegoal(update, ctx)
     elif action == "edit":
         await study_handlers.cmd_editgoal(update, ctx)
     else:
