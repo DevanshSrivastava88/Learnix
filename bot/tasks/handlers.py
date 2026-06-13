@@ -113,6 +113,28 @@ async def _parse_and_respond(update, ctx, text: str, claude_svc, context: str = 
         if m_clock:
             h = int(m_clock.group(1)) % 12 + (12 if m_clock.group(3).lower() == "pm" else 0)
             parsed["time_hhmm"] = f"{h:02d}:{m_clock.group(2) or '00'}"
+    # Model omitted a relative duration the user typed ("in 2 hrs", "in 30 mins")
+    if not parsed.get("time_hhmm") and parsed.get("time_minutes") is None:
+        m_rel = re.search(r'\bin\s+(\d+)\s*(min|mins|minute|minutes|hr|hrs|hour|hours)\b', text, re.IGNORECASE)
+        if m_rel:
+            n = int(m_rel.group(1))
+            parsed["time_minutes"] = n if m_rel.group(2).lower().startswith("min") else n * 60
+        elif re.search(r'\b(?:in\s+)?(?:like\s+)?half\s+(?:an?\s+)?hour\b', text, re.IGNORECASE):
+            parsed["time_minutes"] = 30
+        elif re.search(r'\b(?:in\s+)?(?:like\s+)?an?\s+hour\b', text, re.IGNORECASE):
+            parsed["time_minutes"] = 60
+        elif re.search(r'\b(?:in\s+)?(?:like\s+)?(?:a\s+)?(?:couple|few)\s+(?:of\s+)?hours\b', text, re.IGNORECASE):
+            parsed["time_minutes"] = 120
+    # Strip a leftover "reminder"/"remind" the model kept in the title
+    # ("remind me abt the meeting" → "Reminder Meeting")
+    _ttl = (parsed.get("title") or "")
+    _ttl2 = re.sub(r'^(?:reminder|remind(?:er)?)\s+', '', _ttl, flags=re.IGNORECASE).strip()
+    if _ttl2 and _ttl2 != _ttl:
+        parsed["title"] = _ttl2
+    # Capitalize a lowercase leading word ("call Dad" → "Call Dad")
+    _ft = parsed.get("title") or ""
+    if _ft[:1].islower():
+        parsed["title"] = _ft[0].upper() + _ft[1:]
 
     # One-time reminder
     if task_type == "reminder":

@@ -504,12 +504,18 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
         # Nothing pending to abort — "cancel" means cancel a task/reminder.
         # Fall through to LLM routing so context resolves which one.
 
-    # Pending time follow-up for unscheduled tasks
-    if ctx.user_data.get("pending_time_for") and _re.match(
-            r'^(add|delete|remove|pause|resume|done|skip|cancel|list|show|remind|track|mark|move|break)\b',
-            text.strip(), _re.IGNORECASE):
-        # User moved on to a new command — leave the task unscheduled, route normally
-        ctx.user_data.pop("pending_time_for", None)
+    # Pending time follow-up for unscheduled tasks — ONLY intercept messages that
+    # actually look like a time answer (or a no). Anything else means the user moved
+    # on; release the prompt and route the message normally (no modal trap).
+    if ctx.user_data.get("pending_time_for"):
+        _low = text.lower().strip()
+        _no_words = {"no", "nah", "nope", "skip", "later", "not now", "n"}
+        _time_ish = bool(_re.search(
+            r'\d|\b(am|pm|noon|midnight|morning|evening|afternoon|tonight|tomorrow|today|'
+            r'hour|hr|hrs|min|mins|minute|mon|tue|wed|thu|fri|sat|sun)\b', _low))
+        _is_time_answer = _low in _no_words or (_time_ish and len(_low.split()) <= 6)
+        if not _is_time_answer:
+            ctx.user_data.pop("pending_time_for", None)  # released — fall through below
     if ctx.user_data.get("pending_time_for"):
         pending = ctx.user_data["pending_time_for"]
         day_offset = pending.get("day_offset")
@@ -563,7 +569,12 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
             await update.message.reply_text(f"⏰ Set! I'll remind you about *{title}* {when_str}.", parse_mode=ParseMode.MARKDOWN)
             return
         else:
-            await update.message.reply_text("Didn't catch that as a time. Say something like `8pm`, `in 2 hours`, or `no`.")
+            # Looked time-ish but didn't parse — release (don't loop) and leave unscheduled
+            ctx.user_data.pop("pending_time_for", None)
+            await update.message.reply_text(
+                f"Couldn't read that as a time — left *{pending.get('title','it')}* unscheduled. "
+                f"Set one later with 'set {pending.get('title','it').lower()} to 8pm'.",
+                parse_mode=ParseMode.MARKDOWN)
             return
 
     # Pending goal-delete confirmation
@@ -702,6 +713,28 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
                           "done": "done", "skip": "skip_task"}[_verb]
                 understood["task_ref"] = _rest
                 understood["task"] = None
+        # Slang completion/deletion verbs the 8B turns into new tasks
+        # ("scrap the dad reminder" → task; "knocked out the groceries" → task)
+        def _clean_ref(s):
+            s = _re.sub(r'^(?:the|my|a|that|this)\s+', '', s.strip(), flags=_re.IGNORECASE)
+            return _re.sub(r'\s+(?:reminder|task|habit)$', '', s, flags=_re.IGNORECASE).strip()
+        if intent in ("task", "chat") and not _is_goal_cmd:
+            _pre = r'^(?:just |i just |already |finally |i\'?ve )?'
+            _m_del = _re.match(_pre + r'(?:scrap|ditch|trash|nix|get rid of)\s+(.+)', text.strip(), _re.IGNORECASE)
+            _m_done = _re.match(
+                _pre + r'(?:knocked out|wrapped up|finished|crushed|completed)\s+(.+)',
+                text.strip(), _re.IGNORECASE)
+            if _m_del:
+                intent = "delete_task"; understood["task_ref"] = _clean_ref(_m_del.group(1)); understood["task"] = None
+            elif _m_done:
+                _r = _clean_ref(_re.sub(r'\s+(?:done|finished)$', '', _m_done.group(1), flags=_re.IGNORECASE))
+                intent = "done"; understood["task_ref"] = _r; understood["task"] = None
+        # Schedule/agenda question — "what do i have today", "wat do i gotta do", "what's on my plate"
+        if intent in ("task", "chat") and _re.match(
+                r"^(?:wat|what|what'?s|whats)\b.*\b(today|going on|on my plate|to do|gotta do|do i have|got going)\b",
+                text.strip(), _re.IGNORECASE):
+            intent = "show_schedule"
+            understood["task"] = None
         # "delete/pause/resume/edit my X goal" → goal management (8B sometimes routes to task)
         if intent in ("task", "chat", "delete_task", "pause_task", "resume_task") and _re.match(
                 r'^(delete|remove|pause|resume|unpause|edit|rename)\b.*\bgoal', text.strip(), _re.IGNORECASE):
@@ -718,8 +751,9 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
         # "I want to learn/master X", "teach me X", "get better at X" → study goal,
         # not a task (8B routes these to task). Skip if it's clearly a reminder.
         if intent in ("task", "chat") and not _re.match(r'^(add|remind|track|ping)\b', text.strip(), _re.IGNORECASE):
-            if _re.search(r'\b(?:want to|wanna|like to|need to)\s+(?:learn|master|study)\b'
-                          r'|^teach me\b|\bget better at\b|\bget good at\b|\blearn how to\b',
+            if _re.search(r'\b(?:want to|wanna|like to|need to|trying to|gonna|going to)\s+(?:learn|master|study)\b'
+                          r'|^teach me\b|\bget better at\b|\bget good at\b|\blearn how to\b'
+                          r'|^(?:i\'?m\s+)?learning\s+\w|^(?:i\'?m\s+)?getting into\b',
                           text.strip(), _re.IGNORECASE):
                 intent = "create_goal"
                 understood["task"] = None
