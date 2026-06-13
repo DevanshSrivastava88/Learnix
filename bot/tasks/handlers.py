@@ -107,6 +107,13 @@ async def _parse_and_respond(update, ctx, text: str, claude_svc, context: str = 
         await update.message.reply_text("Hmm, didn't catch what to call that — say it again?")
         return ConversationHandler.END
 
+    # Model omitted a clock time the user literally typed — extract it ourselves
+    if not parsed.get("time_hhmm") and parsed.get("time_minutes") is None:
+        m_clock = re.search(r'\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b', text, re.IGNORECASE)
+        if m_clock:
+            h = int(m_clock.group(1)) % 12 + (12 if m_clock.group(3).lower() == "pm" else 0)
+            parsed["time_hhmm"] = f"{h:02d}:{m_clock.group(2) or '00'}"
+
     # One-time reminder
     if task_type == "reminder":
         uid = update.effective_user.id
@@ -321,13 +328,25 @@ async def nt_confirm(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     is_skip = text.lower() in {"no specific time", "⏭ no specific time", "skip time", "skip", "default", "later", "no", "nope", "yeah, add it", "✅ yeah, add it", "yes", "yep", "add it", "sure", "ok", "okay", "add"}
     parsed_time = None if is_skip else stp.parse_time_expression(text)
 
-    # If text is not skip, not a time, and not a confirm word — re-ask
+    # If text is not skip, not a time, and not a confirm word — re-ask ONCE.
+    # A command-looking reply or a second miss bails out (this flow once ate
+    # 10 straight messages re-asking for a time)
+    bailed = False
     if not is_skip and parsed_time is None:
-        await update.message.reply_text(
-            f"Didn't catch that as a time. Try `8pm`, `7:30am` — or press **Skip time** to add without one.",
-            parse_mode=ParseMode.MARKDOWN,
-        )
-        return NT_CONFIRM
+        looks_like_command = re.match(
+            r'^(add|delete|remove|pause|resume|done|skip|cancel|list|show|what|remind|track|mark|move|break|i\b)',
+            text.strip(), re.IGNORECASE)
+        if looks_like_command or ctx.user_data.get("nt_time_retries"):
+            ctx.user_data.pop("nt_time_retries", None)
+            bailed = True  # create without a time, free the conversation
+        else:
+            ctx.user_data["nt_time_retries"] = 1
+            await update.message.reply_text(
+                f"Didn't catch that as a time. Try `8pm`, `7:30am` — or press **Skip time** to add without one.",
+                parse_mode=ParseMode.MARKDOWN,
+            )
+            return NT_CONFIRM
+    ctx.user_data.pop("nt_time_retries", None)
 
     try:
         task = db.create_task(
@@ -358,9 +377,10 @@ async def nt_confirm(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
             reply_markup=ReplyKeyboardRemove(),
         )
     else:
+        bail_note = "\n(Your last message got eaten by this flow — send it again!)" if bailed else ""
         await update.message.reply_text(
             f"Added! 🎉 *{task['title']}* — {freq}.\n"
-            f"Set a time anytime: 'move {task['title'].lower()} to 8pm'",
+            f"Set a time anytime: 'move {task['title'].lower()} to 8pm'{bail_note}",
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=ReplyKeyboardRemove(),
         )
@@ -628,14 +648,36 @@ async def cmd_settings(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     s = settings_svc.get_settings(uid)
     twilio_on = twilio_svc.is_twilio_enabled(uid)
     twilio_status = "ON ✅" if twilio_on else "OFF ⏸"
+    persona = s.get("persona") or "default"
+    persona_label = "😏 Flirty" if persona == "flirty" else "🙂 Friendly"
     await update.message.reply_text(
         f"*⚙️ Your settings*\n\n"
         f"📖 Study time: *{s['daily_session_time']}* IST — /settime\n"
         f"🌅 Morning brief: *{s['morning_brief_time']}* IST — /setmorning\n"
         f"🌙 EOD check-in: *{s['eod_time']}* IST — /seteod\n"
-        f"📞 Call reminders: *{twilio_status}* — /twilio on \\| /twilio off",
+        f"📞 Call reminders: *{twilio_status}* — /twilio on \\| /twilio off\n"
+        f"💬 Personality: *{persona_label}* — /persona flirty \\| /persona normal",
         parse_mode=ParseMode.MARKDOWN,
     )
+
+
+async def cmd_persona(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    import settings_svc
+    uid = update.effective_user.id
+    arg = (update.message.text or "").replace("/persona", "").strip().lower()
+    if arg in ("flirty", "sexy", "spicy"):
+        settings_svc.set_persona(uid, "flirty")
+        await update.message.reply_text("Oh, switching things up, are we? 😏 Flirty mode on.")
+    elif arg in ("normal", "default", "off", "friendly"):
+        settings_svc.set_persona(uid, "default")
+        await update.message.reply_text("Back to friendly mode. 🙂")
+    else:
+        current = settings_svc.get_persona(uid)
+        await update.message.reply_text(
+            f"Current personality: *{'😏 flirty' if current == 'flirty' else '🙂 friendly'}*\n"
+            f"Switch with `/persona flirty` or `/persona normal`.",
+            parse_mode=ParseMode.MARKDOWN,
+        )
 
 
 def get_handlers():
@@ -667,6 +709,7 @@ def get_handlers():
         CommandHandler("resume", cmd_resume),
         CommandHandler("complete", cmd_complete),
         CommandHandler("settings", cmd_settings),
+        CommandHandler("persona", cmd_persona),
         MessageHandler(filters.Regex(r"^/done_"), handle_done),
         MessageHandler(filters.Regex(r"^/pause_"), handle_pause_task),
         MessageHandler(filters.Regex(r"^/resume_"), handle_resume_task),

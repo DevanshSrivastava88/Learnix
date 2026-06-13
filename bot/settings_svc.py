@@ -39,6 +39,14 @@ def set_eod_time(user_id: int, time_str: str) -> None:
     upsert_settings(user_id, eod_time=time_str)
 
 
+def set_persona(user_id: int, persona: str) -> None:
+    upsert_settings(user_id, persona=persona)
+
+
+def get_persona(user_id: int) -> str:
+    return get_settings(user_id).get("persona") or "default"
+
+
 def update_streak(user_id: int, study_date: date) -> int:
     settings = get_settings(user_id)
     last = settings.get("last_study_date")

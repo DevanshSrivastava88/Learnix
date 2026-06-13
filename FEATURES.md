@@ -1,0 +1,87 @@
+# Learnix — Feature Baseline & Change Guidelines
+
+_Single source of truth for what the bot does. Update it when a feature is added or
+changed. Every code change must keep everything below working._
+
+Bot: **@Quest3131Bot** (disrupto) · LIVE on Railway · 174 unit tests.
+
+---
+
+## 🛡 Change Guidelines (read before touching code)
+
+1. **Never break a feature in this list.** Before shipping, run the relevant live
+   Telethon test (`test_*.py`) AND `pytest bot/tests` (must stay green).
+2. **One concern per change.** Small, surgical edits — no drive-by refactors.
+3. **Deploy = `railway up` from `bot/`**, wait until status leaves Building, then
+   wait ~45s more for the container to actually swap before live-testing (early
+   tests hit the OLD container and lie).
+4. **LLM-first:** understanding via one `understand_message()` call. Python only does
+   arithmetic, validation, and deterministic guards on top — never regex-parses meaning.
+5. **8B fallback is dumb.** Any critical routing needs a deterministic guard
+   (action-verb prefix, "habit" keyword, etc.) so it survives the 8B model.
+6. **Clean test data** from the DB after every live run (Telethon scripts create real rows).
+7. After every change: update this file if features changed, plus log.txt + BACKLOG.md.
+
+---
+
+## ✅ Existing Features (the baseline)
+
+### Tasks & Reminders (natural language)
+- **Add one-time reminder** — "remind me to call mom at 4pm" / "...in 30 mins" / "...tomorrow at 10am" / "...on monday at 5pm"
+- **Add multiple in one message** — "call X in 1h and Y in 2h" → both created
+- **Add unscheduled** — "add buy groceries" → asks for a time, "no" leaves it unscheduled
+- **Exact times** — clock times computed deterministically (LLM names HH:MM, Python computes IST); no drift
+- **Day offsets** — tomorrow / day-after / weekday names, survive the "what time?" follow-up
+- **done X** — completes one-time tasks/subtasks (removed); habits reschedule + streak
+- **skip X today** — logs skip, reschedules habit by recurrence
+- **delete X** — removes task (+ cascades to its subtasks); finds paused tasks too
+- **pause X / resume X** — toggle reminders; free-text and /pause /resume
+- **reschedule** — "move X to 8pm" updates existing task's time
+- **mark X important** — ⚡ flag, reminds hourly till EOD
+- **delay / snooze** — push an existing reminder
+
+### Subtasks (break a big task down)
+- **breakdown** — "break down X" proposes AI steps for REVIEW (yes/no/natural-language revision); nothing created until "yes"
+- **add subtask Y to X** — manual single subtask
+- Stored as `Parent — Step N: Title` rows; shown indented under parent in /tasks; no reminders of their own
+
+### Habits
+- **add habit X** / "X every day" — recurring; inline time ("at 9am") creates immediately
+- **No time = no reminder** — listed only, surfaced in the 7pm evening digest
+- done resets for next occurrence + streak
+
+### Views
+- **/tasks** (or "list") — grouped **Today / 📅 Upcoming / Unscheduled**, 🔁 marks habits, subtasks indented
+- **/schedule** — full day: automatics + habits + live reminders
+- **/graph** — activity bar chart (matplotlib photo)
+- **/skipgraph** — 30-day skip chart + completion rate
+- **/settings** — study/morning/EOD times, call reminders, **personality**
+- **/help** /info — command + capability list
+
+### Study (⚠️ being rebuilt — see BACKLOG)
+- **create goal** — "I want to learn X" → goal with difficulty (Easy/Medium/Hard)
+- **/goals /topics /study /progress** — goal list, topic tree, quiz session, progress
+- **breakdown a goal** — AI subtopics; bulk topic import from bullet lists
+- **study/skip a specific topic**, /addtopic, /editgoal, /deletegoal, /pausegoal
+- Quiz: AI questions + scoring; streak; bubble-up completion
+
+### Reminders engine (scheduler)
+- Normal tasks: 2 reminders/day then auto-skip; important: hourly till EOD
+- **Morning brief** (08:00), **EOD check-in** (21:00), **7pm evening digest** (unscheduled + reminder-less habits)
+- **Twilio** calls + IVR (press-1 done / press-2 skip), missed-call webhook — opt-in /twilio on
+
+### Personality (option)
+- **/persona flirty** (sexy/spicy) | **/persona normal** — flavors the chat tone; default friendly. Per-user in DB (migration 009)
+
+### Other
+- **Voice notes** — Gemini transcribes .ogg → processed as text
+- **Onboarding** — any first message triggers welcome (no /start needed)
+- **Persistent chat context** — Supabase chat_history (survives redeploys), 7-day auto-cleanup
+- **/clear** (confirm) wipes data; /cancel /reset escape stuck flows
+
+---
+
+## 🐞 Known open bugs (fix carefully, don't regress the above)
+- `mark X as important` sometimes creates a new task "Mark X" instead of flagging (8B misroute — needs verb guard)
+- `skip X today` can throw "Oops, something broke" (crash — investigate handler)
+- `I want to learn X` can route to task instead of create_goal (8B misroute)

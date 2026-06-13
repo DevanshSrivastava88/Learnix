@@ -795,12 +795,24 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
                                           task_ref=task_ref)
         history.append(f"Bot: [{intent} on: {task_ref or 'unnamed task'}]")
     else:
-        # General chat — Learnix responds naturally
+        # General chat — Learnix responds naturally (persona option flavors the tone)
         try:
+            import settings_svc as _ssvc
+            persona = await _asyncio.to_thread(_ssvc.get_persona, update.effective_user.id)
+            if persona == "flirty":
+                persona_block = (
+                    f"You're Learnix — confident, charming, playfully flirty. Tease like someone with a crush: "
+                    f"smooth one-liners, a wink in the words, light innuendo at most — never explicit, never creepy, "
+                    f"never body-comments. Charm WITH them. "
+                )
+            else:
+                persona_block = (
+                    f"You're Learnix — texting a friend, not coaching a client. "
+                    f"Reply like a sharp, warm, witty buddy: short, real, a little playful — banter WITH them, never AT them. "
+                )
             context_block = f"Recent conversation:\n{context}\n\n" if context else ""
             reply = claude_svc._ask(
-                f"{context_block}You're Learnix — texting a friend, not coaching a client. "
-                f"Reply like a sharp, warm, witty buddy: short, real, a little playful — banter WITH them, never AT them. "
+                f"{context_block}{persona_block}"
                 f"No therapy-speak ('that's a totally valid feeling', 'what challenges have you faced'), no generic pep talks, no restating their message back at them. "
                 f"Never mock, insult, or guilt-trip them — especially on sensitive stuff like weight, sleep, or how they're feeling. Tease situations, not the person. "
                 f"Don't invent personal experiences or a physical life of your own (no 'I just got back from brunch') — you're an AI, just a warm, funny one. "
