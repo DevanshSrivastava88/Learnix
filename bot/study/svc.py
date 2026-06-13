@@ -360,15 +360,24 @@ def get_plan_status(goal_id: str) -> Optional[dict]:
     }
 
 
-def get_weak_topics(goal_id: str, threshold: int = 60) -> list[dict]:
-    """Completed topics whose most recent quiz score is below threshold — due for review."""
+def get_weak_topics(goal_id: str, ratio_threshold: float = 0.8) -> list[dict]:
+    """Topics due for review: explicitly needs_revision, OR completed but with a
+    shaky quiz score (the score field is stored as the string 'correct/total')."""
     weak = []
     for t in list_topics_for_goal(goal_id):
+        if t["status"] == "needs_revision":
+            weak.append(t)
+            continue
         if t["status"] != "completed":
             continue
-        attempts = get_attempts_for_topic(t["id"])
-        if attempts and attempts[0].get("score", 100) < threshold:
-            weak.append(t)
+        score = t.get("score") or ""
+        if "/" in score:
+            try:
+                got, total = (int(x) for x in score.split("/", 1))
+                if total and got / total < ratio_threshold:
+                    weak.append(t)
+            except ValueError:
+                pass
     return weak
 
 

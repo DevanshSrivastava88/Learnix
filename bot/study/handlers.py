@@ -423,6 +423,28 @@ async def cmd_study(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
             "No study goals yet! Use /goal to set one up first."
         )
         return
+    # Planned goal → guided session: day-X/N header, today's scheduled topic,
+    # weak topics resurface first for review
+    plan = db.get_plan_status(goals[0]["id"])
+    if plan:
+        weak = db.get_weak_topics(goals[0]["id"])
+        topic = weak[0] if weak else plan["today_topic"]
+        if not topic:
+            await update.message.reply_text(
+                f"🎉 *{plan['goal_name']}* — all {plan['total']} topics done! Nicely paced.",
+                parse_mode=ParseMode.MARKDOWN,
+            )
+            return
+        track = "on track ✅" if plan["on_track"] else "behind ⏳"
+        review = " (review 🔁)" if (weak and topic in weak) else ""
+        await update.message.reply_text(
+            f"🎯 *{plan['goal_name']}* — Day {plan['day']}/{plan['total_days']} ({track})\n"
+            f"Today: *{topic['title']}*{review}",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+        await _run_study_session(update, ctx, topic)
+        return
+
     topic = db.get_next_pending_topic(uid)
     if not topic:
         await update.message.reply_text("🎉 You've done all your topics! Add more with /addtopic.")

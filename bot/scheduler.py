@@ -242,6 +242,25 @@ async def study_poller(ctx: ContextTypes.DEFAULT_TYPE) -> None:
         if user.get("daily_session_time") != current_hhmm:
             continue
         uid = user["user_id"]
+        goals = study_svc.list_goals(uid, "in_progress")
+        # Planned goal → guided daily nudge with day-X/N + today's scheduled topic
+        plan = study_svc.get_plan_status(goals[0]["id"]) if goals else None
+        if plan:
+            weak = study_svc.get_weak_topics(goals[0]["id"])
+            topic = weak[0] if weak else plan["today_topic"]
+            if not topic:
+                continue  # plan complete — no nag
+            track = "on track ✅" if plan["on_track"] else "behind ⏳"
+            review = " (review 🔁)" if (weak and topic in weak) else ""
+            msg = (
+                f"📖 Study time! — *{plan['goal_name']}* "
+                f"Day {plan['day']}/{plan['total_days']} ({track})\n\n"
+                f"Today: *{topic['title']}*{review}\n\n"
+                f"Reply *yes* to start, or *later* to snooze."
+            )
+            await ctx.bot.send_message(uid, msg, parse_mode=ParseMode.MARKDOWN)
+            ctx.bot_data.setdefault("pending_sessions", {})[uid] = topic["id"]
+            continue
         topic = study_svc.get_next_pending_topic(uid)
         if not topic:
             await ctx.bot.send_message(uid, "🎉 You've done all your topics! Add more with /addtopic.")

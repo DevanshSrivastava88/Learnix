@@ -698,6 +698,19 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
                           text.strip(), _re.IGNORECASE):
                 intent = "create_goal"
                 understood["task"] = None
+        # "study [X]" / "let's study" / "continue studying" → open the guided session,
+        # NOT create a new goal (8B routed "study chess" to create_goal). Only override
+        # into start_study when the user actually has a goal to study.
+        if intent in ("create_goal", "task", "chat") and _re.match(
+                r"^(?:let'?s\s+)?(?:study|continue studying|start studying|keep studying)\b",
+                text.strip(), _re.IGNORECASE):
+            try:
+                import study.svc as _ssvc_g
+                if _ssvc_g.list_goals(update.effective_user.id, "in_progress"):
+                    intent = "start_study"
+                    understood["task"] = None
+            except Exception:
+                pass
         logger.info(f"understand_message: text={text!r} -> {understood!r}")
     except Exception:
         await update.message.reply_text("⚡ Had a hiccup — try that again?")
