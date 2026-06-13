@@ -772,10 +772,17 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
             intent = "mark_important"
             understood["task_ref"] = _m_imp.group(1).strip()
             understood["task"] = None
+        # "break down X" / "break X into steps" → breakdown (8B routes to chat/task)
+        if intent in ("task", "chat") and _re.search(
+                r'^break\s+(?:down|up)?\s*\w|\bbreak\s+\w+.*\binto\b|\bsteps for\b|\broadmap for\b',
+                text.strip(), _re.IGNORECASE):
+            intent = "breakdown"
+            understood["task"] = None
         # "I want to learn/master X", "teach me X", "get better at X" → study goal,
-        # not a task (8B routes these to task). Skip if it's clearly a reminder.
-        if intent in ("task", "chat") and not _re.match(r'^(add|remind|track|ping)\b', text.strip(), _re.IGNORECASE):
-            if _re.search(r'\b(?:want to|wanna|like to|need to|trying to|gonna|going to)\s+(?:learn|master|study)\b'
+        # not a task (8B routes these to task/study/start_study). Skip if it's a reminder.
+        if intent in ("task", "chat", "study", "start_study", "study_topic") and not _re.match(
+                r'^(add|remind|track|ping)\b', text.strip(), _re.IGNORECASE):
+            if _re.search(r'\b(?:want to|wanna|like to|need to|trying to|gonna|going to)\s+(?:learn|master|study|get good at|get better at)\b'
                           r'|^teach me\b|\bget better at\b|\bget good at\b|\blearn how to\b'
                           r'|^(?:i\'?m\s+)?learning\s+\w|^(?:i\'?m\s+)?getting into\b',
                           text.strip(), _re.IGNORECASE):
@@ -2213,8 +2220,22 @@ async def handle_delay_intent(
     text: str,
 ) -> None:
     """Handle explicit 'delay' intent — extract duration if given, else ask."""
+    import tasks.svc as _tdb
     uid = update.effective_user.id
     last_id = ctx.bot_data.get("last_reminded", {}).get(uid)
+
+    # Named-task snooze: "snooze the meditate reminder by 1h" — resolve the task by name
+    # so a delay works even without a just-fired reminder.
+    _name = _re.sub(
+        r'\b(snooze|delay|remind me( about| to)?|push( back)?|the|my|a|by|for|reminder|task|in|later|'
+        r'\d+\s*(min|mins|minute|minutes|hr|hrs|hour|hours)?)\b',
+        ' ', text, flags=_re.IGNORECASE).strip()
+    if _name and len(_name) >= 3:
+        tasks = [t for t in _tdb.list_tasks(uid) if " — Step " not in t.get("title", "")]
+        m = _fuzzy_match_task(_name, tasks)
+        if len(m) == 1:
+            last_id = m[0]["id"]
+
     if not last_id:
         await update.message.reply_text("No recent reminder to delay. Say the task name explicitly, e.g. 'delay workout by 30 mins'.")
         return
