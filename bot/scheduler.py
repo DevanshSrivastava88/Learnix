@@ -101,13 +101,25 @@ def format_morning_brief(user_id: int) -> str:
     if not goals:
         lines.append("No study goals yet — /goal to set one up.")
     else:
+        planned_topic = None
         for g in goals:
-            counts = study_svc.count_topics_for_goal(g["id"])
-            total = counts["total"]
-            completed = counts["completed"]
-            pct = int(completed / total * 100) if total else 0
-            lines.append(f"• {g['name']} — {completed}/{total} topics ({pct}%)")
-        if next_topic:
+            plan = study_svc.get_plan_status(g["id"])
+            if plan:
+                track = "on track ✅" if plan["on_track"] else "behind ⏳"
+                lines.append(f"• *{g['name']}* — Day {plan['day']}/{plan['total_days']} "
+                             f"({plan['completed']}/{plan['total']}, {track})")
+                if plan["today_topic"] and planned_topic is None:
+                    planned_topic = (plan["today_topic"]["title"], g["name"])
+            else:
+                counts = study_svc.count_topics_for_goal(g["id"])
+                total = counts["total"]
+                completed = counts["completed"]
+                pct = int(completed / total * 100) if total else 0
+                lines.append(f"• {g['name']} — {completed}/{total} topics ({pct}%)")
+        if planned_topic:
+            lines.append(f"\n▶️ Today's topic: *{planned_topic[0]}* ({planned_topic[1]})")
+            lines.append(f"Say *study {planned_topic[1]}* when you're ready.")
+        elif next_topic:
             goal = study_svc.get_goal(next_topic["goal_id"])
             goal_name = goal["name"] if goal else ""
             lines.append(f"\n▶️ Up next: *{next_topic['title']}* ({goal_name})")
