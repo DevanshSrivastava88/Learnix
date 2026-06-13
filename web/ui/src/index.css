@@ -1,0 +1,77 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background-color: #fdf6ec;
+    /* layered warm-paper atmosphere: soft radial glows + faint grain */
+    background-image:
+      radial-gradient(40rem 40rem at 12% -10%, rgba(232, 137, 107, 0.16), transparent 60%),
+      radial-gradient(36rem 36rem at 105% 8%, rgba(138, 163, 153, 0.18), transparent 62%),
+      radial-gradient(48rem 48rem at 50% 120%, rgba(214, 107, 76, 0.08), transparent 60%);
+    background-attachment: fixed;
+    color: #3a3230;
+    font-family: "Quicksand", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* fine paper grain overlay */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    opacity: 0.5;
+    mix-blend-mode: multiply;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.045'/%3E%3C/svg%3E");
+  }
+}
+
+/* hand-drawn strikethrough that sweeps across a completed task */
+.strike {
+  position: relative;
+}
+.strike::after {
+  content: "";
+  position: absolute;
+  left: -2px;
+  right: -2px;
+  top: 52%;
+  height: 2px;
+  border-radius: 2px;
+  background: #d26b4c;
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 0.42s cubic-bezier(0.65, 0, 0.35, 1);
+  /* slight wobble so it reads hand-drawn, not a ruler line */
+  rotate: -0.6deg;
+}
+.strike.on::after {
+  transform: scaleX(1);
+}
+
+/* custom caret + selection in the brand palette */
+::selection {
+  background: rgba(232, 137, 107, 0.28);
+}
+
+.scrollbar-soft::-webkit-scrollbar {
+  width: 9px;
+}
+.scrollbar-soft::-webkit-scrollbar-thumb {
+  background: rgba(122, 110, 102, 0.28);
+  border-radius: 9px;
+}
