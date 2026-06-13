@@ -3,7 +3,10 @@
 _Single source of truth for what the bot does. Update it when a feature is added or
 changed. Every code change must keep everything below working._
 
-Bot: **@Quest3131Bot** (disrupto) · LIVE on Railway · 174 unit tests.
+Bot: **@Quest3131Bot** (disrupto) · LIVE on Railway · 195 unit tests · `test_all.py` = 32/32 live.
+
+> **Full live regression:** `python test_all.py` runs all 32 feature checks end-to-end
+> (robust harness: per-run session copy, settle-based replies, DB pre-clean). Last: 32/32.
 
 ---
 
@@ -96,3 +99,5 @@ loop verified: plan build → study → advance → /plan → morning brief.)_
 ## ⚠️ Known limitations (not bugs)
 - Guided study uses the FIRST in-progress goal (goals[0]). Multiple concurrent planned goals
   aren't interleaved — second goal won't get daily nudges until the first is done/paused.
+- Multi-task split is best-effort (8B): "call X and Y" usually splits, but duration-phrased
+  pairs ("stretch in 30 mins and meditate in 45 mins") sometimes merge into one task.
