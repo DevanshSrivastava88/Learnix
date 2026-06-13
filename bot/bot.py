@@ -477,7 +477,8 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
     if _bare in {"help", "commands"}:
         await cmd_help(update, ctx)
         return
-    if _bare in {"plan", "my plan", "study plan", "my study plan", "show my plan", "show plan"}:
+    if _bare in {"plan", "my plan", "study plan", "my study plan", "show my plan", "show plan"} or \
+            _re.search(r"\b(my|the|study)\s+plan\b|\bplan look|\bwhat'?s my plan\b", _bare):
         await study_handlers.cmd_plan(update, ctx)
         return
     if _bare in {"clear", "clear all", "clear everything", "wipe", "reset all", "wipe everything"}:
@@ -735,11 +736,34 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
                 text.strip(), _re.IGNORECASE):
             intent = "show_schedule"
             understood["task"] = None
+        # Progress questions — "how far am i on X", "how am i doing", "how's X going",
+        # "where am i on X", "progress on X" → show_progress (8B starts a quiz instead)
+        if intent in ("task", "chat", "study", "study_topic", "start_study") and _re.search(
+                r'\bhow far\b|\bhow am i doing\b|\bhow\'?s\b.*\bgoing\b|\bhow is\b.*\bgoing\b'
+                r'|\bwhere am i\b|\bprogress (?:on|with|in)\b|\bhow much.*(?:left|done)\b',
+                text.strip(), _re.IGNORECASE):
+            intent = "show_progress"
+            understood["task"] = None
         # "delete/pause/resume/edit my X goal" → goal management (8B sometimes routes to task)
         if intent in ("task", "chat", "delete_task", "pause_task", "resume_task") and _re.match(
                 r'^(delete|remove|pause|resume|unpause|edit|rename)\b.*\bgoal', text.strip(), _re.IGNORECASE):
             intent = "manage_goal"
             understood["task"] = None
+        # "pause/resume/delete X" where X is a study GOAL name (no literal "goal" word):
+        # "pause python im busy", "resume python" — route to goal management
+        if intent in ("task", "chat", "pause_task", "resume_task", "delete_task", "done"):
+            _vm = _re.match(r'^(pause|resume|unpause|restart|continue|delete|remove|drop|stop)\b\s+(.+)',
+                            text.strip(), _re.IGNORECASE)
+            if _vm:
+                try:
+                    import study.svc as _sg
+                    _rest = _vm.group(2).lower()
+                    _gs = _sg.list_goals(update.effective_user.id) + _sg.list_goals(update.effective_user.id, status="paused")
+                    if any(g["name"].lower() in _rest for g in _gs):
+                        intent = "manage_goal"
+                        understood["task"] = None
+                except Exception:
+                    pass
         # "mark X (as) important/urgent/priority" — 8B made a new task "Mark X"
         _m_imp = _re.match(
             r'^(?:mark|flag)\s+(.+?)\s+(?:as\s+)?(?:important|urgent|priority|a priority)\s*$',

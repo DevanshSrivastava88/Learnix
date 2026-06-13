@@ -595,6 +595,18 @@ async def handle_quiz_answer(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> 
         await handle_study_topic(update, ctx, topic_name)
         return
 
+    # A command-looking message means the user left the quiz — don't score it as an
+    # answer (a quiz once ate "pause python" / "resume python"). Drop quiz state and
+    # let the message fall through to normal routing.
+    # Only clear imperative commands escape (these won't begin a real quiz answer);
+    # "what"/"how"/"done"/"skip" can start an answer, so they're excluded.
+    import re as _re_q
+    if _re_q.match(r'^(pause|resume|unpause|delete|remove|add|list|mark|move|remind|track|break)\s+\w',
+                   lower_answer):
+        ctx.bot_data.get("quiz_state", {}).pop(uid, None)
+        import bot as _bot
+        return await _bot.handle_free_text(update, ctx)
+
     idx = state["q_index"]
     q = state["questions"][idx]
     try:

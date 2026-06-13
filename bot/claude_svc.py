@@ -533,6 +533,24 @@ def parse_deadline(text: str):
         except ValueError:
             pass
     today = datetime.now(pytz.timezone("Asia/Kolkata"))
+    # Deterministic fast-path for common relative phrases (8B is unreliable on these)
+    def _iso(days):
+        return (today + timedelta(days=days)).date().isoformat()
+    rel = low.replace("by ", "").replace("in ", "").strip()
+    if rel in ("next month", "a month", "month", "1 month", "one month"):
+        return _iso(30)
+    if rel in ("next week", "a week", "week", "1 week", "one week"):
+        return _iso(7)
+    if rel in ("two weeks", "2 weeks", "couple weeks", "a couple weeks", "fortnight"):
+        return _iso(14)
+    if rel in ("two months", "2 months", "couple months"):
+        return _iso(60)
+    if rel in ("three months", "3 months", "quarter"):
+        return _iso(90)
+    m_n = _re_d.match(r'(\d+)\s*(day|days|week|weeks|month|months)$', rel)
+    if m_n:
+        n = int(m_n.group(1)); unit = m_n.group(2)
+        return _iso(n if unit.startswith("day") else n * 7 if unit.startswith("week") else n * 30)
     now_str = today.strftime("%Y-%m-%d (%A)")
     result = _ask_json(
         f'Today is {now_str}. Convert this deadline phrase to a calendar date.\n'
