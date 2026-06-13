@@ -321,3 +321,139 @@ def test_check_and_send_does_not_log_if_send_fails():
         # Should not raise — exception is caught inside the function
         asyncio.run(motivation_svc.check_and_send_for_user(bot, 5))
     mock_log.assert_not_called()
+
+
+# ─── Context engine: _most_avoided_task ─────────────────────────────────────
+
+def test_most_avoided_task_returns_most_skipped_title():
+    rows = [{"task_id": "a"}, {"task_id": "b"}, {"task_id": "a"}, {"task_id": "a"}]
+    with patch("tasks.svc.get_task", return_value={"title": "Morning run"}):
+        assert motivation_svc._most_avoided_task(1, rows) == "Morning run"
+
+
+def test_most_avoided_task_strips_subtask_suffix():
+    rows = [{"task_id": "x"}]
+    with patch("tasks.svc.get_task", return_value={"title": "Learn Spanish — Step 2: Verbs"}):
+        assert motivation_svc._most_avoided_task(1, rows) == "Learn Spanish"
+
+
+def test_most_avoided_task_none_when_no_skips():
+    assert motivation_svc._most_avoided_task(1, []) is None
+
+
+def test_most_avoided_task_none_when_task_lookup_empty():
+    rows = [{"task_id": "gone"}]
+    with patch("tasks.svc.get_task", return_value=None):
+        assert motivation_svc._most_avoided_task(1, rows) is None
+
+
+def test_most_avoided_task_ignores_null_task_ids():
+    rows = [{"task_id": None}, {"task_id": None}]
+    assert motivation_svc._most_avoided_task(1, rows) is None
+
+
+# ─── Context engine: _busiest_weekday ───────────────────────────────────────
+
+def test_busiest_weekday_picks_most_common():
+    # Three Mondays, one Friday
+    mondays = [date(2026, 6, 1), date(2026, 6, 8), date(2026, 6, 15)]
+    friday = [date(2026, 6, 5)]
+    assert motivation_svc._busiest_weekday(mondays + friday) == "Monday"
+
+
+def test_busiest_weekday_none_on_empty():
+    assert motivation_svc._busiest_weekday([]) is None
+
+
+# ─── Context engine: _recent_wins ───────────────────────────────────────────
+
+def test_recent_wins_returns_titles_newest_first():
+    c = MagicMock()
+    c.table.return_value.select.return_value.eq.return_value.in_.return_value.order.return_value.limit.return_value.execute.return_value.data = [
+        {"note": "Gym", "event_type": "habit", "event_date": "2026-06-13"},
+        {"note": "Read", "event_type": "study", "event_date": "2026-06-12"},
+    ]
+    with patch("motivation_svc.get_client", return_value=c):
+        assert motivation_svc._recent_wins(1) == ["Gym", "Read"]
+
+
+def test_recent_wins_filters_auto_skip_and_dedupes():
+    c = MagicMock()
+    c.table.return_value.select.return_value.eq.return_value.in_.return_value.order.return_value.limit.return_value.execute.return_value.data = [
+        {"note": "auto_skip:Gym"}, {"note": "Read"}, {"note": "Read"}, {"note": ""},
+    ]
+    with patch("motivation_svc.get_client", return_value=c):
+        assert motivation_svc._recent_wins(1) == ["Read"]
+
+
+def test_recent_wins_empty_on_db_error():
+    c = MagicMock()
+    c.table.side_effect = Exception("boom")
+    with patch("motivation_svc.get_client", return_value=c):
+        assert motivation_svc._recent_wins(1) == []
+
+
+# ─── Context engine: gather_user_context ────────────────────────────────────
+
+def test_gather_user_context_assembles_fields():
+    skip_rows = [{"task_id": "a", "skipped_at": "2026-06-08T10:00:00+00:00"}]  # Monday IST
+    done_rows = [{"event_date": "2026-06-13"}]  # Saturday
+    with patch("settings_svc.get_settings", return_value={"streak": 4, "persona": "flirty"}), \
+         patch("tasks.svc.list_tasks", return_value=[{"title": "Run"}, {"title": "X — Step 1: y"}]), \
+         patch("analytics_svc.get_skips_last_n_days", return_value=skip_rows), \
+         patch("analytics_svc.get_done_counts_last_n_days", return_value=done_rows), \
+         patch("motivation_svc._skip_rate_last_7_days", return_value=0.3), \
+         patch("motivation_svc._days_since_any_activity", return_value=1), \
+         patch("motivation_svc._most_avoided_task", return_value="Run"), \
+         patch("motivation_svc._recent_wins", return_value=["Gym"]):
+        ctx = motivation_svc.gather_user_context(1)
+    assert ctx["streak"] == 4
+    assert ctx["persona"] == "flirty"
+    assert ctx["n_active_habits"] == 1  # subtask excluded
+    assert ctx["most_avoided_task"] == "Run"
+    assert ctx["recent_wins"] == ["Gym"]
+    assert ctx["best_weekday"] == "Saturday"
+    assert ctx["worst_weekday"] == "Monday"
+
+
+def test_gather_user_context_degrades_on_errors():
+    with patch("settings_svc.get_settings", side_effect=Exception), \
+         patch("tasks.svc.list_tasks", side_effect=Exception), \
+         patch("analytics_svc.get_skips_last_n_days", side_effect=Exception), \
+         patch("analytics_svc.get_done_counts_last_n_days", side_effect=Exception), \
+         patch("motivation_svc._skip_rate_last_7_days", side_effect=Exception), \
+         patch("motivation_svc._days_since_any_activity", side_effect=Exception), \
+         patch("motivation_svc._recent_wins", return_value=[]):
+        ctx = motivation_svc.gather_user_context(1)
+    assert ctx["streak"] == 0
+    assert ctx["persona"] == "default"
+    assert ctx["most_avoided_task"] is None
+    assert ctx["days_since_active"] == 999
+
+
+# ─── Context engine: _context_brief ─────────────────────────────────────────
+
+def test_context_brief_includes_specifics():
+    ctx = {"streak": 5, "most_avoided_task": "Run", "best_weekday": "Monday",
+           "worst_weekday": "Friday", "recent_wins": ["Gym"], "n_active_habits": 2}
+    brief = motivation_svc._context_brief(ctx)
+    assert "Run" in brief and "Monday" in brief and "Gym" in brief and "5 days" in brief
+
+
+def test_context_brief_empty_when_no_data():
+    brief = motivation_svc._context_brief({})
+    assert "No history" in brief
+
+
+def test_context_brief_omits_streak_of_one():
+    brief = motivation_svc._context_brief({"streak": 1})
+    assert "streak" not in brief.lower()
+
+
+def test_generate_motivation_message_weaves_real_specifics():
+    ctx = {"most_avoided_task": "Morning run", "streak": 6}
+    with patch("motivation_svc.claude_svc") as mock_claude:
+        mock_claude._ask.return_value = "ok"
+        motivation_svc.generate_motivation_message("daily_skip_burst", ctx)
+    prompt = mock_claude._ask.call_args[0][0]
+    assert "Morning run" in prompt and "identity" in prompt.lower()

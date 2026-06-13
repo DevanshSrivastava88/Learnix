@@ -43,7 +43,7 @@ def test_generate_struggle_support_calls_llm_with_offer():
     # The concrete offer is ALWAYS appended deterministically, regardless of the LLM body
     assert "pause a habit" in out.lower() and "lighten the load" in out.lower()
     assert "tomorrow" in out.lower()
-    assert "5-day streak" in captured["p"]               # prompt references their real win
+    assert "5 days" in captured["p"]                     # prompt references their real streak
 
 
 def test_struggle_support_offer_survives_llm_failure():

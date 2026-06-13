@@ -164,6 +164,155 @@ def evaluate_triggers(user_id: int) -> tuple:
 
 
 # ---------------------------------------------------------------------------
+# Context engine — pull the user's REAL history so messages reference actual
+# tasks, days, and wins instead of generic coach lines. Every field is
+# best-effort: any query that fails degrades to a safe default, never raises.
+# ---------------------------------------------------------------------------
+
+_WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+
+
+def _most_avoided_task(user_id: int, skip_rows: list) -> str | None:
+    """Title of the task skipped most often in the window, or None."""
+    from collections import Counter
+    import tasks.svc as _tdb
+    counts = Counter(r["task_id"] for r in skip_rows if r.get("task_id"))
+    if not counts:
+        return None
+    top_id, _ = counts.most_common(1)[0]
+    try:
+        task = _tdb.get_task(top_id)
+    except Exception:
+        return None
+    title = (task or {}).get("title") or None
+    # Strip subtask suffix so the name reads naturally.
+    if title and " — Step " in title:
+        title = title.split(" — Step ")[0]
+    return title
+
+
+def _busiest_weekday(iso_dates: list) -> str | None:
+    """Weekday name that appears most across the given list of date objects."""
+    from collections import Counter
+    if not iso_dates:
+        return None
+    counts = Counter(d.weekday() for d in iso_dates)
+    return _WEEKDAYS[counts.most_common(1)[0][0]]
+
+
+def _recent_wins(user_id: int, limit: int = 3) -> list:
+    """Most recent completed-task titles (habit/study/milestone), newest first.
+    Reads activity_log.note directly since the analytics helper drops notes."""
+    try:
+        res = (
+            get_client().table("activity_log")
+            .select("note, event_type, event_date")
+            .eq("user_id", user_id)
+            .in_("event_type", ["habit", "study", "milestone"])
+            .order("event_date", desc=True)
+            .limit(20)
+            .execute()
+        )
+    except Exception:
+        return []
+    wins = []
+    for row in res.data or []:
+        note = (row.get("note") or "").strip()
+        if not note or note.startswith("auto_skip:") or note in wins:
+            continue
+        wins.append(note)
+        if len(wins) >= limit:
+            break
+    return wins
+
+
+def gather_user_context(user_id: int) -> dict:
+    """Best-effort snapshot of the user's real history for message personalization.
+    Never raises — each field degrades to a safe default on error."""
+    streak = 0
+    persona = "default"
+    try:
+        from settings_svc import get_settings
+        s = get_settings(user_id) or {}
+        streak = s.get("streak", 0) or 0
+        persona = s.get("persona") or "default"
+    except Exception:
+        pass
+
+    n_active = 0
+    try:
+        import tasks.svc as _tdb
+        n_active = len([t for t in _tdb.list_tasks(user_id)
+                        if " — Step " not in (t.get("title") or "")])
+    except Exception:
+        pass
+
+    skip_rows, done_rows = [], []
+    try:
+        import analytics_svc
+        skip_rows = analytics_svc.get_skips_last_n_days(user_id, 30) or []
+        done_rows = analytics_svc.get_done_counts_last_n_days(user_id, 30) or []
+    except Exception:
+        pass
+
+    skip_days, done_days = [], []
+    for r in skip_rows:
+        try:
+            skip_days.append(datetime.fromisoformat(r["skipped_at"]).astimezone(IST).date())
+        except Exception:
+            continue
+    for r in done_rows:
+        try:
+            done_days.append(date.fromisoformat(str(r["event_date"])))
+        except Exception:
+            continue
+
+    try:
+        skip_rate = _skip_rate_last_7_days(user_id)
+    except Exception:
+        skip_rate = 0.0
+    try:
+        days_since = _days_since_any_activity(user_id)
+    except Exception:
+        days_since = 999
+
+    return {
+        "streak": streak,
+        "persona": persona,
+        "n_active_habits": n_active,
+        "skip_rate_7d": skip_rate,
+        "days_since_active": days_since,
+        "most_avoided_task": _most_avoided_task(user_id, skip_rows),
+        "best_weekday": _busiest_weekday(done_days),
+        "worst_weekday": _busiest_weekday(skip_days),
+        "recent_wins": _recent_wins(user_id),
+    }
+
+
+def _context_brief(ctx: dict) -> str:
+    """Render the context dict into a compact prompt block. Only includes fields
+    that carry real signal — empty data produces no line, so the LLM never
+    invents specifics it doesn't have."""
+    lines = []
+    if ctx.get("streak", 0) > 1:
+        lines.append(f"- Current streak: {ctx['streak']} days (this is real progress — name it).")
+    if ctx.get("most_avoided_task"):
+        lines.append(f"- Task they keep avoiding: \"{ctx['most_avoided_task']}\".")
+    if ctx.get("best_weekday"):
+        lines.append(f"- Their strongest day is {ctx['best_weekday']} (they show up most then).")
+    if ctx.get("worst_weekday") and ctx.get("worst_weekday") != ctx.get("best_weekday"):
+        lines.append(f"- They skip most on {ctx['worst_weekday']}.")
+    wins = ctx.get("recent_wins") or []
+    if wins:
+        lines.append(f"- Recent wins to reference by name: {', '.join(wins)}.")
+    if ctx.get("n_active_habits"):
+        lines.append(f"- They are tracking {ctx['n_active_habits']} active habit(s).")
+    if not lines:
+        return "No history yet — keep it warm and general, do NOT invent specifics."
+    return "Real data about this user (use specifics, never invent):\n" + "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
 # Message generation — identity-based tone, never guilt-shaming
 # ---------------------------------------------------------------------------
 
@@ -198,11 +347,24 @@ _TONE_GUIDES = {
 }
 
 
-def generate_motivation_message(trigger_type: str) -> str:
+_IDENTITY_RULE = (
+    "Frame around identity, not the gap: 'you're someone who shows up', not 'do your task'. "
+    "One slip never erases what they built — forgive instantly, then push forward. "
+    "Weave in ONE real specific from the data below (a task name, their best day, a recent win) "
+    "so it's clearly about THEM. Never invent specifics that aren't given."
+)
+
+
+def generate_motivation_message(trigger_type: str, ctx: dict | None = None) -> str:
+    # The poller always passes a gathered ctx; an absent ctx just means no
+    # personalization data — degrade to a warm, general message.
+    ctx = ctx or {}
     tone = _TONE_GUIDES.get(trigger_type, "Send a brief, warm encouraging message. Under 60 words.")
     prompt = (
         "You are Learnix, a friendly habit coach on Telegram.\n\n"
         f"Situation: {tone}\n\n"
+        f"{_IDENTITY_RULE}\n\n"
+        f"{_context_brief(ctx or {})}\n\n"
         "Write the message now. No preamble or explanation — just the message."
     )
     return claude_svc._ask(prompt, max_tokens=200)
@@ -222,7 +384,8 @@ async def check_and_send_for_user(bot, user_id: int) -> None:
         return
 
     try:
-        msg = generate_motivation_message(trigger_type)
+        ctx = gather_user_context(user_id)
+        msg = generate_motivation_message(trigger_type, ctx)
         await bot.send_message(user_id, msg)
         _log_motivation_sent(user_id, trigger_type)
         logger.info(f"Motivation sent to {user_id} — trigger: {trigger_type}")
@@ -272,16 +435,12 @@ def generate_struggle_support(user_id: int, text: str, persona: str = "default")
     """In-the-moment reply when the user says they're failing/struggling.
     Validates the feeling, never toxic-positivity, and offers ONE concrete way to
     lighten the load (pause a habit / push reminders to tomorrow / scale back)."""
-    streak = 0
-    n_active = 0
     try:
-        from settings_svc import get_settings
-        import tasks.svc as _tdb
-        streak = get_settings(user_id).get("streak", 0) or 0
-        n_active = len([t for t in _tdb.list_tasks(user_id) if " — Step " not in t.get("title", "")])
+        ctx = gather_user_context(user_id)
     except Exception:
-        pass
-    win = f"They have a {streak}-day streak going — remind them that still counts. " if streak > 1 else ""
+        ctx = {}
+    if persona == "default":
+        persona = ctx.get("persona", "default")
     flirt = ("Tone: warm and a little playfully flirty, like a charming friend who believes in them. "
              if persona == "flirty" else "Tone: warm, real, like a close friend. ")
     prompt = (
@@ -289,7 +448,8 @@ def generate_struggle_support(user_id: int, text: str, persona: str = "default")
         f"struggling or failing: \"{text}\".\n\n"
         f"{flirt}"
         "Validate the feeling in 1-2 sentences (no 'just stay positive!', no lecturing). "
-        f"{win}"
+        "If the data shows a real win or streak, name it so they remember it still counts. "
+        f"{_context_brief(ctx)}\n\n"
         "Do NOT propose solutions — a separate line handles that. "
         "Never shame. Under 40 words. 1 emoji max. Just the message, no preamble."
     )
