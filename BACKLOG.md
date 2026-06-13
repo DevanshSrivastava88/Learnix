@@ -1,8 +1,30 @@
 # Learnix Backlog
 
-_Last updated: 2026-06-13_
+_Last updated: 2026-06-14_
 _Project status: workInProgress_
 _Auto-agent: enabled_
+
+## 🎯 NEXT BIG: Motivation engine 10x (user's headline ask)
+
+**Goal:** make motivation feel personal, earned, and genuinely helpful — not generic coach lines.
+
+**What exists now (`motivation_svc.py`):**
+- Proactive poller, ≤1/24h, hour-gated: daily_skip_burst, streak_broken, low_weekly_rate, no_activity
+- Reactive: struggle phrases → validate + real streak + GUARANTEED concrete offer (pause/push/scale)
+- Comeback note on 2nd/3rd+ skip
+- Messages: single LLM `_ask` with a tone guide per trigger. No memory of past messages, no
+  personalization beyond streak count.
+
+**10x directions (decide together next session):**
+1. **Memory of what works** — log which nudges → user re-engaged; favor those tones (table: motivation_log already exists, add outcome tracking).
+2. **Specifics, not platitudes** — reference the actual task/goal/topic they're avoiding + their best day/week, recent wins by name. Pull real data into the prompt.
+3. **Identity-based framing** — "you're someone who shows up" vs "do your task". Tie to their goals.
+4. **Adaptive timing** — learn each user's active hours from message/activity timestamps; nudge when they're actually reachable, not fixed 8am.
+5. **Comeback celebration** — when they return after a slump or rebuild a streak, make it a moment.
+6. **Pattern insight** — "you skip most on Mondays / after 9pm — want to move that habit?" (data-driven, actionable).
+7. **Right-sized offers** — auto-suggest scaling (2x/day → 1x) when skip rate high, before they quit.
+8. **Tone match to persona + mood** — flirty/friendly already; add read of message sentiment.
+- Tests: extend test_motivation_reactive.py + add motivation cases to test_all.py.
 
 ## 🔥 Immediate (next session)
 
