@@ -228,3 +228,76 @@ async def check_and_send_for_user(bot, user_id: int) -> None:
         logger.info(f"Motivation sent to {user_id} — trigger: {trigger_type}")
     except Exception as e:
         logger.error(f"Motivation send failed for {user_id}: {e}")
+
+
+# ---------------------------------------------------------------------------
+# REACTIVE support — in-the-moment, not scheduled. Fires when the user slips
+# right now (rough skip streak) or says they're struggling.
+# ---------------------------------------------------------------------------
+
+# Phrases that mean "I'm struggling / I messed up" — routed to active support.
+import re as _re_m
+STRUGGLE_RE = _re_m.compile(
+    r"\b(i (?:keep|always) (?:failing|messing up|screwing up|falling behind)"
+    r"|i (?:suck|can'?t do this|can'?t do it|give up|gave up|quit|wanna quit)"
+    r"|(?:feel like |feeling like )?(?:giving up|quitting)|feel like quitting"
+    r"|i'?m (?:a )?(?:failure|hopeless|useless|so behind|falling apart|burnt? out|burned out|overwhelmed)"
+    r"|(?:so |really |feeling )?overwhelmed"
+    r"|i (?:messed|screwed|fucked) (?:up|it up)|i'?m struggling|struggling (?:with|to keep)"
+    r"|this is too (?:hard|much)|it'?s too much"
+    r"|i can'?t keep up|can'?t do this anymore|i'?m never gonna|i'?m so bad at)\b",
+    _re_m.IGNORECASE,
+)
+
+
+def is_struggle_message(text: str) -> bool:
+    return bool(STRUGGLE_RE.search(text or ""))
+
+
+def comeback_note_on_skip(user_id: int) -> str:
+    """A short, warm note to append to a skip confirmation when the user is having
+    a rough day (multiple skips today). Empty string otherwise — no nagging."""
+    try:
+        skips = _count_skips_today(user_id)
+    except Exception:
+        return ""
+    if skips >= 3:
+        return "\n\nThird one today — rough day, huh? No guilt. One tiny win still counts. 💛"
+    if skips == 2:
+        return "\n\nThat's a couple today. Totally fine — tomorrow's a clean slate. 🌱"
+    return ""
+
+
+def generate_struggle_support(user_id: int, text: str, persona: str = "default") -> str:
+    """In-the-moment reply when the user says they're failing/struggling.
+    Validates the feeling, never toxic-positivity, and offers ONE concrete way to
+    lighten the load (pause a habit / push reminders to tomorrow / scale back)."""
+    streak = 0
+    n_active = 0
+    try:
+        from settings_svc import get_settings
+        import tasks.svc as _tdb
+        streak = get_settings(user_id).get("streak", 0) or 0
+        n_active = len([t for t in _tdb.list_tasks(user_id) if " — Step " not in t.get("title", "")])
+    except Exception:
+        pass
+    win = f"They have a {streak}-day streak going — remind them that still counts. " if streak > 1 else ""
+    flirt = ("Tone: warm and a little playfully flirty, like a charming friend who believes in them. "
+             if persona == "flirty" else "Tone: warm, real, like a close friend. ")
+    prompt = (
+        "You are Learnix, a habit/study coach on Telegram. The user just said they're "
+        f"struggling or failing: \"{text}\".\n\n"
+        f"{flirt}"
+        "Validate the feeling in 1-2 sentences (no 'just stay positive!', no lecturing). "
+        f"{win}"
+        "Do NOT propose solutions — a separate line handles that. "
+        "Never shame. Under 40 words. 1 emoji max. Just the message, no preamble."
+    )
+    try:
+        body = claude_svc._ask(prompt, max_tokens=140)
+    except Exception:
+        body = "Hey — a rough patch doesn't undo your progress."
+    # Always attach a concrete offer (the actionable help is the whole point — never
+    # leave the user with only sympathy).
+    offer = "\n\nWant me to lighten the load? I can *pause a habit*, *push today's reminders to tomorrow*, or *scale a goal back* — just say which. 💛"
+    return body.rstrip() + offer

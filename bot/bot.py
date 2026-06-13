@@ -681,15 +681,34 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
         await handle_set_time_freetext(update, ctx, text, claude_svc)
         return
 
+    # Reactive support: user says they're failing/struggling → in-the-moment help
+    # (validate + offer to lighten the load). Cheap regex, before the LLM routing call.
+    import motivation_svc as _mot
+    if _mot.is_struggle_message(text):
+        import asyncio as _aio_s
+        import settings_svc as _ss
+        await update.message.chat.send_action(ChatAction.TYPING)
+        try:
+            persona = await _aio_s.to_thread(_ss.get_persona, update.effective_user.id)
+            msg = await _aio_s.to_thread(
+                _mot.generate_struggle_support, update.effective_user.id, text, persona)
+        except Exception:
+            msg = ("Hey — a rough patch doesn't undo your progress. Want me to lighten today? "
+                   "I can pause a habit or push your reminders to tomorrow. 💛")
+        history.append(f"Bot: [struggle support]")
+        await update.message.reply_text(msg)
+        return
+
     await update.message.chat.send_action(ChatAction.TYPING)
     try:
         import asyncio as _asyncio
         understood = await _asyncio.to_thread(claude_svc.understand_message, text, context)
         intent = understood["intent"]
         # Deterministic guard: explicit tracking prefix always means task,
-        # even when the LLM misclassifies (8B model occasionally returns chat)
+        # even when the LLM misclassifies (8B model occasionally returns chat).
+        # Tolerate common "remind" typos (remd/rmd/remind/reminde me).
         if intent == "chat" and _re.match(
-            r'^(?:add|track|remind me)\b', text.strip(), _re.IGNORECASE
+            r'^(?:add|track|r[ei]?m[ie]?n?de?\s+me|ping me)\b', text.strip(), _re.IGNORECASE
         ):
             intent = "task"
             understood["task"] = None  # force full parse below
@@ -730,8 +749,9 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
             elif _m_done:
                 _r = _clean_ref(_re.sub(r'\s+(?:done|finished)$', '', _m_done.group(1), flags=_re.IGNORECASE))
                 intent = "done"; understood["task_ref"] = _r; understood["task"] = None
-        # Schedule/agenda question — "what do i have today", "wat do i gotta do", "what's on my plate"
-        if intent in ("task", "chat") and _re.match(
+        # Schedule/agenda question — "what do i have today", "wat do i gotta do", "what's on my plate".
+        # Override task/chat AND show_tasks (8B flips between list/schedule for this phrasing).
+        if intent in ("task", "chat", "show_tasks") and _re.match(
                 r"^(?:wat|what|what'?s|whats)\b.*\b(today|going on|on my plate|to do|gotta do|do i have|got going)\b",
                 text.strip(), _re.IGNORECASE):
             intent = "show_schedule"
@@ -772,9 +792,10 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
             intent = "mark_important"
             understood["task_ref"] = _m_imp.group(1).strip()
             understood["task"] = None
-        # "break down X" / "break X into steps" → breakdown (8B routes to chat/task)
-        if intent in ("task", "chat") and _re.search(
-                r'^break\s+(?:down|up)?\s*\w|\bbreak\s+\w+.*\binto\b|\bsteps for\b|\broadmap for\b',
+        # "break down X" / "break X into steps" → breakdown. Unambiguous phrasing, so
+        # override whatever the 8B guessed (it flips between chat/task/create_goal here).
+        if intent != "breakdown" and _re.search(
+                r'^break\s+(?:down|up)?\s+\w|\bbreak\s+\w+.*\binto\b|\bsteps for\b|\broadmap for\b',
                 text.strip(), _re.IGNORECASE):
             intent = "breakdown"
             understood["task"] = None
@@ -1170,16 +1191,20 @@ async def handle_last_reminded_action(
             recur = task.get("recurrence_days") or 1
             next_at = datetime.now(timezone.utc) + timedelta(days=recur)
             task_db.reschedule_task(task["id"], next_at)
+            import motivation_svc as _mot_s
             await update.message.reply_text(
-                f"Skipped! I'll remind you about *{task['title']}* again in {recur} day(s).",
+                f"Skipped! I'll remind you about *{task['title']}* again in {recur} day(s)."
+                + _mot_s.comeback_note_on_skip(uid),
                 parse_mode=ParseMode.MARKDOWN,
             )
         else:
             # One-time task — skipping drops it for good (recurrence_days is None
             # here; timedelta(days=None) used to crash the whole handler)
             task_db.update_task(task["id"], status="skipped")
+            import motivation_svc as _mot_s
             await update.message.reply_text(
-                f"Skipped *{task['title']}* — taken off your list. 👍",
+                f"Skipped *{task['title']}* — taken off your list. 👍"
+                + _mot_s.comeback_note_on_skip(uid),
                 parse_mode=ParseMode.MARKDOWN,
             )
 
@@ -1291,16 +1316,20 @@ async def handle_task_action_freetext(
             recur = task.get("recurrence_days") or 1
             next_at = datetime.now(timezone.utc) + timedelta(days=recur)
             task_db.reschedule_task(task["id"], next_at)
+            import motivation_svc as _mot_s
             await update.message.reply_text(
-                f"Skipped! I'll remind you about *{task['title']}* again in {recur} day(s).",
+                f"Skipped! I'll remind you about *{task['title']}* again in {recur} day(s)."
+                + _mot_s.comeback_note_on_skip(uid),
                 parse_mode=ParseMode.MARKDOWN,
             )
         else:
             # One-time task — skipping drops it for good (recurrence_days is None
             # here; timedelta(days=None) used to crash the whole handler)
             task_db.update_task(task["id"], status="skipped")
+            import motivation_svc as _mot_s
             await update.message.reply_text(
-                f"Skipped *{task['title']}* — taken off your list. 👍",
+                f"Skipped *{task['title']}* — taken off your list. 👍"
+                + _mot_s.comeback_note_on_skip(uid),
                 parse_mode=ParseMode.MARKDOWN,
             )
 

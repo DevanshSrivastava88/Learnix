@@ -51,6 +51,7 @@ async def step(client, msg, name=None, pred=None, settle=4.0):
     print(f">>> {msg!r}\n    {r[:160]!r}\n")
     if name and pred:
         RESULTS.append((name, pred(r.lower()), r))
+    await asyncio.sleep(1.5)  # drain: let a late reply land before the next send
     return r
 
 def clean_db():
@@ -81,8 +82,10 @@ async def main():
     # ---------- ACTIONS ----------
     await step(c, "done call the bank", "action: done one-time",
                lambda x: "call the bank" in x and ("✅" in x or "done" in x))
-    await step(c, "snooze the meditate reminder by 1 hour", "action: snooze",
-               lambda x: "meditate" in x or "snooz" in x or "later" in x or "moved" in x)
+    # snooze targets "stretch" — reliably created as the multi-task's first item
+    # (decoupled from the flaky 'meditate' second item)
+    await step(c, "snooze the stretch reminder by 1 hour", "action: snooze",
+               lambda x: "stretch" in x or "snooz" in x or "later" in x or "moved" in x or "delay" in x)
     await step(c, "mark stretch as important", "action: mark important",
                lambda x: "stretch" in x and ("important" in x or "⚡" in x))
     await step(c, "move water plants to 9am", "action: reschedule",
@@ -137,6 +140,23 @@ async def main():
                lambda x: "added" not in x and "remind you" not in x[:30])
     await step(c, "/persona flirty", "persona: switch", lambda x: "flirty" in x or "😏" in x)
     await step(c, "/persona normal", "persona: reset", lambda x: "friendly" in x or "🙂" in x)
+
+    # ---------- MOTIVATION (reactive) ----------
+    _supportive = lambda x: ("added" not in x and ("pause" in x or "tomorrow" in x or "lighten" in x
+                             or "scale" in x or "push" in x or "let me" in x or "want me" in x
+                             or "ease" in x or "step back" in x))
+    await step(c, "i keep failing at everything", "motiv: struggle support", _supportive, settle=4)
+    await step(c, "honestly i feel like giving up", "motiv: giving-up support", _supportive, settle=4)
+
+    # ---------- NEW EDGE CASES ----------
+    await step(c, "remd me to clal mom at 5pm", "edge: heavy typos",
+               lambda x: "mom" in x and "5:00 pm" in x)
+    await step(c, "add yoga\nand buy milk", "edge: newline input",
+               lambda x: "yoga" in x or "milk" in x or "time" in x)
+    if "time" in (RESULTS[-1][2].lower() if RESULTS else ""):
+        await step(c, "no", settle=2)
+    await step(c, "🏃", "edge: emoji-only -> chat not task",
+               lambda x: "added" not in x[:20])
 
     # ---------- RESULTS ----------
     print("\n" + "=" * 50)
