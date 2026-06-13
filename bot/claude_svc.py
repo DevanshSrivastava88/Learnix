@@ -653,6 +653,7 @@ def extract_manage_goal_action(text: str) -> str:
         f'Actions:\n'
         f'- "delete": remove/delete/get rid of the goal\n'
         f'- "pause": pause/stop/freeze the goal temporarily\n'
+        f'- "resume": resume/unpause/restart/pick back up the goal\n'
         f'- "edit": edit/rename/update/change the goal\n'
         f'- "": unclear\n\n'
         f'Return: {{"action": "..."}}',

@@ -702,9 +702,9 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
                           "done": "done", "skip": "skip_task"}[_verb]
                 understood["task_ref"] = _rest
                 understood["task"] = None
-        # "delete/pause/edit my X goal" → goal management (8B sometimes routes to task)
-        if intent in ("task", "chat", "delete_task", "pause_task") and _re.match(
-                r'^(delete|remove|pause|edit|rename)\b.*\bgoal', text.strip(), _re.IGNORECASE):
+        # "delete/pause/resume/edit my X goal" → goal management (8B sometimes routes to task)
+        if intent in ("task", "chat", "delete_task", "pause_task", "resume_task") and _re.match(
+                r'^(delete|remove|pause|resume|unpause|edit|rename)\b.*\bgoal', text.strip(), _re.IGNORECASE):
             intent = "manage_goal"
             understood["task"] = None
         # "mark X (as) important/urgent/priority" — 8B made a new task "Mark X"
@@ -1594,7 +1594,16 @@ async def handle_manage_goal_freetext(
         if matched_goal:
             study_svc.update_goal_status(matched_goal["id"], "paused")
             await update.message.reply_text(
-                f"Paused ⏸️ *{matched_goal['name']}*. Pick it back up anytime with /pausegoal.",
+                f"Paused ⏸️ *{matched_goal['name']}*. Say *resume {matched_goal['name'].lower()} goal* to pick it back up.",
+                parse_mode=ParseMode.MARKDOWN,
+            )
+        else:
+            await study_handlers.cmd_pausegoal(update, ctx)
+    elif action == "resume":
+        if matched_goal:
+            study_svc.update_goal_status(matched_goal["id"], "in_progress")
+            await update.message.reply_text(
+                f"Back on! ▶️ *{matched_goal['name']}* is active again.",
                 parse_mode=ParseMode.MARKDOWN,
             )
         else:
