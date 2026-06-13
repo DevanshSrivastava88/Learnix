@@ -1626,6 +1626,10 @@ async def handle_create_goal_freetext(
         await study_handlers.cmd_goal(update, ctx)
         return
 
+    # Title-case for display ("spanish" → "Spanish"), but keep acronyms/casing
+    # that are already mixed/upper (e.g. "iOS", "SQL")
+    if goal_name.islower():
+        goal_name = goal_name.title()
     # Pre-fill the goal name and jump straight to difficulty selection
     ctx.user_data["goal_name"] = goal_name
     ctx.user_data["goal_desc"] = ""
