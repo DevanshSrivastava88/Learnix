@@ -681,9 +681,17 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
         await handle_set_time_freetext(update, ctx, text, claude_svc)
         return
 
+    # SAFETY FIRST: deterministic crisis check before ANY LLM persona. On a hit,
+    # suppress the coach entirely and serve the static human-vetted resource card.
+    import motivation_svc as _mot
+    if _mot.is_crisis_message(text):
+        history.append("Bot: [crisis resources]")
+        # plain text on purpose — a crisis card must never fail to send on a markdown parse error
+        await update.message.reply_text(_mot.crisis_response(update.effective_user.id))
+        return
+
     # Reactive support: user says they're failing/struggling → in-the-moment help
     # (validate + offer to lighten the load). Cheap regex, before the LLM routing call.
-    import motivation_svc as _mot
     if _mot.is_struggle_message(text):
         import asyncio as _aio_s
         import settings_svc as _ss

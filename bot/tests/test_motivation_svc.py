@@ -623,3 +623,53 @@ def test_context_brief_includes_responds_to_hint():
 def test_context_brief_ignores_unknown_responds_to():
     brief = motivation_svc._context_brief({"responds_to": "bogus"})
     assert "landed before" not in brief.lower()
+
+
+# ─── CRISIS safety layer ────────────────────────────────────────────────────
+
+import pytest as _pytest
+
+
+@_pytest.mark.parametrize("text", [
+    "i want to kill myself",
+    "honestly i don't want to live anymore",
+    "i feel suicidal",
+    "i'm thinking about ending it all",
+    "i just want to die",
+    "i've been cutting myself again",
+    "there's no reason to live",
+    "i wish i was dead",
+    "i can't go on anymore",
+    "i don't want to be here anymore",
+    "i'm going to commit suicide",
+])
+def test_is_crisis_message_true_on_ideation(text):
+    assert motivation_svc.is_crisis_message(text) is True
+
+
+@_pytest.mark.parametrize("text", [
+    "i keep failing at everything",       # struggle, not crisis
+    "this deadline is killing me",         # idiom
+    "i'm dying to see the results",        # idiom
+    "i could kill for a coffee",           # idiom
+    "i give up on this habit",             # struggle
+    "i'm so overwhelmed today",            # struggle
+    "i'm dead tired",                      # idiom
+    "add gym at 6pm",                      # normal task
+])
+def test_is_crisis_message_false_on_idioms_and_struggle(text):
+    assert motivation_svc.is_crisis_message(text) is False
+
+
+def test_crisis_response_is_static_card_with_helplines():
+    card = motivation_svc.crisis_response(123)
+    assert "1800-599-0019" in card        # KIRAN
+    assert "AASRA" in card
+    assert "112" in card                  # emergency line
+
+
+def test_crisis_takes_priority_over_struggle():
+    # a phrase that is BOTH crisis and struggle-ish must be classified as crisis
+    t = "i can't do this anymore, i want to kill myself"
+    assert motivation_svc.is_crisis_message(t) is True
+    # handler checks crisis first, so struggle routing never runs for this text

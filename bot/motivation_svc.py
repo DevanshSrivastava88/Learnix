@@ -561,6 +561,54 @@ def is_struggle_message(text: str) -> bool:
     return bool(STRUGGLE_RE.search(text or ""))
 
 
+# ---------------------------------------------------------------------------
+# CRISIS SAFETY LAYER — a deterministic, non-LLM classifier that MUST run
+# before any LLM persona on the free-text surface. On a hit, the bot suppresses
+# the coach persona entirely and returns a static, human-vetted resource card.
+# (Exocortex critical safety rule.) Prefer catching real ideation over polish;
+# patterns target explicit self-harm / suicidal phrasing, not idioms.
+# ---------------------------------------------------------------------------
+
+CRISIS_RE = _re_m.compile(
+    r"(kill (?:myself|my self)|killing myself"
+    r"|want(?:ing)? to die|wanna die|don'?t want to (?:live|be alive|be here)"
+    r"|wish i (?:was|were) dead|want to be dead|better off dead"
+    r"|end(?:ing)? (?:my life|it all|my own life|myself)|take my (?:own )?life"
+    r"|no (?:reason|point) (?:to|in) (?:living|live|being alive)|nothing to live for"
+    r"|can'?t go on(?: anymore| living)?|i can'?t do life"
+    r"|hurt(?:ing)? myself|harm(?:ing)? myself|self[ -]?harm|cut(?:ting)? myself"
+    r"|suicidal|commit suicide|kill my life"
+    r"|i don'?t want to be here anymore)",
+    _re_m.IGNORECASE,
+)
+
+# Static, human-vetted card. India helplines first (the bot's audience), then a
+# universal line. No coach persona, no jokes — just care + immediate routes.
+_CRISIS_CARD = (
+    "I'm really glad you told me, and I want you to talk to someone who can help right now — "
+    "this is bigger than habits, and you deserve real support. \U0001f49b\n\n"
+    "Please reach out, any time — free and confidential:\n"
+    "• KIRAN (24/7, Govt of India): 1800-599-0019\n"
+    "• Vandrevala Foundation (24/7): 1860-2662-2345 / +91 99996 66555\n"
+    "• AASRA (24/7): +91 98204 66726\n"
+    "• iCall: +91 91529 87821\n\n"
+    "If you might act on this right now, please call your local emergency number "
+    "(112 in India) or go to the nearest hospital. You matter, and you don't have to carry this alone."
+)
+
+
+def is_crisis_message(text: str) -> bool:
+    return bool(CRISIS_RE.search(text or ""))
+
+
+def crisis_response(user_id: int | None = None) -> str:
+    """Static crisis card. NEVER routed through the LLM. Logs the event (uid only,
+    no message content) so it can be reviewed without storing sensitive text."""
+    if user_id is not None:
+        logger.warning(f"CRISIS classifier hit for user {user_id} — served static card, LLM suppressed.")
+    return _CRISIS_CARD
+
+
 def comeback_note_on_skip(user_id: int) -> str:
     """A short, warm note to append to a skip confirmation when the user is having
     a rough day (multiple skips today). Empty string otherwise — no nagging."""
