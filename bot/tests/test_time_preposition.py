@@ -66,3 +66,30 @@ def test_no_preposition_leaves_model_value():
     with patch("claude_svc._ask_json", return_value=_llm({"time_hhmm": "20:00"})):
         r = claude_svc.understand_message("dinner tonight")
     assert r["task"]["time_hhmm"] == "20:00"
+
+
+# ── parse_time_only (pending "want a time?" answer path) — no LLM for in/at ──
+
+def test_parse_time_only_in_n_is_minutes():
+    from datetime import datetime, timezone
+    # must NOT call the LLM — guard handles it. If it does, fail loudly.
+    with patch("claude_svc._ask_json", side_effect=AssertionError("should not hit LLM")):
+        dt = claude_svc.parse_time_only("in 10")
+    mins = (dt - datetime.now(timezone.utc)).total_seconds() / 60
+    assert 9 <= mins <= 11  # ~10 minutes from now
+
+
+def test_parse_time_only_walk_dog_in_10_is_minutes():
+    from datetime import datetime, timezone
+    with patch("claude_svc._ask_json", side_effect=AssertionError("should not hit LLM")):
+        dt = claude_svc.parse_time_only("walk dog in 10")
+    mins = (dt - datetime.now(timezone.utc)).total_seconds() / 60
+    assert 9 <= mins <= 11
+
+
+def test_parse_time_only_at_10_is_clock_not_minutes():
+    from datetime import datetime, timezone
+    with patch("claude_svc._ask_json", side_effect=AssertionError("should not hit LLM")):
+        dt = claude_svc.parse_time_only("at 10")
+    # 10:00 IST = 04:30 UTC; minute field is 30 (clock), not ~10 min from now
+    assert dt.astimezone(timezone.utc).minute == 30

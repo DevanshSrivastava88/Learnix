@@ -635,6 +635,19 @@ def parse_time_only(text: str, day_offset: int = None):
         elif target <= now_ist:
             target += timedelta(days=1)
         return target.astimezone(timezone.utc)
+    # Deterministic in/at guard — the model flips "in 10" (minutes) and "at 10"
+    # (clock). Handle explicit preposition+number ourselves before asking it.
+    _mins, _hhmm, _kind = _time_from_preposition(text)
+    if _kind == "in" and _mins:
+        return datetime.now(timezone.utc) + timedelta(minutes=_mins)
+    if _kind == "at" and _hhmm:
+        h, mm = map(int, _hhmm.split(":"))
+        target = now_ist.replace(hour=h, minute=mm, second=0, microsecond=0)
+        if day_offset:
+            target += timedelta(days=int(day_offset))
+        elif target <= now_ist:
+            target += timedelta(days=1)
+        return target.astimezone(timezone.utc)
     now_str = now_ist.strftime("%Y-%m-%d %H:%M %p IST (%A)")
     result = _ask_json(
         f'Current time: {now_str} (IST = UTC+5:30)\n'
