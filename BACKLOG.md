@@ -23,10 +23,14 @@ _Auto-agent: enabled_
 
 ## 🎯 Motivation engine 10x — remaining increments
 
-**Increment 2 (next):** Memory-of-what-works — add outcome tracking to `motivation_log` (did
-the user re-engage within 24h of a nudge? needs a migration adding a column) + **comeback
-celebration** trigger (anti-AVE: returning after a 2+ day gap / rebuilding a streak = a moment).
-Then bias future tone toward what landed.
+**Increment 2a — comeback celebration: DONE (35c47e4d), DEPLOYED.** `comeback` trigger (top
+priority, daytime 09-20) fires when the user returns today after a 2+ day absence; celebrates
+zero-guilt + weaves in rebuilding streak/wins. Live-verified message vs real LLM. Also fixed
+`_recent_wins` case-insensitive dedupe. 247 unit tests.
+
+**Increment 2b (next, NEEDS MIGRATION):** Memory-of-what-works — add outcome tracking to
+`motivation_log` (did the user re-engage within 24h of a nudge? needs a migration adding a
+nullable column, e.g. `reengaged boolean`). Then bias future tone toward what landed.
 **Parked (memory `project_learnix_motivation_10x.md`):** #4 adaptive timing, full #6 pattern
 engine, #8 sentiment read, Exocortex crisis classifier (safety — fold in soon).
 
