@@ -52,8 +52,12 @@ failing" → struggle support (no false trigger). 24 cases, 276 tests.
   learned active-hour band (`_active_hours`, ~7h around their busiest interaction hour).
   Live: `/adaptive` toggle round-trips; `_active_hours` learned [0-4 IST] from real data.
 
-**Parked (memory `project_learnix_motivation_10x.md`):** #8 sentiment read (only remaining extra).
-(#4 adaptive timing, #6 pattern engine — DONE.)
+- [x] **Sentiment/mood read (#8)** — DONE (c26f4648), DEPLOYED + LIVE-VERIFIED. Mood-mirroring folded
+  into the general-chat LLM call (LLM-first, no regex): soften when down, match energy when hyped,
+  acknowledge-then-lift when frustrated. Live: "feeling low" → gentle; "lets gooo" → matched hype.
+
+**✅ ALL 8 motivation 10x directions DONE** — specifics+identity, memory-of-what-works, adaptive
+timing, comeback, pattern-insight, right-sized offers (in struggle), persona+mood, + crisis safety.
 
 ### Original 10x reference
 
