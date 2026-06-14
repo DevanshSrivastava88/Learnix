@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
-import { api, type Task } from "./api";
+import { api, AuthError, type Task } from "./api";
 
 const PROMPTS = [
   "one small win still counts.",
@@ -10,13 +10,118 @@ const PROMPTS = [
   "do the next thing. only that.",
 ];
 
+const BOT = "@Quest3131Bot";
+
 function todayLabel() {
   return new Date()
     .toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })
     .toUpperCase();
 }
 
+// ───────────────────────────────────────────────────────────────────────────
+// Auth gate
+// ───────────────────────────────────────────────────────────────────────────
 export default function App() {
+  const [authed, setAuthed] = useState<boolean | null>(null); // null = checking
+
+  useEffect(() => {
+    api.me().then(() => setAuthed(true)).catch(() => setAuthed(false));
+  }, []);
+
+  if (authed === null) {
+    return (
+      <div className="relative z-10 grid min-h-full place-items-center">
+        <p className="font-mono text-sm text-muted">
+          <span className="text-acid">&gt;</span> connecting…
+        </p>
+      </div>
+    );
+  }
+  if (!authed) return <Login onSuccess={() => setAuthed(true)} />;
+  return <TaskApp onLogout={() => setAuthed(false)} />;
+}
+
+function Login({ onSuccess }: { onSuccess: () => void }) {
+  const [code, setCode] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function verify() {
+    const c = code.trim();
+    if (!c) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      await api.verify(c);
+      onSuccess();
+    } catch (e) {
+      setErr(e instanceof AuthError ? "Invalid or expired code." : String(e));
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="relative z-10 mx-auto flex min-h-full max-w-md flex-col justify-center px-6 py-16">
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+      >
+        <div className="mb-8 flex items-center gap-3">
+          <span className="grid h-10 w-10 place-items-center rounded-[10px] border border-acid/40 bg-acid/[0.08] font-mono text-base text-acid">
+            LX
+          </span>
+          <div className="leading-none">
+            <p className="font-mono text-xs tracking-[0.22em] text-text">LEARNIX</p>
+            <p className="mt-1 font-mono text-[8px] tracking-[0.18em] text-muted">SECURE ACCESS</p>
+          </div>
+        </div>
+
+        <h1 className="font-sans text-4xl font-extrabold tracking-[-0.03em] text-text">
+          Log in
+        </h1>
+        <p className="mt-3 font-mono text-sm leading-relaxed text-muted">
+          No passwords. Get a one-time code from the bot:
+        </p>
+
+        <ol className="mt-4 space-y-2 font-mono text-sm text-muted">
+          <li><span className="text-acid">1.</span> Open Telegram → <span className="text-text">{BOT}</span></li>
+          <li><span className="text-acid">2.</span> Send <span className="text-text">/weblogin</span></li>
+          <li><span className="text-acid">3.</span> Enter the code below</li>
+        </ol>
+
+        <input
+          value={code}
+          onChange={(e) => setCode(e.target.value.toUpperCase())}
+          onKeyDown={(e) => e.key === "Enter" && verify()}
+          placeholder="CODE"
+          maxLength={6}
+          autoFocus
+          className="mt-6 w-full rounded-xl border border-white/10 bg-panel px-4 py-3 text-center font-mono text-2xl tracking-[0.4em] text-text placeholder:tracking-normal placeholder:text-muted-deep focus:border-acid/40 focus:outline-none"
+        />
+
+        <button
+          onClick={verify}
+          disabled={busy || !code.trim()}
+          className="mt-3 w-full rounded-xl bg-acid py-3 font-sans text-base font-bold text-bg transition hover:brightness-110 active:scale-[0.98] disabled:opacity-40"
+        >
+          {busy ? "checking…" : "Enter"}
+        </button>
+
+        {err && (
+          <p className="mt-4 rounded-xl border border-red/30 bg-red/[0.08] px-4 py-3 font-mono text-xs text-red">
+            ! {err}
+          </p>
+        )}
+      </motion.div>
+    </div>
+  );
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Task app
+// ───────────────────────────────────────────────────────────────────────────
+function TaskApp({ onLogout }: { onLogout: () => void }) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -24,11 +129,17 @@ export default function App() {
   const inputRef = useRef<HTMLInputElement>(null);
   const prompt = useMemo(() => PROMPTS[Math.floor(Math.random() * PROMPTS.length)], []);
 
+  // any 401 from the API → session gone, bounce to login
+  const guard = (e: unknown) => {
+    if (e instanceof AuthError) onLogout();
+    else setError(String(e));
+  };
+
   useEffect(() => {
     api
       .list()
       .then((r) => setTasks([...r.active, ...r.completed]))
-      .catch((e) => setError(String(e)))
+      .catch(guard)
       .finally(() => setLoading(false));
   }, []);
 
@@ -49,7 +160,7 @@ export default function App() {
       setTasks((prev) => prev.map((t) => (t.id === temp.id ? real : t)));
     } catch (e) {
       setTasks((prev) => prev.filter((t) => t.id !== temp.id));
-      setError(String(e));
+      guard(e);
     }
   }
 
@@ -60,7 +171,7 @@ export default function App() {
       await api.setStatus(task.id, next);
     } catch (e) {
       setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, status: task.status } : t)));
-      setError(String(e));
+      guard(e);
     }
   }
 
@@ -71,13 +182,17 @@ export default function App() {
       await api.remove(task.id);
     } catch (e) {
       setTasks(snapshot);
-      setError(String(e));
+      guard(e);
     }
+  }
+
+  async function doLogout() {
+    try { await api.logout(); } catch { /* ignore */ }
+    onLogout();
   }
 
   return (
     <div className="relative z-10 mx-auto flex min-h-full max-w-2xl flex-col px-6 pb-24 pt-12 sm:pt-16">
-      {/* brand bar */}
       <motion.div
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
@@ -93,13 +208,14 @@ export default function App() {
             <p className="mt-1 font-mono text-[8px] tracking-[0.18em] text-muted">TASK PROTOCOL</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <span className="h-[7px] w-[7px] rounded-full bg-acid shadow-glow" />
-          <span className="font-mono text-[9px] tracking-[0.16em] text-muted">SYSTEM ONLINE</span>
-        </div>
+        <button
+          onClick={doLogout}
+          className="font-mono text-[9px] tracking-[0.16em] text-muted transition hover:text-red"
+        >
+          LOG OUT
+        </button>
       </motion.div>
 
-      {/* header */}
       <motion.header
         initial={{ opacity: 0, y: -8 }}
         animate={{ opacity: 1, y: 0 }}
@@ -118,9 +234,7 @@ export default function App() {
           <div className="mt-7">
             <div className="mb-2 flex items-center justify-between font-mono text-[9px] tracking-[0.16em] text-muted">
               <span>PROGRESS</span>
-              <span className="text-text">
-                {doneCount}/{total} CLEARED · {pct}%
-              </span>
+              <span className="text-text">{doneCount}/{total} CLEARED · {pct}%</span>
             </div>
             <div className="h-2 overflow-hidden rounded-full border border-white/10 bg-panel">
               <motion.div
@@ -134,7 +248,6 @@ export default function App() {
         )}
       </motion.header>
 
-      {/* composer */}
       <motion.div
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
@@ -158,7 +271,6 @@ export default function App() {
         </button>
       </motion.div>
 
-      {/* body */}
       <div className="mt-9 flex-1">
         {loading && (
           <p className="font-mono text-sm text-muted">
@@ -220,7 +332,7 @@ export default function App() {
       </div>
 
       <footer className="mt-12 text-center font-mono text-[9px] uppercase tracking-[0.28em] text-muted-deep">
-        learnix · single operator
+        learnix · your tasks
       </footer>
     </div>
   );
@@ -265,22 +377,11 @@ function Row({
           animate={{ scale: done ? 1 : 0, opacity: done ? 1 : 0 }}
           transition={{ type: "spring", stiffness: 500, damping: 24 }}
         >
-          <path
-            d="M5 12.5l4 4 10-10"
-            fill="none"
-            stroke="#080a0d"
-            strokeWidth="3.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
+          <path d="M5 12.5l4 4 10-10" fill="none" stroke="#080a0d" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" />
         </motion.svg>
       </button>
 
-      <span
-        className={`strike flex-1 font-sans text-base leading-snug transition-colors ${
-          done ? "on font-medium text-muted" : "text-text"
-        }`}
-      >
+      <span className={`strike flex-1 font-sans text-base leading-snug transition-colors ${done ? "on font-medium text-muted" : "text-text"}`}>
         {task.title}
       </span>
 

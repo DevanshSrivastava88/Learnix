@@ -1919,7 +1919,8 @@ async def cmd_info(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         "/settime — Daily study session time\n"
         "/seteod — Evening check-in time\n"
         "/twilio on|off — Missed call notifications\n"
-        "/adaptive on|off — Smart nudge timing (your active hours)\n\n"
+        "/adaptive on|off — Smart nudge timing (your active hours)\n"
+        "/weblogin — Get a code to open your tasks on the web\n\n"
 
         "━━━━━━━━━━━━━━━━━━\n"
         "🗑 *DATA*\n"
@@ -2014,6 +2015,39 @@ async def cmd_adaptive(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
             "Try <code>/adaptive on</code> or <code>/adaptive off</code>.",
             parse_mode="HTML",
         )
+
+
+WEB_URL = "https://learnix-web-production.up.railway.app"
+_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # no ambiguous 0/O/1/I
+
+
+async def cmd_weblogin(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    """Mint a one-time code to log in on the Learnix web app. The code is tied to
+    this user_id, so the web never has to ask who you are."""
+    import secrets
+    from datetime import datetime, timezone, timedelta
+    from supabase_svc import get_client
+
+    uid = update.effective_user.id
+    code = "".join(secrets.choice(_CODE_ALPHABET) for _ in range(6))
+    expires = (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat()
+    try:
+        client = get_client()
+        # clear this user's old unused codes, then store the fresh one
+        client.table("web_login_codes").delete().eq("user_id", uid).eq("used", False).execute()
+        client.table("web_login_codes").insert(
+            {"code": code, "user_id": uid, "expires_at": expires}
+        ).execute()
+    except Exception as e:
+        logger.error(f"weblogin code store failed for {uid}: {e}")
+        await update.message.reply_text("Couldn't generate a code right now — try again in a sec.")
+        return
+
+    await update.message.reply_text(
+        f"🔐 Your web login code:\n\n<code>{code}</code>\n\n"
+        f"Enter it at {WEB_URL} — expires in 10 minutes. Don't share it.",
+        parse_mode="HTML",
+    )
 
 
 async def cmd_twilio(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
@@ -2458,6 +2492,7 @@ def main() -> None:
     app.add_handler(CommandHandler("clear", cmd_clear))
     app.add_handler(CommandHandler("twilio", cmd_twilio))
     app.add_handler(CommandHandler("adaptive", cmd_adaptive))
+    app.add_handler(CommandHandler("weblogin", cmd_weblogin))
     async def _global_cancel(u, c):
         uid = u.effective_user.id
         # If user is mid-quiz, clean up quiz state
