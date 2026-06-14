@@ -62,7 +62,7 @@ engine, #8 sentiment read, Exocortex crisis classifier (safety — fold in soon)
 - [ ] **Remove dead code** — classify_intent + parse_task in claude_svc.py are now only used by /newtask conversation flow + tests; skip_time_parser only by legacy time_str path. Consolidate later.
 - [ ] **Test new features live** — skip flow, /timesheet, /skipgraph in Telegram
 - [x] **Fix "Cancel" pre-check bug** — bare "Cancel" text gets Gemini-classified as a task; needs string check before hitting Gemini in `handle_free_text`
-- [ ] **Deploy to Railway** — still failing: "Failed to read app source directory" from nixpacks. Railway incident not resolved. Retry later.
+- [x] **Deploy to Railway** — RESOLVED. Bot deploys via `railway up --service learnix-bot --ci` from `bot/` (NOT git push — no auto-deploy). Web app live as separate `learnix-web` service. Both online 2026-06-15.
 - [x] **Twilio missed call feature** — optional per-user toggle (on/off via /settings). Use Twilio creds from talking-agent project. User number: +918004844144
 
 ## 📋 Short-term
@@ -95,8 +95,8 @@ engine, #8 sentiment read, Exocortex crisis classifier (safety — fold in soon)
   Commits 5f84c667, ce608a20. (3 increments shipped + live-verified.)
 
 ## 🔜 Next
-- **"delete my X goal" NL bug** — manage_goal name extraction mangles goal name; apply
-  strip-prefix like task titles.
+- [x] **"delete my X goal" NL bug** — FIXED (de3f0dfb): strip leading manage verb in
+  `extract_goal_name_from_message` (mirrors task-title strip). 7 unit tests. Needs live deploy+test.
 - **Study E2E**: verify full quiz completion advances day + marks topic done in a live run
   (unit-covered; header/lesson live-verified).
 - **Phase 2 web dashboard** (Next.js).
