@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
 import { api, AuthError, type Task, type Stats, type DayCell } from "./api";
+import FocusTimer from "./FocusTimer";
 
 const PROMPTS = [
   "one small win still counts.",
@@ -129,8 +130,27 @@ function TaskApp({ onLogout }: { onLogout: () => void }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  const [adhd, setAdhd] = useState(() => localStorage.getItem("learnix_adhd") === "1");
+  const [focusTask, setFocusTask] = useState<Task | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const prompt = useMemo(() => PROMPTS[Math.floor(Math.random() * PROMPTS.length)], []);
+
+  function toggleAdhd() {
+    setAdhd((v) => {
+      localStorage.setItem("learnix_adhd", v ? "0" : "1");
+      return !v;
+    });
+  }
+
+  async function completeFromFocus(task: Task) {
+    setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, status: "completed" } : t)));
+    setFocusTask(null);
+    try {
+      await api.setStatus(task.id, "completed");
+    } catch (e) {
+      guard(e);
+    }
+  }
 
   // any 401 from the API → session gone, bounce to login
   const guard = (e: unknown) => {
@@ -199,6 +219,16 @@ function TaskApp({ onLogout }: { onLogout: () => void }) {
 
   return (
     <div className="relative z-10 mx-auto flex min-h-full max-w-2xl flex-col px-6 pb-24 pt-12 sm:pt-16">
+      <AnimatePresence>
+        {focusTask && (
+          <FocusTimer
+            task={focusTask}
+            onComplete={completeFromFocus}
+            onExit={() => setFocusTask(null)}
+          />
+        )}
+      </AnimatePresence>
+
       <motion.div
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
@@ -214,12 +244,24 @@ function TaskApp({ onLogout }: { onLogout: () => void }) {
             <p className="mt-1 font-mono text-[8px] tracking-[0.18em] text-muted">TASK PROTOCOL</p>
           </div>
         </div>
-        <button
-          onClick={doLogout}
-          className="font-mono text-[9px] tracking-[0.16em] text-muted transition hover:text-red"
-        >
-          LOG OUT
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={toggleAdhd}
+            title="Focus mode — adds a ▶ to each task"
+            className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-mono text-[9px] tracking-[0.14em] transition ${
+              adhd ? "border-acid/50 bg-acid/10 text-acid" : "border-white/10 text-muted hover:text-text"
+            }`}
+          >
+            <span className={`h-1.5 w-1.5 rounded-full ${adhd ? "bg-acid shadow-glow" : "bg-muted"}`} />
+            FIX ADHD
+          </button>
+          <button
+            onClick={doLogout}
+            className="font-mono text-[9px] tracking-[0.16em] text-muted transition hover:text-red"
+          >
+            LOG OUT
+          </button>
+        </div>
       </motion.div>
 
       <motion.header
@@ -302,7 +344,14 @@ function TaskApp({ onLogout }: { onLogout: () => void }) {
             <ul className="space-y-2">
               <AnimatePresence initial={false}>
                 {active.map((t, i) => (
-                  <Row key={t.id} task={t} index={i} onToggle={toggle} onRemove={remove} />
+                  <Row
+                    key={t.id}
+                    task={t}
+                    index={i}
+                    onToggle={toggle}
+                    onRemove={remove}
+                    onPlay={adhd ? setFocusTask : undefined}
+                  />
                 ))}
               </AnimatePresence>
             </ul>
@@ -444,11 +493,13 @@ function Row({
   index,
   onToggle,
   onRemove,
+  onPlay,
 }: {
   task: Task;
   index: number;
   onToggle: (t: Task) => void;
   onRemove: (t: Task) => void;
+  onPlay?: (t: Task) => void;
 }) {
   const done = task.status === "completed";
   const badge = TYPE_BADGE[task.type];
@@ -502,6 +553,16 @@ function Row({
         )}
       </div>
 
+      {onPlay && (
+        <button
+          onClick={() => onPlay(task)}
+          aria-label="focus on task"
+          title="Focus"
+          className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-acid/40 bg-acid/10 text-[11px] text-acid transition hover:bg-acid hover:text-bg"
+        >
+          ▶
+        </button>
+      )}
       <button
         onClick={() => onRemove(task)}
         aria-label="delete task"
