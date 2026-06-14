@@ -219,6 +219,43 @@ def classify_intent(text: str, context: str = "") -> str:
     return "chat"
 
 
+def _time_from_preposition(text: str):
+    """Deterministic override for the two patterns the LLM keeps confusing:
+      "in N [unit]"  → RELATIVE  → minutes   ("in 10" = 10 min, "in 2 hours" = 120)
+      "at N[:MM] am/pm" → ABSOLUTE → clock   ("at 10" = 10:00, "at 8pm" = 20:00)
+    Returns (minutes|None, "HH:MM"|None, kind) where kind is "in" | "at" | None.
+    Only fires on an explicit preposition+number; otherwise the LLM value stands."""
+    t = (text or "").lower()
+
+    # relative: "in 30", "in 30 mins", "in 2 hours", "in an hour", "in half an hour"
+    m = re.search(r"\bin\s+(half\s+an?\s+hour|an?\s+hour|\d+\s*(?:hours?|hrs?|h|minutes?|mins?|m)?)\b", t)
+    if m:
+        frag = m.group(1).strip()
+        if "half" in frag:
+            return 30, None, "in"
+        if frag in ("a hour", "an hour"):
+            return 60, None, "in"
+        num = re.search(r"\d+", frag)
+        if num:
+            n = int(num.group())
+            if re.search(r"hours?|hrs?|\bh\b", frag):
+                return n * 60, None, "in"
+            return n, None, "in"  # bare "in 10" or "in 10 mins" → minutes
+
+    # absolute: "at 10", "at 10:30", "at 10pm", "at 8 am"
+    m = re.search(r"\bat\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b", t)
+    if m:
+        h, mm, ap = int(m.group(1)), int(m.group(2) or 0), m.group(3)
+        if ap == "pm" and h != 12:
+            h += 12
+        elif ap == "am" and h == 12:
+            h = 0
+        if 0 <= h <= 23 and 0 <= mm <= 59:
+            return None, f"{h:02d}:{mm:02d}", "at"
+
+    return None, None, None
+
+
 def understand_message(text: str, context: str = "") -> dict:
     """Single LLM call: classify intent AND extract task fields in one shot.
     Returns {"intent": str, "task": dict|None}.
@@ -323,6 +360,14 @@ def understand_message(text: str, context: str = "") -> dict:
             task_ref = str(task["title"]).strip()
         extra = result.get("extra_tasks")
         extra = [t for t in extra if isinstance(t, dict) and t.get("title")] if isinstance(extra, list) else []
+        # Deterministic guard: the model flips "at N" (clock) and "in N" (minutes).
+        # When the message states one explicitly, override the model's guess.
+        if intent == "task" and isinstance(task, dict):
+            mins, hhmm, kind = _time_from_preposition(text)
+            if kind == "in":
+                task["time_minutes"], task["time_hhmm"], task["day_offset"] = mins, None, None
+            elif kind == "at":
+                task["time_hhmm"], task["time_minutes"] = hhmm, None
         return {"intent": intent, "task": task, "task_ref": task_ref, "extra_tasks": extra}
     return {"intent": "chat", "task": None, "task_ref": "", "extra_tasks": []}
 
