@@ -10,11 +10,16 @@ _Auto-agent: enabled_
   persona; best-effort, never raises). Rewired `generate_motivation_message` +
   `generate_struggle_support` → real specifics + identity framing. Grounded in Exocortex
   (`D:\Projects\moto_moto`) research. 16 new tests, 217 green. Commit f99c24f2.
-- **Web UI — cute cross-out task list** (`web/`) — FastAPI over `bot/tasks/svc.py` (own venv) +
-  Vite/React/TS/Tailwind/Motion, warm-paper aesthetic, hand-drawn strikethrough. Single user
-  (`LEARNIX_WEB_UID`). Same Supabase data. Verified live add→cross-out→delete. Commit 71a71588.
-  Run: `web/run.ps1` (or README). **Next polish ideas:** habit/study type badges, due-date chips,
-  drag-reorder, dark mode toggle, deploy (Railway/Vercel static + API).
+- **Web UI — cute cross-out task list** (`web/`) — FastAPI over `bot/tasks/svc.py` +
+  Vite/React/TS/Tailwind/Motion. **Restyled to Exocortex dark HUD** (acid-green #c7ff38, DM Mono +
+  Manrope, grid bg, acid strikethrough). Single user (`LEARNIX_WEB_UID`). Same Supabase data.
+  Commits 71a71588, fb6c9e18.
+- **Web UI DEPLOYED LIVE** → https://learnix-web-production.up.railway.app — own Railway service
+  `learnix-web` (isolated from the bot), single Docker image (FastAPI serves built React + /api).
+  Set on the service: `RAILWAY_DOCKERFILE_PATH=web/Dockerfile`, SUPABASE_URL/KEY, LEARNIX_WEB_UID.
+  Redeploy: `railway up --service learnix-web --ci` from repo root. Commits f06cac6a, ab852d00.
+  **Next polish ideas:** habit/study type badges, due-date chips, drag-reorder, auth (it's
+  currently public + single-uid — anyone with the URL sees the tasks).
 
 ## 🎯 Motivation engine 10x — remaining increments
 
