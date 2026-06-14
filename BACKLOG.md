@@ -46,8 +46,14 @@ comeback + memory-of-what-works).**
 classifier runs first on free text; ideation → static vetted card (KIRAN/Vandrevala/AASRA/iCall +
 112), LLM suppressed, event logged. Tuned against idioms. Live: "kill myself" → card, "i keep
 failing" → struggle support (no false trigger). 24 cases, 276 tests.
-**Parked (memory `project_learnix_motivation_10x.md`):** #4 adaptive timing, #8 sentiment read.
-(#6 pattern engine — DONE, see above.)
+- [x] **Adaptive timing (#4) — OPTIONAL, opt-in** — DONE (86febb6b), DEPLOYED + LIVE-VERIFIED.
+  Migration 013 (`settings.adaptive_timing`, default false). Off = fixed research windows
+  (unchanged). On (`/adaptive on`) = triggers fire by condition, delivery gated to the user's
+  learned active-hour band (`_active_hours`, ~7h around their busiest interaction hour).
+  Live: `/adaptive` toggle round-trips; `_active_hours` learned [0-4 IST] from real data.
+
+**Parked (memory `project_learnix_motivation_10x.md`):** #8 sentiment read (only remaining extra).
+(#4 adaptive timing, #6 pattern engine — DONE.)
 
 ### Original 10x reference
 
