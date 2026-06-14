@@ -16,10 +16,14 @@ _Auto-agent: enabled_
   Commits 71a71588, fb6c9e18.
 - **Web UI DEPLOYED LIVE** → https://learnix-web-production.up.railway.app — own Railway service
   `learnix-web` (isolated from the bot), single Docker image (FastAPI serves built React + /api).
-  Set on the service: `RAILWAY_DOCKERFILE_PATH=web/Dockerfile`, SUPABASE_URL/KEY, LEARNIX_WEB_UID.
-  Redeploy: `railway up --service learnix-web --ci` from repo root. Commits f06cac6a, ab852d00.
-  **Next polish ideas:** habit/study type badges, due-date chips, drag-reorder, auth (it's
-  currently public + single-uid — anyone with the URL sees the tasks).
+  Service vars: `RAILWAY_DOCKERFILE_PATH=web/Dockerfile`, SUPABASE_URL/KEY, SESSION_SECRET.
+  Redeploy: `railway up --service learnix-web --ci` from repo root.
+- [x] **Multi-user auth (Telegram bot-code login)** — DONE (c3f41271), DEPLOYED + LIVE-VERIFIED.
+  `/weblogin` (bot) → one-time code (migration 014 `web_login_codes`, 10-min, single-use) → DM →
+  web `/api/auth/verify` → HMAC-signed session cookie (30d) → tasks scoped per user_id (no more
+  hardcoded uid). E2E: code P5UHKZ → verify → /api/me → /api/tasks all 200; /api/tasks 401 without
+  session (public gap CLOSED). Login screen renders. **Next web polish:** type badges, due-date
+  chips, drag-reorder.
 
 ## 🎯 Motivation engine 10x — remaining increments
 
