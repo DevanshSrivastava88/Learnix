@@ -28,9 +28,17 @@ priority, daytime 09-20) fires when the user returns today after a 2+ day absenc
 zero-guilt + weaves in rebuilding streak/wins. Live-verified message vs real LLM. Also fixed
 `_recent_wins` case-insensitive dedupe. 247 unit tests.
 
-**Increment 2b (next, NEEDS MIGRATION):** Memory-of-what-works — add outcome tracking to
-`motivation_log` (did the user re-engage within 24h of a nudge? needs a migration adding a
-nullable column, e.g. `reengaged boolean`). Then bias future tone toward what landed.
+**Increment 2b — memory-of-what-works: DONE (21866cdc), DEPLOYED + LIVE-VERIFIED.** Migration 012
+added `motivation_log.reengaged` (via Mgmt API). `_score_recent_outcomes` marks reengaged once the
+24h window closes (did they complete a habit/study after the nudge?); `_responds_to` surfaces the
+best-performing trigger style into the prompt. Live: rows already scored (6 false / 1 true / 3
+pending). 8 tests, 255 green. **→ Motivation 10x core is now complete (specifics + identity +
+comeback + memory-of-what-works).**
+
+- [ ] **Cleanup junk test users in settings** — user_ids 5/42/99 are stale test artifacts; the
+  motivation_poller wastes a send on each every cycle ("Chat not found" log spam). Safe to delete
+  (`delete from settings where user_id in (5,42,99)` + related rows) — flagged, not auto-deleted
+  (prod data deletion).
 **Parked (memory `project_learnix_motivation_10x.md`):** #4 adaptive timing, full #6 pattern
 engine, #8 sentiment read, Exocortex crisis classifier (safety — fold in soon).
 
