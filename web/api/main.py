@@ -244,6 +244,56 @@ def remove(task_id: str, uid: int = Depends(get_current_uid)):
     return {"ok": True}
 
 
+@app.get("/api/stats")
+def stats(uid: int = Depends(get_current_uid)):
+    from datetime import date, timedelta
+    c = get_client()
+
+    srow = c.table("settings").select("streak").eq("user_id", uid).limit(1).execute().data
+    streak = (srow[0].get("streak") if srow else 0) or 0
+
+    since = (date.today() - timedelta(days=6)).isoformat()
+    done = (c.table("activity_log").select("id", count="exact").eq("user_id", uid)
+            .in_("event_type", ["habit", "study", "milestone"]).gte("event_date", since).execute().count) or 0
+    skips = (c.table("task_skips").select("id", count="exact").eq("user_id", uid)
+             .gte("skipped_at", since + "T00:00:00+00:00").execute().count) or 0
+    rate = round(100 * done / (done + skips)) if (done + skips) else 0
+    cleared = (c.table("tasks").select("id", count="exact").eq("user_id", uid)
+               .eq("status", "completed").execute().count) or 0
+    return {"streak": int(streak), "week_done": done, "week_rate": rate, "cleared": cleared}
+
+
+@app.get("/api/activity")
+def activity(uid: int = Depends(get_current_uid), days: int = 21):
+    from datetime import date, datetime as _dt, timedelta, timezone
+    ist = timezone(timedelta(hours=5, minutes=30))  # IST, no DST
+    c = get_client()
+    days = max(7, min(days, 60))
+    since = (date.today() - timedelta(days=days - 1)).isoformat()
+
+    done_rows = (c.table("activity_log").select("event_date").eq("user_id", uid)
+                 .in_("event_type", ["habit", "study", "milestone"]).gte("event_date", since).execute().data) or []
+    skip_rows = (c.table("task_skips").select("skipped_at").eq("user_id", uid)
+                 .gte("skipped_at", since + "T00:00:00+00:00").execute().data) or []
+
+    done_by, skip_by = {}, {}
+    for r in done_rows:
+        d = str(r.get("event_date"))
+        done_by[d] = done_by.get(d, 0) + 1
+    for r in skip_rows:
+        try:
+            d = _dt.fromisoformat(r["skipped_at"]).astimezone(ist).date().isoformat()
+        except Exception:
+            continue
+        skip_by[d] = skip_by.get(d, 0) + 1
+
+    out = []
+    for i in range(days):
+        d = (date.today() - timedelta(days=days - 1 - i)).isoformat()
+        out.append({"date": d, "done": done_by.get(d, 0), "skipped": skip_by.get(d, 0)})
+    return {"days": out}
+
+
 @app.get("/api/health")
 def health():
     return {"ok": True}

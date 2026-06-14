@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
-import { api, AuthError, type Task } from "./api";
+import { api, AuthError, type Task, type Stats, type DayCell } from "./api";
 
 const PROMPTS = [
   "one small win still counts.",
@@ -124,6 +124,8 @@ function Login({ onSuccess }: { onSuccess: () => void }) {
 // ───────────────────────────────────────────────────────────────────────────
 function TaskApp({ onLogout }: { onLogout: () => void }) {
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [stats, setStats] = useState<Stats | null>(null);
+  const [activity, setActivity] = useState<DayCell[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
@@ -142,6 +144,9 @@ function TaskApp({ onLogout }: { onLogout: () => void }) {
       .then((r) => setTasks([...r.active, ...r.completed]))
       .catch(guard)
       .finally(() => setLoading(false));
+    // dashboard data — best-effort, never blocks the task list
+    api.stats().then(setStats).catch(() => {});
+    api.activity().then((r) => setActivity(r.days)).catch(() => {});
   }, []);
 
   const active = tasks.filter((t) => t.status === "active");
@@ -249,6 +254,9 @@ function TaskApp({ onLogout }: { onLogout: () => void }) {
         )}
       </motion.header>
 
+      {stats && <StatsStrip stats={stats} />}
+      {activity.some((d) => d.done || d.skipped) && <ActivityChart days={activity} />}
+
       <motion.div
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
@@ -342,6 +350,71 @@ function TaskApp({ onLogout }: { onLogout: () => void }) {
         learnix · your tasks
       </footer>
     </div>
+  );
+}
+
+function StatsStrip({ stats }: { stats: Stats }) {
+  const cards = [
+    { v: `${stats.streak}`, sub: "DAY STREAK", icon: "🔥" },
+    { v: `${stats.week_rate}%`, sub: "THIS WEEK", icon: "✓" },
+    { v: `${stats.cleared}`, sub: "CLEARED", icon: "◇" },
+  ];
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: 0.14, duration: 0.5 }}
+      className="mt-6 grid grid-cols-3 gap-2"
+    >
+      {cards.map((c) => (
+        <div key={c.sub} className="rounded-xl border border-white/10 bg-panel px-3 py-3">
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-sm">{c.icon}</span>
+            <span className="font-sans text-2xl font-extrabold tracking-tight text-text">{c.v}</span>
+          </div>
+          <p className="mt-1 font-mono text-[8px] tracking-[0.16em] text-muted">{c.sub}</p>
+        </div>
+      ))}
+    </motion.div>
+  );
+}
+
+function ActivityChart({ days }: { days: DayCell[] }) {
+  const max = Math.max(1, ...days.map((d) => d.done));
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: 0.2, duration: 0.5 }}
+      className="mt-3 rounded-xl border border-white/10 bg-panel px-4 py-3"
+    >
+      <div className="mb-2 flex items-center justify-between">
+        <span className="font-mono text-[9px] tracking-[0.16em] text-muted">LAST {days.length} DAYS</span>
+        <span className="font-mono text-[8px] tracking-[0.14em] text-muted-deep">
+          <span className="text-acid">▌</span> done <span className="ml-2 text-red">▌</span> skipped
+        </span>
+      </div>
+      <div className="flex h-16 items-end gap-[3px]">
+        {days.map((d) => {
+          const h = d.done ? Math.max(8, Math.round((d.done / max) * 100)) : 0;
+          return (
+            <div
+              key={d.date}
+              title={`${d.date}: ${d.done} done, ${d.skipped} skipped`}
+              className="flex flex-1 flex-col items-center justify-end gap-[2px]"
+            >
+              {d.done > 0 && (
+                <div className="w-full rounded-sm bg-acid" style={{ height: `${h}%` }} />
+              )}
+              {d.skipped > 0 && <div className="h-[3px] w-full rounded-sm bg-red" />}
+              {d.done === 0 && d.skipped === 0 && (
+                <div className="h-[3px] w-full rounded-sm bg-white/10" />
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </motion.div>
   );
 }
 

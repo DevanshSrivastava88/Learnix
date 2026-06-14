@@ -9,6 +9,8 @@ export type Task = {
 };
 
 export type TasksResponse = { active: Task[]; completed: Task[] };
+export type Stats = { streak: number; week_done: number; week_rate: number; cleared: number };
+export type DayCell = { date: string; done: number; skipped: number };
 
 export class AuthError extends Error {}
 
@@ -31,6 +33,9 @@ export const api = {
     })).then(json),
   logout: (): Promise<{ ok: boolean }> =>
     fetch("/api/logout", opts({ method: "POST" })).then(json),
+
+  stats: (): Promise<Stats> => fetch("/api/stats", opts()).then(json),
+  activity: (): Promise<{ days: DayCell[] }> => fetch("/api/activity", opts()).then(json),
 
   list: (): Promise<TasksResponse> => fetch("/api/tasks", opts()).then(json),
   add: (title: string): Promise<Task> =>
