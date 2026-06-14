@@ -93,3 +93,20 @@ def test_parse_time_only_at_10_is_clock_not_minutes():
         dt = claude_svc.parse_time_only("at 10")
     # 10:00 IST = 04:30 UTC; minute field is 30 (clock), not ~10 min from now
     assert dt.astimezone(timezone.utc).minute == 30
+
+
+# ── _TIME_EXPR must accept TWO-DIGIT at/by hours (the shipped bug) ───────────
+
+@pytest.mark.parametrize("text,matches", [
+    ("feed cat at 10", True),
+    ("feed cat at 5", True),
+    ("task at 12", True),
+    ("meet by 11", True),
+    ("call at 10:30", True),
+    ("remind me in 10", True),
+    ("feed cat", False),       # no time → must NOT match
+    ("just a note", False),
+])
+def test_time_expr_two_digit_at(text, matches):
+    from tasks.handlers import _TIME_EXPR
+    assert bool(_TIME_EXPR.search(text)) is matches

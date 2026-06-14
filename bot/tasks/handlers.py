@@ -24,7 +24,7 @@ NT_DESCRIBE, NT_CONFIRM = range(20, 22)
 # hallucinating a delay_minutes when the message actually gave no time at all.
 _TIME_EXPR = re.compile(
     r'\b(\d{1,2}(:\d{2})?\s*(am|pm)|in\s+\d+|in\s+(an?|a few|half)\b|next\s+hour|'
-    r'half\s+(an\s+)?hour|an\s+hour|at\s+\d|by\s+\d|'
+    r'half\s+(an\s+)?hour|an\s+hour|at\s+\d{1,2}|by\s+\d{1,2}|'
     r'tonight|tomorrow|today|noon|midnight|morning|evening|afternoon|night|'
     r'mon(day)?|tues?(day)?|wed(nesday)?|thur?s?(day)?|fri(day)?|sat(urday)?|sun(day)?)\b',
     re.IGNORECASE,
