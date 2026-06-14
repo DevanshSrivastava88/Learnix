@@ -11,12 +11,24 @@ from pathlib import Path
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 # --- wire in the existing bot package + its env ------------------------------
-BOT_DIR = Path(__file__).resolve().parents[2] / "bot"
+# Local dev: bot/ lives two levels up. Container: a trimmed copy is vendored at
+# api/_bot. Override with LEARNIX_BOT_DIR if needed.
+_HERE = Path(__file__).resolve().parent
+_BOT_CANDIDATES = [
+    Path(os.environ["LEARNIX_BOT_DIR"]) if os.environ.get("LEARNIX_BOT_DIR") else None,
+    _HERE.parents[1] / "bot",
+    _HERE / "_bot",
+]
+BOT_DIR = next((c for c in _BOT_CANDIDATES if c and (c / "tasks" / "svc.py").exists()), None)
+if BOT_DIR is None:
+    raise RuntimeError("Could not locate bot data layer (tasks/svc.py)")
 sys.path.insert(0, str(BOT_DIR))
-load_dotenv(BOT_DIR / ".env")
+load_dotenv(BOT_DIR / ".env")  # no-op in prod; Railway injects env vars directly
 
 import tasks.svc as tasks_svc  # noqa: E402  (path set above)
 
@@ -106,3 +118,24 @@ def remove(task_id: str):
 @app.get("/api/health")
 def health():
     return {"ok": True, "uid": UID}
+
+
+# --- serve the built frontend (single-service deploy) ------------------------
+# Container: dist copied to api/static. Local: fall back to ui/dist if built.
+_STATIC_CANDIDATES = [_HERE / "static", _HERE.parents[0] / "ui" / "dist"]
+STATIC_DIR = next((c for c in _STATIC_CANDIDATES if (c / "index.html").exists()), None)
+
+if STATIC_DIR is not None:
+    app.mount("/assets", StaticFiles(directory=STATIC_DIR / "assets"), name="assets")
+
+    @app.get("/")
+    def _index():
+        return FileResponse(STATIC_DIR / "index.html")
+
+    @app.get("/{path:path}")
+    def _spa(path: str):
+        # serve real files if they exist, otherwise fall back to the SPA shell
+        candidate = STATIC_DIR / path
+        if path and candidate.is_file():
+            return FileResponse(candidate)
+        return FileResponse(STATIC_DIR / "index.html")
