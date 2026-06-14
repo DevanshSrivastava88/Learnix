@@ -274,9 +274,15 @@ function TaskApp({ onLogout }: { onLogout: () => void }) {
 
       <div className="mt-9 flex-1">
         {loading && (
-          <p className="font-mono text-sm text-muted">
-            <span className="text-acid">&gt;</span> loading directives…
-          </p>
+          <ul className="space-y-2">
+            {[0, 1, 2].map((i) => (
+              <li
+                key={i}
+                className="h-[58px] animate-pulse rounded-xl border border-white/5 bg-panel/60"
+                style={{ animationDelay: `${i * 120}ms` }}
+              />
+            ))}
+          </ul>
         )}
 
         {!loading && (
@@ -339,6 +345,27 @@ function TaskApp({ onLogout }: { onLogout: () => void }) {
   );
 }
 
+const TYPE_BADGE: Record<string, { label: string; cls: string }> = {
+  habit: { label: "↻ HABIT", cls: "border-acid/30 text-acid" },
+  study: { label: "✦ STUDY", cls: "border-sky-400/30 text-sky-300" },
+  milestone: { label: "◈ GOAL", cls: "border-fuchsia-400/30 text-fuchsia-300" },
+};
+
+function dueLabel(due?: string | null): string | null {
+  if (!due) return null;
+  const d = new Date(due);
+  if (isNaN(d.getTime())) return null;
+  const now = new Date();
+  const sameDay = d.toDateString() === now.toDateString();
+  const tomorrow = new Date(now);
+  tomorrow.setDate(now.getDate() + 1);
+  const isTomorrow = d.toDateString() === tomorrow.toDateString();
+  const time = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  if (sameDay) return time;
+  if (isTomorrow) return `tmrw ${time}`;
+  return d.toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
 function Row({
   task,
   index,
@@ -351,6 +378,8 @@ function Row({
   onRemove: (t: Task) => void;
 }) {
   const done = task.status === "completed";
+  const badge = TYPE_BADGE[task.type];
+  const due = !done ? dueLabel(task.due) : null;
   return (
     <motion.li
       layout
@@ -382,9 +411,23 @@ function Row({
         </motion.svg>
       </button>
 
-      <span className={`strike flex-1 font-sans text-base leading-snug transition-colors ${done ? "on font-medium text-muted" : "text-text"}`}>
-        {task.title}
-      </span>
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <span className={`strike font-sans text-base leading-snug transition-colors ${done ? "on font-medium text-muted" : "text-text"}`}>
+          {task.title}
+        </span>
+        {(badge || due) && (
+          <div className="flex items-center gap-2">
+            {badge && (
+              <span className={`rounded-full border px-1.5 py-0.5 font-mono text-[8px] tracking-[0.12em] ${badge.cls}`}>
+                {badge.label}
+              </span>
+            )}
+            {due && (
+              <span className="font-mono text-[10px] text-muted-deep">⏰ {due}</span>
+            )}
+          </div>
+        )}
+      </div>
 
       <button
         onClick={() => onRemove(task)}

@@ -134,6 +134,8 @@ def _shape(t: dict) -> dict:
         "title": t.get("title", ""),
         "status": t.get("status", "active"),
         "type": t.get("task_type", "task"),
+        "due": t.get("next_reminder_at"),
+        "recurrence": t.get("recurrence_days"),
         "created_at": t.get("created_at"),
     }
 

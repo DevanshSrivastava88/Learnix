@@ -3,6 +3,8 @@ export type Task = {
   title: string;
   status: "active" | "completed";
   type: string;
+  due?: string | null;
+  recurrence?: number | null;
   created_at?: string;
 };
 

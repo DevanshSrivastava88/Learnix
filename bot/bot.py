@@ -38,6 +38,7 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         f"📅 /schedule — your full day view + plan habit times\n"
         f"📊 /tasks — see everything\n"
         f"📈 /graph — activity graph  |  /skipgraph — skip analytics\n"
+        f"🌐 /weblogin — open your tasks in the browser\n"
         f"⚙️ /settings — tweak reminder times",
         parse_mode=ParseMode.MARKDOWN,
     )
