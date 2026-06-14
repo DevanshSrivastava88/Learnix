@@ -505,7 +505,8 @@ function Row({
       <button
         onClick={() => onRemove(task)}
         aria-label="delete task"
-        className="grid h-6 w-6 shrink-0 place-items-center rounded-md font-mono text-base text-transparent transition hover:bg-white/5 hover:text-red group-hover:text-muted"
+        title="Delete"
+        className="grid h-7 w-7 shrink-0 place-items-center rounded-md border border-white/10 font-mono text-base text-muted transition hover:border-red/40 hover:bg-red/10 hover:text-red"
       >
         ×
       </button>
