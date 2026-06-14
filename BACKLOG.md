@@ -39,8 +39,12 @@ comeback + memory-of-what-works).**
   motivation_poller wastes a send on each every cycle ("Chat not found" log spam). Safe to delete
   (`delete from settings where user_id in (5,42,99)` + related rows) — flagged, not auto-deleted
   (prod data deletion).
+**Crisis safety layer — DONE (60b4c664), DEPLOYED + LIVE-VERIFIED.** Deterministic non-LLM
+classifier runs first on free text; ideation → static vetted card (KIRAN/Vandrevala/AASRA/iCall +
+112), LLM suppressed, event logged. Tuned against idioms. Live: "kill myself" → card, "i keep
+failing" → struggle support (no false trigger). 24 cases, 276 tests.
 **Parked (memory `project_learnix_motivation_10x.md`):** #4 adaptive timing, full #6 pattern
-engine, #8 sentiment read, Exocortex crisis classifier (safety — fold in soon).
+engine, #8 sentiment read.
 
 ### Original 10x reference
 
