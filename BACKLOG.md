@@ -22,8 +22,11 @@ _Auto-agent: enabled_
   `/weblogin` (bot) → one-time code (migration 014 `web_login_codes`, 10-min, single-use) → DM →
   web `/api/auth/verify` → HMAC-signed session cookie (30d) → tasks scoped per user_id (no more
   hardcoded uid). E2E: code P5UHKZ → verify → /api/me → /api/tasks all 200; /api/tasks 401 without
-  session (public gap CLOSED). Login screen renders. **Next web polish:** type badges, due-date
-  chips, drag-reorder.
+  session (public gap CLOSED). Login screen renders.
+- [x] **Web polish pass** — DONE (35b87cf6): type badges (habit/study/goal), due-time chips,
+  LX favicon + title/meta, loading skeleton, 4-digit numeric login + IP rate-limit, /start
+  surfaces /weblogin. Live-verified. **Remaining nice-to-have:** drag-reorder, web habit-done
+  vs task-done distinction, surface streak/study on web.
 
 ## 🎯 Motivation engine 10x — remaining increments
 
