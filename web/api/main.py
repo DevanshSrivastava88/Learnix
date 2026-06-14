@@ -19,12 +19,20 @@ from pydantic import BaseModel
 # Local dev: bot/ lives two levels up. Container: a trimmed copy is vendored at
 # api/_bot. Override with LEARNIX_BOT_DIR if needed.
 _HERE = Path(__file__).resolve().parent
-_BOT_CANDIDATES = [
-    Path(os.environ["LEARNIX_BOT_DIR"]) if os.environ.get("LEARNIX_BOT_DIR") else None,
-    _HERE.parents[1] / "bot",
-    _HERE / "_bot",
-]
-BOT_DIR = next((c for c in _BOT_CANDIDATES if c and (c / "tasks" / "svc.py").exists()), None)
+
+
+def _bot_candidates():
+    cands = []
+    env = os.environ.get("LEARNIX_BOT_DIR")
+    if env:
+        cands.append(Path(env))
+    if len(_HERE.parents) >= 2:           # local dev: web/api -> repo/bot
+        cands.append(_HERE.parents[1] / "bot")
+    cands.append(_HERE / "_bot")          # container fallback
+    return cands
+
+
+BOT_DIR = next((c for c in _bot_candidates() if (c / "tasks" / "svc.py").exists()), None)
 if BOT_DIR is None:
     raise RuntimeError("Could not locate bot data layer (tasks/svc.py)")
 sys.path.insert(0, str(BOT_DIR))

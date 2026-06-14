@@ -1,25 +1,27 @@
 # Single self-contained image for the Learnix web app.
-# Build context = web/ (this folder). Root dir on Railway = web.
-# Nothing here touches the bot service — fully isolated.
+# Build context = REPO ROOT (Railway uploads the whole repo on `up`).
+# Railway: set RAILWAY_DOCKERFILE_PATH=web/Dockerfile on the learnix-web service.
+# Isolated from the bot service (which builds via railpack from bot/).
 
 # --- stage 1: build the React frontend --------------------------------------
 FROM node:20-alpine AS ui
 WORKDIR /ui
-COPY ui/package.json ui/package-lock.json ./
+COPY web/ui/package.json web/ui/package-lock.json ./
 RUN npm ci
-COPY ui/ ./
+COPY web/ui/ ./
 RUN npm run build
 
 # --- stage 2: python API that serves /api + the built frontend --------------
 FROM python:3.11-slim
 WORKDIR /app
 
-COPY api/requirements.txt ./
+COPY web/api/requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY api/main.py ./main.py
-# vendored thin data layer (supabase_svc + tasks pkg) — see web/api/_bot/README
-COPY api/_bot ./_bot
+COPY web/api/main.py ./main.py
+# vendor the thin data layer straight from the live bot/ (no drift)
+COPY bot/supabase_svc.py ./_bot/supabase_svc.py
+COPY bot/tasks ./_bot/tasks
 # built frontend
 COPY --from=ui /ui/dist ./static
 

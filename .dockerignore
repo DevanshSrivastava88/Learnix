@@ -1,0 +1,13 @@
+# Docker-only (the learnix-web service). The bot builds via railpack and ignores this.
+**/node_modules
+**/.venv
+**/dist
+**/__pycache__
+**/*.pyc
+**/.env
+**/*.session
+**/*.session-journal
+.git
+*.log
+.playwright-mcp
+web/api/_bot
