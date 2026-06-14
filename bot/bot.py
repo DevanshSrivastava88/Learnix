@@ -458,6 +458,30 @@ async def _check_and_onboard_new_user(update: Update, ctx: ContextTypes.DEFAULT_
     return True
 
 
+async def _delete_unscheduled_tasks(update: Update) -> None:
+    """Bulk-delete the user's unscheduled tasks — exactly the items shown under
+    'Unscheduled' in /tasks: active, no reminder time, not a habit, not a subtask."""
+    import tasks.svc as _tsvc
+    uid = update.effective_user.id
+    victims = [
+        t for t in _tsvc.list_tasks(uid, status="active")
+        if not t.get("next_reminder_at")
+        and t.get("task_type") != "habit"
+        and " — Step " not in (t.get("title") or "")
+    ]
+    if not victims:
+        await update.message.reply_text("No unscheduled tasks to delete. 👍")
+        return
+    for t in victims:
+        try:
+            _tsvc.delete_task(t["id"])
+        except Exception as e:
+            logger.error(f"delete unscheduled {t.get('id')} failed: {e}")
+    names = ", ".join(t["title"] for t in victims)
+    plural = "s" if len(victims) != 1 else ""
+    await update.message.reply_text(f"🗑 Deleted {len(victims)} unscheduled task{plural}: {names}.")
+
+
 async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     import claude_svc
     from tasks.handlers import _parse_and_respond
@@ -706,6 +730,14 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
                    "I can pause a habit or push your reminders to tomorrow. 💛")
         history.append(f"Bot: [struggle support]")
         await update.message.reply_text(msg)
+        return
+
+    # Bulk delete of unscheduled tasks — deterministic, because the LLM mis-reads
+    # "delete unscheduled tasks" as a task NAMED "unscheduled" (→ disambiguation
+    # loop) or as clear_data (wipe everything).
+    if _re.search(r'\b(delete|remove|clear|wipe|del)\b.{0,20}\bunscheduled\b', text, _re.IGNORECASE):
+        history.append("Bot: [deleted unscheduled tasks]")
+        await _delete_unscheduled_tasks(update)
         return
 
     await update.message.chat.send_action(ChatAction.TYPING)
