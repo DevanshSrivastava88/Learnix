@@ -60,7 +60,9 @@ engine, #8 sentiment read, Exocortex crisis classifier (safety — fold in soon)
 - [ ] **Monitor 70B quota** — understand_message uses llama-3.3-70b-versatile with 8B fallback; if quota exhausts midday, routing quality drops (8B misclassifies). Watch logs for fallback hits.
 - [x] **chat_history table growth** — rows accumulate forever; add periodic cleanup (delete rows older than 7 days)
 - [ ] **Remove dead code** — classify_intent + parse_task in claude_svc.py are now only used by /newtask conversation flow + tests; skip_time_parser only by legacy time_str path. Consolidate later.
-- [ ] **Test new features live** — skip flow, /timesheet, /skipgraph in Telegram
+- [x] **Test new features live** — skip flow + study + goal mgmt + motivation verified live via
+  `test_all.py` (37/37, deployed bot). /timesheet + /skipgraph commands not in the auto-suite yet
+  (skipgraph also needs real skip data — see below).
 - [x] **Fix "Cancel" pre-check bug** — bare "Cancel" text gets Gemini-classified as a task; needs string check before hitting Gemini in `handle_free_text`
 - [x] **Deploy to Railway** — RESOLVED. Bot deploys via `railway up --service learnix-bot --ci` from `bot/` (NOT git push — no auto-deploy). Web app live as separate `learnix-web` service. Both online 2026-06-15.
 - [x] **Twilio missed call feature** — optional per-user toggle (on/off via /settings). Use Twilio creds from talking-agent project. User number: +918004844144
@@ -95,8 +97,8 @@ engine, #8 sentiment read, Exocortex crisis classifier (safety — fold in soon)
   Commits 5f84c667, ce608a20. (3 increments shipped + live-verified.)
 
 ## 🔜 Next
-- [x] **"delete my X goal" NL bug** — FIXED (de3f0dfb): strip leading manage verb in
-  `extract_goal_name_from_message` (mirrors task-title strip). 7 unit tests. Needs live deploy+test.
+- [x] **"delete my X goal" NL bug** — FIXED (de3f0dfb) + DEPLOYED + LIVE-VERIFIED: `test_all.py`
+  goal steps PASS (extract→confirm→deleted, "Calligraphy" clean). 7 unit tests.
 - **Study E2E**: verify full quiz completion advances day + marks topic done in a live run
   (unit-covered; header/lesson live-verified).
 - **Phase 2 web dashboard** (Next.js).
