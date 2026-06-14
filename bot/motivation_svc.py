@@ -131,6 +131,34 @@ def _days_since_any_activity(user_id: int) -> int:
     return (date.today() - max(candidates)).days
 
 
+def _just_came_back(user_id: int) -> bool:
+    """True if the user returned TODAY after a 2+ day absence — i.e. they logged
+    activity today and the previous active day was 3+ days earlier (2+ idle days).
+    This is the cue to CELEBRATE the comeback (anti-shame: reward the return)."""
+    res = (
+        get_client().table("activity_log")
+        .select("event_date")
+        .eq("user_id", user_id)
+        .order("event_date", desc=True)
+        .limit(30)
+        .execute()
+    )
+    seen = []
+    for row in res.data or []:
+        try:
+            d = date.fromisoformat(str(row["event_date"]))
+        except Exception:
+            continue
+        if d not in seen:
+            seen.append(d)
+        if len(seen) >= 2:
+            break
+    if len(seen) < 2:
+        return False
+    latest, prev = seen[0], seen[1]
+    return latest == date.today() and (latest - prev).days >= 3
+
+
 # ---------------------------------------------------------------------------
 # Trigger evaluation — hour-gated, priority-ordered
 # ---------------------------------------------------------------------------
@@ -138,8 +166,10 @@ def _days_since_any_activity(user_id: int) -> int:
 def evaluate_triggers(user_id: int) -> tuple:
     """
     Returns (trigger_type, True) for the first matching trigger, or (None, False).
-    Priority: daily_skip_burst > streak_broken > low_weekly_rate > no_activity
+    Priority: comeback > daily_skip_burst > streak_broken > low_weekly_rate > no_activity
+    (comeback is first — celebrate the return before any nudge about gaps/skips.)
     Hour windows are IST, research-backed:
+      - comeback:         daytime 09-20 (celebrate the return whenever they show up)
       - daily_skip_burst: evening 17-22 (after day's skips are known)
       - streak_broken:    morning 08-09 (fresh start framing)
       - low_weekly_rate:  morning 08-10 (re-engagement)
@@ -147,6 +177,9 @@ def evaluate_triggers(user_id: int) -> tuple:
     """
     now_ist = datetime.now(IST)
     h = now_ist.hour
+
+    if 9 <= h <= 20 and _just_came_back(user_id):
+        return "comeback", True
 
     if 17 <= h <= 22 and _count_skips_today(user_id) >= 3:
         return "daily_skip_burst", True
@@ -216,10 +249,13 @@ def _recent_wins(user_id: int, limit: int = 3) -> list:
     except Exception:
         return []
     wins = []
+    seen = set()  # case-insensitive: don't list "Call the Bank" / "Call The Bank" twice
     for row in res.data or []:
         note = (row.get("note") or "").strip()
-        if not note or note.startswith("auto_skip:") or note in wins:
+        key = note.lower()
+        if not note or note.startswith("auto_skip:") or key in seen:
             continue
+        seen.add(key)
         wins.append(note)
         if len(wins) >= limit:
             break
@@ -317,6 +353,13 @@ def _context_brief(ctx: dict) -> str:
 # ---------------------------------------------------------------------------
 
 _TONE_GUIDES = {
+    "comeback": (
+        "The user just came back after being away a couple of days — they logged "
+        "activity today after a gap. CELEBRATE the return, zero guilt about the gap. "
+        "Make it a moment: showing up again is the whole game. "
+        "If the data shows a streak rebuilding or a recent win, name it. "
+        "Genuinely glad to see them. Under 50 words. 1-2 emojis."
+    ),
     "daily_skip_burst": (
         "The user skipped 3 or more habits today. "
         "Send a warm, non-judgmental evening message. "

@@ -386,6 +386,15 @@ def test_recent_wins_filters_auto_skip_and_dedupes():
         assert motivation_svc._recent_wins(1) == ["Read"]
 
 
+def test_recent_wins_dedupes_case_insensitively():
+    c = MagicMock()
+    c.table.return_value.select.return_value.eq.return_value.in_.return_value.order.return_value.limit.return_value.execute.return_value.data = [
+        {"note": "Call the Bank"}, {"note": "Call The Bank"}, {"note": "call the bank"},
+    ]
+    with patch("motivation_svc.get_client", return_value=c):
+        assert motivation_svc._recent_wins(1) == ["Call the Bank"]
+
+
 def test_recent_wins_empty_on_db_error():
     c = MagicMock()
     c.table.side_effect = Exception("boom")
@@ -457,3 +466,80 @@ def test_generate_motivation_message_weaves_real_specifics():
         motivation_svc.generate_motivation_message("daily_skip_burst", ctx)
     prompt = mock_claude._ask.call_args[0][0]
     assert "Morning run" in prompt and "identity" in prompt.lower()
+
+
+# ─── comeback trigger: _just_came_back ──────────────────────────────────────
+
+def _activity_client(event_dates: list):
+    c = MagicMock()
+    c.table.return_value.select.return_value.eq.return_value.order.return_value.limit.return_value.execute.return_value.data = [
+        {"event_date": d} for d in event_dates
+    ]
+    return c
+
+
+def test_just_came_back_true_when_returned_today_after_gap():
+    today = date.today().isoformat()
+    old = (date.today() - timedelta(days=4)).isoformat()
+    with patch("motivation_svc.get_client", return_value=_activity_client([today, old])):
+        assert motivation_svc._just_came_back(1) is True
+
+
+def test_just_came_back_false_when_gap_too_small():
+    today = date.today().isoformat()
+    yest = (date.today() - timedelta(days=1)).isoformat()
+    with patch("motivation_svc.get_client", return_value=_activity_client([today, yest])):
+        assert motivation_svc._just_came_back(1) is False
+
+
+def test_just_came_back_false_when_latest_not_today():
+    y = (date.today() - timedelta(days=1)).isoformat()
+    old = (date.today() - timedelta(days=6)).isoformat()
+    with patch("motivation_svc.get_client", return_value=_activity_client([y, old])):
+        assert motivation_svc._just_came_back(1) is False
+
+
+def test_just_came_back_false_with_single_day():
+    today = date.today().isoformat()
+    with patch("motivation_svc.get_client", return_value=_activity_client([today])):
+        assert motivation_svc._just_came_back(1) is False
+
+
+def test_just_came_back_dedupes_same_day_rows():
+    today = date.today().isoformat()
+    old = (date.today() - timedelta(days=5)).isoformat()
+    # multiple dones today should not count as two distinct days
+    with patch("motivation_svc.get_client", return_value=_activity_client([today, today, today, old])):
+        assert motivation_svc._just_came_back(1) is True
+
+
+# ─── comeback trigger in evaluate_triggers ──────────────────────────────────
+
+def test_evaluate_comeback_fires_daytime_top_priority():
+    with patch("motivation_svc.datetime", _mock_hour(14)), \
+         patch("motivation_svc._just_came_back", return_value=True), \
+         patch("motivation_svc._count_skips_today", return_value=5), \
+         patch("motivation_svc._is_streak_broken", return_value=True), \
+         patch("motivation_svc._skip_rate_last_7_days", return_value=0.9), \
+         patch("motivation_svc._days_since_any_activity", return_value=9):
+        trigger, fired = motivation_svc.evaluate_triggers(1)
+    assert trigger == "comeback" and fired is True
+
+
+def test_evaluate_comeback_does_not_fire_at_night():
+    with patch("motivation_svc.datetime", _mock_hour(23)), \
+         patch("motivation_svc._just_came_back", return_value=True), \
+         patch("motivation_svc._count_skips_today", return_value=0), \
+         patch("motivation_svc._is_streak_broken", return_value=False), \
+         patch("motivation_svc._skip_rate_last_7_days", return_value=0.0), \
+         patch("motivation_svc._days_since_any_activity", return_value=0):
+        trigger, fired = motivation_svc.evaluate_triggers(1)
+    assert trigger is None
+
+
+def test_comeback_tone_guide_exists_and_celebrates():
+    with patch("motivation_svc.claude_svc") as mock_claude:
+        mock_claude._ask.return_value = "welcome back!"
+        motivation_svc.generate_motivation_message("comeback", {"streak": 2})
+    prompt = mock_claude._ask.call_args[0][0]
+    assert "celebrate" in prompt.lower() or "came back" in prompt.lower()
