@@ -35,16 +35,19 @@ best-performing trigger style into the prompt. Live: rows already scored (6 fals
 pending). 8 tests, 255 green. **→ Motivation 10x core is now complete (specifics + identity +
 comeback + memory-of-what-works).**
 
-- [ ] **Cleanup junk test users in settings** — user_ids 5/42/99 are stale test artifacts; the
-  motivation_poller wastes a send on each every cycle ("Chat not found" log spam). Safe to delete
-  (`delete from settings where user_id in (5,42,99)` + related rows) — flagged, not auto-deleted
-  (prod data deletion).
+- [x] **Cleanup junk test users in settings** — DONE. Deleted user_ids 5/42/99 from settings
+  (only table with their rows). No more poller "Chat not found" spam.
+- [x] **Pattern-insight nudge (#6)** — DONE (9106759c), DEPLOYED + LIVE-VERIFIED. `_skip_weekday_pattern`
+  + `pattern_insight` trigger: surfaces a dominant skip weekday with an actionable offer (move/scale).
+  Live (on seeded data): "you skip far more on Mondays with Brusj — smaller amount or move it?"
+- [x] **/skipgraph verified live** — renders the 30d skip chart (tested via seeded dummy skips,
+  then cleaned up). Feature works; just needs real skip data to be useful day-to-day.
 **Crisis safety layer — DONE (60b4c664), DEPLOYED + LIVE-VERIFIED.** Deterministic non-LLM
 classifier runs first on free text; ideation → static vetted card (KIRAN/Vandrevala/AASRA/iCall +
 112), LLM suppressed, event logged. Tuned against idioms. Live: "kill myself" → card, "i keep
 failing" → struggle support (no false trigger). 24 cases, 276 tests.
-**Parked (memory `project_learnix_motivation_10x.md`):** #4 adaptive timing, full #6 pattern
-engine, #8 sentiment read.
+**Parked (memory `project_learnix_motivation_10x.md`):** #4 adaptive timing, #8 sentiment read.
+(#6 pattern engine — DONE, see above.)
 
 ### Original 10x reference
 
