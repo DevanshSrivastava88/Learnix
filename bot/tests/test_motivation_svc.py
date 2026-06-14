@@ -673,3 +673,54 @@ def test_crisis_takes_priority_over_struggle():
     t = "i can't do this anymore, i want to kill myself"
     assert motivation_svc.is_crisis_message(t) is True
     # handler checks crisis first, so struggle routing never runs for this text
+
+
+# ─── pattern insight: _skip_weekday_pattern ─────────────────────────────────
+# 2026-06-08 is a Monday, 06-12 a Friday (06-14 is Sunday). Midday UTC stays
+# on the same IST weekday.
+
+def _skips_on(*iso_days):
+    return [{"task_id": "t", "skipped_at": f"{d}T06:00:00+00:00", "note": ""} for d in iso_days]
+
+
+def test_skip_weekday_pattern_detects_dominant_monday():
+    rows = _skips_on("2026-06-08", "2026-06-08", "2026-06-08", "2026-06-12")  # 3 Mon, 1 Fri
+    with patch("analytics_svc.get_skips_last_n_days", return_value=rows):
+        assert motivation_svc._skip_weekday_pattern(1) == "Monday"
+
+
+def test_skip_weekday_pattern_none_when_too_few():
+    rows = _skips_on("2026-06-08", "2026-06-08", "2026-06-08")  # only 3 total (<4)
+    with patch("analytics_svc.get_skips_last_n_days", return_value=rows):
+        assert motivation_svc._skip_weekday_pattern(1) is None
+
+
+def test_skip_weekday_pattern_none_when_no_dominance():
+    rows = _skips_on("2026-06-08", "2026-06-09", "2026-06-10", "2026-06-12")  # 4 diff days
+    with patch("analytics_svc.get_skips_last_n_days", return_value=rows):
+        assert motivation_svc._skip_weekday_pattern(1) is None
+
+
+def test_skip_weekday_pattern_safe_on_error():
+    with patch("analytics_svc.get_skips_last_n_days", side_effect=Exception):
+        assert motivation_svc._skip_weekday_pattern(1) is None
+
+
+def test_evaluate_pattern_insight_fires_and_beats_no_activity():
+    with patch("motivation_svc.datetime", _mock_hour(12)), \
+         patch("motivation_svc._just_came_back", return_value=False), \
+         patch("motivation_svc._count_skips_today", return_value=0), \
+         patch("motivation_svc._is_streak_broken", return_value=False), \
+         patch("motivation_svc._skip_rate_last_7_days", return_value=0.0), \
+         patch("motivation_svc._skip_weekday_pattern", return_value="Monday"), \
+         patch("motivation_svc._days_since_any_activity", return_value=9):
+        trigger, fired = motivation_svc.evaluate_triggers(1)
+    assert trigger == "pattern_insight" and fired is True
+
+
+def test_pattern_insight_tone_guide_exists():
+    with patch("motivation_svc.claude_svc") as mock_claude:
+        mock_claude._ask.return_value = "noticed something"
+        motivation_svc.generate_motivation_message("pattern_insight", {"worst_weekday": "Monday"})
+    prompt = mock_claude._ask.call_args[0][0]
+    assert "pattern" in prompt.lower() and "Monday" in prompt

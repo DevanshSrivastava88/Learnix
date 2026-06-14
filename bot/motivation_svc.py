@@ -239,6 +239,30 @@ def _just_came_back(user_id: int) -> bool:
     return latest == date.today() and (latest - prev).days >= 3
 
 
+def _skip_weekday_pattern(user_id: int) -> str | None:
+    """If the user's skips cluster on ONE weekday, return that weekday name —
+    a clear, actionable pattern worth surfacing ("you skip most on Mondays").
+    Needs enough signal: >=4 skips in 30d, one weekday holding >=40% and >=3 of them."""
+    try:
+        import analytics_svc
+        rows = analytics_svc.get_skips_last_n_days(user_id, 30) or []
+    except Exception:
+        return None
+    weekdays = []
+    for r in rows:
+        try:
+            weekdays.append(datetime.fromisoformat(r["skipped_at"]).astimezone(IST).weekday())
+        except Exception:
+            continue
+    if len(weekdays) < 4:
+        return None
+    from collections import Counter
+    wd, n = Counter(weekdays).most_common(1)[0]
+    if n >= 3 and n / len(weekdays) >= 0.4:
+        return _WEEKDAYS[wd]
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Trigger evaluation — hour-gated, priority-ordered
 # ---------------------------------------------------------------------------
@@ -246,13 +270,15 @@ def _just_came_back(user_id: int) -> bool:
 def evaluate_triggers(user_id: int) -> tuple:
     """
     Returns (trigger_type, True) for the first matching trigger, or (None, False).
-    Priority: comeback > daily_skip_burst > streak_broken > low_weekly_rate > no_activity
+    Priority: comeback > daily_skip_burst > streak_broken > low_weekly_rate
+              > pattern_insight > no_activity
     (comeback is first — celebrate the return before any nudge about gaps/skips.)
     Hour windows are IST, research-backed:
       - comeback:         daytime 09-20 (celebrate the return whenever they show up)
       - daily_skip_burst: evening 17-22 (after day's skips are known)
       - streak_broken:    morning 08-09 (fresh start framing)
       - low_weekly_rate:  morning 08-10 (re-engagement)
+      - pattern_insight:  daytime 10-19 (a calm, actionable observation)
       - no_activity:      daytime 09-20 (gentle check-in)
     """
     now_ist = datetime.now(IST)
@@ -269,6 +295,9 @@ def evaluate_triggers(user_id: int) -> tuple:
 
     if 8 <= h <= 10 and _skip_rate_last_7_days(user_id) > 0.5:
         return "low_weekly_rate", True
+
+    if 10 <= h <= 19 and _skip_weekday_pattern(user_id):
+        return "pattern_insight", True
 
     if 9 <= h <= 20 and _days_since_any_activity(user_id) >= 2:
         return "no_activity", True
@@ -450,6 +479,13 @@ def _context_brief(ctx: dict) -> str:
 # ---------------------------------------------------------------------------
 
 _TONE_GUIDES = {
+    "pattern_insight": (
+        "The data shows a clear, specific pattern: this user skips far more on one "
+        "particular weekday (given below as 'skip most on X'). Surface it as a helpful, "
+        "curious observation — never a scold. Then make ONE concrete offer: move that "
+        "habit to a different day, or scale it back just on that day. Name the avoided "
+        "task if given. Like a sharp friend who noticed something useful. Under 55 words. 1 emoji."
+    ),
     "comeback": (
         "The user just came back after being away a couple of days — they logged "
         "activity today after a gap. CELEBRATE the return, zero guilt about the gap. "
