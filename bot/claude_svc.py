@@ -693,9 +693,15 @@ def extract_goal_name_from_message(text: str) -> str:
         max_tokens=100,
     )
     name = result.get("goal_name", "").strip() if isinstance(result, dict) else ""
-    # Deterministic cleanup — 8B sometimes keeps filler ("delete my french goal"
-    # → "My French Goal"). Strip leading my/the and a trailing "goal".
+    # Deterministic cleanup — 8B sometimes keeps the whole phrase ("delete my
+    # french goal" → "delete my french goal"). Strip the leading manage verb
+    # (mirrors the task-title verb strip), then leading my/the, then trailing "goal".
     import re as _re_g
+    name = _re_g.sub(
+        r'^(?:delete|remove|get rid of|drop|pause|stop|freeze|resume|unpause|'
+        r'restart|pick back up|edit|rename|update|change)\s+',
+        '', name, flags=_re_g.IGNORECASE,
+    ).strip()
     name = _re_g.sub(r'^(?:my|the)\s+', '', name, flags=_re_g.IGNORECASE)
     name = _re_g.sub(r'\s+goals?$', '', name, flags=_re_g.IGNORECASE).strip()
     return name
