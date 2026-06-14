@@ -1916,7 +1916,8 @@ async def cmd_info(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         "/setmorning — Morning brief time\n"
         "/settime — Daily study session time\n"
         "/seteod — Evening check-in time\n"
-        "/twilio on|off — Missed call notifications\n\n"
+        "/twilio on|off — Missed call notifications\n"
+        "/adaptive on|off — Smart nudge timing (your active hours)\n\n"
 
         "━━━━━━━━━━━━━━━━━━\n"
         "🗑 *DATA*\n"
@@ -1975,6 +1976,42 @@ _TWILIO_SETUP = (
     "5. Run: <code>python run_all.py</code>\n\n"
     "When someone calls and you don't answer → I'll notify you here!"
 )
+
+
+async def cmd_adaptive(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    """Opt-in adaptive nudge timing — deliver motivation during the user's own
+    active hours instead of the fixed research windows."""
+    uid = update.effective_user.id
+    args = ctx.args
+    if not args:
+        enabled = settings_svc.get_adaptive_timing(uid)
+        status = "ON ✅" if enabled else "OFF ⏸"
+        await update.message.reply_text(
+            f"⏰ Smart nudge timing: <b>{status}</b>\n\n"
+            "When on, I learn the hours you're actually around and send nudges then, "
+            "instead of fixed morning/evening times.\n\n"
+            "<code>/adaptive on</code> or <code>/adaptive off</code> to change.",
+            parse_mode="HTML",
+        )
+        return
+    arg = args[0].lower()
+    if arg == "on":
+        settings_svc.set_adaptive_timing(uid, True)
+        await update.message.reply_text(
+            "Smart timing <b>on</b> ⏰ — I'll nudge you when you're usually around.",
+            parse_mode="HTML",
+        )
+    elif arg == "off":
+        settings_svc.set_adaptive_timing(uid, False)
+        await update.message.reply_text(
+            "Smart timing <b>off</b> ⏸ — back to the regular schedule.",
+            parse_mode="HTML",
+        )
+    else:
+        await update.message.reply_text(
+            "Try <code>/adaptive on</code> or <code>/adaptive off</code>.",
+            parse_mode="HTML",
+        )
 
 
 async def cmd_twilio(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
@@ -2418,6 +2455,7 @@ def main() -> None:
     app.add_handler(CommandHandler("info", cmd_info))
     app.add_handler(CommandHandler("clear", cmd_clear))
     app.add_handler(CommandHandler("twilio", cmd_twilio))
+    app.add_handler(CommandHandler("adaptive", cmd_adaptive))
     async def _global_cancel(u, c):
         uid = u.effective_user.id
         # If user is mid-quiz, clean up quiz state

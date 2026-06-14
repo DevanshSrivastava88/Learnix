@@ -47,6 +47,14 @@ def get_persona(user_id: int) -> str:
     return get_settings(user_id).get("persona") or "default"
 
 
+def set_adaptive_timing(user_id: int, enabled: bool) -> None:
+    upsert_settings(user_id, adaptive_timing=enabled)
+
+
+def get_adaptive_timing(user_id: int) -> bool:
+    return bool(get_settings(user_id).get("adaptive_timing"))
+
+
 def update_streak(user_id: int, study_date: date) -> int:
     settings = get_settings(user_id)
     last = settings.get("last_study_date")

@@ -724,3 +724,87 @@ def test_pattern_insight_tone_guide_exists():
         motivation_svc.generate_motivation_message("pattern_insight", {"worst_weekday": "Monday"})
     prompt = mock_claude._ask.call_args[0][0]
     assert "pattern" in prompt.lower() and "Monday" in prompt
+
+
+# ─── adaptive timing: _active_hours / _within_active_hours ──────────────────
+
+def _hours_client(act_times, skip_times):
+    c = MagicMock()
+    act = MagicMock()
+    act.select.return_value.eq.return_value.gte.return_value.execute.return_value.data = [
+        {"created_at": t} for t in act_times]
+    sk = MagicMock()
+    sk.select.return_value.eq.return_value.gte.return_value.execute.return_value.data = [
+        {"skipped_at": t} for t in skip_times]
+    c.table.side_effect = lambda n: act if n == "activity_log" else sk
+    return c
+
+
+def test_active_hours_band_around_peak():
+    # five events at IST hour 8 (+05:30 offset fixes the IST hour directly)
+    times = [f"2026-06-{d:02d}T08:30:00+05:30" for d in (8, 9, 10, 11, 12)]
+    with patch("motivation_svc.get_client", return_value=_hours_client(times, [])):
+        band = motivation_svc._active_hours(1)
+    assert band == {5, 6, 7, 8, 9, 10, 11}
+
+
+def test_active_hours_none_when_too_little():
+    times = ["2026-06-10T08:30:00+05:30", "2026-06-11T08:30:00+05:30"]
+    with patch("motivation_svc.get_client", return_value=_hours_client(times, [])):
+        assert motivation_svc._active_hours(1) is None
+
+
+def test_active_hours_safe_on_error():
+    c = MagicMock(); c.table.side_effect = Exception("x")
+    with patch("motivation_svc.get_client", return_value=c):
+        assert motivation_svc._active_hours(1) is None
+
+
+def test_within_active_hours_off_always_true():
+    with patch("settings_svc.get_adaptive_timing", return_value=False):
+        assert motivation_svc._within_active_hours(1, 3) is True  # 3am, but feature off
+
+
+def test_within_active_hours_on_no_data_true():
+    with patch("settings_svc.get_adaptive_timing", return_value=True), \
+         patch("motivation_svc._active_hours", return_value=None):
+        assert motivation_svc._within_active_hours(1, 3) is True
+
+
+def test_within_active_hours_on_in_and_out_of_band():
+    with patch("settings_svc.get_adaptive_timing", return_value=True), \
+         patch("motivation_svc._active_hours", return_value={5, 6, 7, 8, 9}):
+        assert motivation_svc._within_active_hours(1, 8) is True
+        assert motivation_svc._within_active_hours(1, 20) is False
+
+
+def test_evaluate_triggers_ignore_hours_fires_off_window():
+    # 3am is outside every fixed window; ignore_hours=True fires by condition
+    with patch("motivation_svc.datetime", _mock_hour(3)), \
+         patch("motivation_svc._just_came_back", return_value=True):
+        trigger, fired = motivation_svc.evaluate_triggers(1, ignore_hours=True)
+    assert trigger == "comeback" and fired is True
+
+
+def test_evaluate_triggers_default_respects_window():
+    # same 3am, default (fixed windows) → nothing fires
+    with patch("motivation_svc.datetime", _mock_hour(3)), \
+         patch("motivation_svc._just_came_back", return_value=True), \
+         patch("motivation_svc._count_skips_today", return_value=9), \
+         patch("motivation_svc._is_streak_broken", return_value=True), \
+         patch("motivation_svc._skip_rate_last_7_days", return_value=0.9), \
+         patch("motivation_svc._skip_weekday_pattern", return_value="Monday"), \
+         patch("motivation_svc._days_since_any_activity", return_value=9):
+        trigger, fired = motivation_svc.evaluate_triggers(1)
+    assert trigger is None
+
+
+def test_check_and_send_adaptive_blocks_outside_active_hours():
+    bot = AsyncMock()
+    with patch("motivation_svc._score_recent_outcomes"), \
+         patch("motivation_svc._was_recently_motivated", return_value=False), \
+         patch("settings_svc.get_adaptive_timing", return_value=True), \
+         patch("motivation_svc.evaluate_triggers", return_value=("no_activity", True)), \
+         patch("motivation_svc._within_active_hours", return_value=False):
+        asyncio.run(motivation_svc.check_and_send_for_user(bot, 7))
+    bot.send_message.assert_not_called()

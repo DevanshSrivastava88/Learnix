@@ -264,10 +264,67 @@ def _skip_weekday_pattern(user_id: int) -> str | None:
 
 
 # ---------------------------------------------------------------------------
+# Optional adaptive timing (opt-in). Learn the hours a user is actually around
+# from their real interaction timestamps, so opted-in users get nudged when
+# they're reachable instead of at the fixed research hours.
+# ---------------------------------------------------------------------------
+
+def _active_hours(user_id: int) -> set | None:
+    """Set of IST hours the user is typically reachable — a ~7h band centred on
+    their busiest interaction hour. Built from activity_log + task_skips
+    timestamps. None until there's enough signal (>=5 timestamped events)."""
+    hours = []
+    try:
+        floor = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+        act = (
+            get_client().table("activity_log").select("created_at")
+            .eq("user_id", user_id).gte("created_at", floor).execute()
+        ).data or []
+        sk = (
+            get_client().table("task_skips").select("skipped_at")
+            .eq("user_id", user_id).gte("skipped_at", floor).execute()
+        ).data or []
+    except Exception:
+        return None
+    for r in act:
+        try:
+            hours.append(datetime.fromisoformat(r["created_at"]).astimezone(IST).hour)
+        except Exception:
+            continue
+    for r in sk:
+        try:
+            hours.append(datetime.fromisoformat(r["skipped_at"]).astimezone(IST).hour)
+        except Exception:
+            continue
+    if len(hours) < 5:
+        return None
+    from collections import Counter
+    peak = Counter(hours).most_common(1)[0][0]
+    # 7-hour band around the peak, clamped to [0, 23] (no midnight wrap — keep simple)
+    return {h for h in range(max(0, peak - 3), min(23, peak + 3) + 1)}
+
+
+def _within_active_hours(user_id: int, now_hour: int) -> bool:
+    """Adaptive-timing delivery gate. Off (default) → always True (no gating).
+    On with learned hours → True only inside the band. On without enough data
+    → True (don't block; fall back to firing by condition)."""
+    try:
+        from settings_svc import get_adaptive_timing
+        if not get_adaptive_timing(user_id):
+            return True
+    except Exception:
+        return True
+    band = _active_hours(user_id)
+    if not band:
+        return True
+    return now_hour in band
+
+
+# ---------------------------------------------------------------------------
 # Trigger evaluation — hour-gated, priority-ordered
 # ---------------------------------------------------------------------------
 
-def evaluate_triggers(user_id: int) -> tuple:
+def evaluate_triggers(user_id: int, ignore_hours: bool = False) -> tuple:
     """
     Returns (trigger_type, True) for the first matching trigger, or (None, False).
     Priority: comeback > daily_skip_burst > streak_broken > low_weekly_rate
@@ -280,26 +337,30 @@ def evaluate_triggers(user_id: int) -> tuple:
       - low_weekly_rate:  morning 08-10 (re-engagement)
       - pattern_insight:  daytime 10-19 (a calm, actionable observation)
       - no_activity:      daytime 09-20 (gentle check-in)
+    ignore_hours=True (adaptive timing on) → fire by condition only; the active-
+    hours gate in check_and_send_for_user handles delivery timing instead.
     """
-    now_ist = datetime.now(IST)
-    h = now_ist.hour
+    h = datetime.now(IST).hour
 
-    if 9 <= h <= 20 and _just_came_back(user_id):
+    def win(lo: int, hi: int) -> bool:
+        return ignore_hours or (lo <= h <= hi)
+
+    if win(9, 20) and _just_came_back(user_id):
         return "comeback", True
 
-    if 17 <= h <= 22 and _count_skips_today(user_id) >= 3:
+    if win(17, 22) and _count_skips_today(user_id) >= 3:
         return "daily_skip_burst", True
 
-    if 8 <= h <= 9 and _is_streak_broken(user_id):
+    if win(8, 9) and _is_streak_broken(user_id):
         return "streak_broken", True
 
-    if 8 <= h <= 10 and _skip_rate_last_7_days(user_id) > 0.5:
+    if win(8, 10) and _skip_rate_last_7_days(user_id) > 0.5:
         return "low_weekly_rate", True
 
-    if 10 <= h <= 19 and _skip_weekday_pattern(user_id):
+    if win(10, 19) and _skip_weekday_pattern(user_id):
         return "pattern_insight", True
 
-    if 9 <= h <= 20 and _days_since_any_activity(user_id) >= 2:
+    if win(9, 20) and _days_since_any_activity(user_id) >= 2:
         return "no_activity", True
 
     return None, False
@@ -559,9 +620,20 @@ async def check_and_send_for_user(bot, user_id: int) -> None:
     if _was_recently_motivated(user_id):
         return
 
-    trigger_type, should_send = evaluate_triggers(user_id)
+    # Optional adaptive timing: when on, fire triggers by condition (ignoring the
+    # fixed research windows) and only deliver during the user's active hours.
+    try:
+        from settings_svc import get_adaptive_timing
+        adaptive = get_adaptive_timing(user_id)
+    except Exception:
+        adaptive = False
+
+    trigger_type, should_send = evaluate_triggers(user_id, ignore_hours=adaptive)
     if not should_send or trigger_type is None:
         return
+
+    if adaptive and not _within_active_hours(user_id, datetime.now(IST).hour):
+        return  # right trigger, wrong hour for this user — wait until they're around
 
     try:
         ctx = gather_user_context(user_id)
