@@ -2018,23 +2018,32 @@ async def cmd_adaptive(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 WEB_URL = "https://learnix-web-production.up.railway.app"
-_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # no ambiguous 0/O/1/I
 
 
 async def cmd_weblogin(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    """Mint a one-time code to log in on the Learnix web app. The code is tied to
-    this user_id, so the web never has to ask who you are."""
+    """Mint a one-time 4-digit code to log in on the Learnix web app. The code is
+    tied to this user_id, so the web never has to ask who you are."""
     import secrets
     from datetime import datetime, timezone, timedelta
     from supabase_svc import get_client
 
     uid = update.effective_user.id
-    code = "".join(secrets.choice(_CODE_ALPHABET) for _ in range(6))
+    now_iso = datetime.now(timezone.utc).isoformat()
     expires = (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat()
     try:
         client = get_client()
-        # clear this user's old unused codes, then store the fresh one
-        client.table("web_login_codes").delete().eq("user_id", uid).eq("used", False).execute()
+        # housekeeping so a 4-digit value can be reused safely: drop dead codes
+        # (expired or already used) and this user's previous codes.
+        client.table("web_login_codes").delete().lt("expires_at", now_iso).execute()
+        client.table("web_login_codes").delete().eq("used", True).execute()
+        client.table("web_login_codes").delete().eq("user_id", uid).execute()
+        # pick a 4-digit code not currently held by another active login
+        code = f"{secrets.randbelow(10000):04d}"
+        for _ in range(12):
+            taken = client.table("web_login_codes").select("code").eq("code", code).limit(1).execute().data
+            if not taken:
+                break
+            code = f"{secrets.randbelow(10000):04d}"
         client.table("web_login_codes").insert(
             {"code": code, "user_id": uid, "expires_at": expires}
         ).execute()

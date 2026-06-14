@@ -92,12 +92,13 @@ function Login({ onSuccess }: { onSuccess: () => void }) {
 
         <input
           value={code}
-          onChange={(e) => setCode(e.target.value.toUpperCase())}
+          onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 4))}
           onKeyDown={(e) => e.key === "Enter" && verify()}
-          placeholder="CODE"
-          maxLength={6}
+          placeholder="0000"
+          inputMode="numeric"
+          maxLength={4}
           autoFocus
-          className="mt-6 w-full rounded-xl border border-white/10 bg-panel px-4 py-3 text-center font-mono text-2xl tracking-[0.4em] text-text placeholder:tracking-normal placeholder:text-muted-deep focus:border-acid/40 focus:outline-none"
+          className="mt-6 w-full rounded-xl border border-white/10 bg-panel px-4 py-3 text-center font-mono text-3xl tracking-[0.5em] text-text placeholder:text-muted-deep focus:border-acid/40 focus:outline-none"
         />
 
         <button

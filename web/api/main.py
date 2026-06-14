@@ -95,6 +95,33 @@ def get_current_uid(request: Request) -> int:
     return uid
 
 
+# --- brute-force guard for the short numeric code ----------------------------
+# 4 digits = 10k space, so cap wrong guesses per client. In-memory (single
+# instance); resets on restart, which is fine for this scale.
+_FAIL_WINDOW = 600          # 10 min
+_FAIL_MAX = 8               # lock after 8 wrong codes in the window
+_fails: dict[str, list[float]] = {}
+
+
+def _client_ip(request: Request) -> str:
+    xff = request.headers.get("x-forwarded-for")
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.client.host if request.client else "?"
+
+
+def _check_rate(ip: str) -> None:
+    now = time.time()
+    hits = [t for t in _fails.get(ip, []) if now - t < _FAIL_WINDOW]
+    _fails[ip] = hits
+    if len(hits) >= _FAIL_MAX:
+        raise HTTPException(429, "Too many attempts — wait a bit and send /weblogin again")
+
+
+def _record_fail(ip: str) -> None:
+    _fails.setdefault(ip, []).append(time.time())
+
+
 # --- shaping -----------------------------------------------------------------
 
 def _is_subtask(title: str) -> bool:
@@ -133,13 +160,16 @@ class LoginCode(BaseModel):
 # --- auth routes -------------------------------------------------------------
 
 @app.post("/api/auth/verify")
-def auth_verify(body: LoginCode, response: Response):
-    code = (body.code or "").strip().upper()
+def auth_verify(body: LoginCode, request: Request, response: Response):
+    ip = _client_ip(request)
+    _check_rate(ip)
+    code = (body.code or "").strip()
     if not code:
         raise HTTPException(400, "Enter the code from Telegram")
     res = get_client().table("web_login_codes").select("*").eq("code", code).limit(1).execute()
     row = res.data[0] if res.data else None
     if not row or row.get("used"):
+        _record_fail(ip)
         raise HTTPException(401, "Invalid or already-used code")
     from datetime import datetime, timezone
     try:
@@ -147,8 +177,10 @@ def auth_verify(body: LoginCode, response: Response):
     except Exception:
         expired = True
     if expired:
+        _record_fail(ip)
         raise HTTPException(401, "Code expired — send /weblogin again")
     get_client().table("web_login_codes").update({"used": True}).eq("code", code).execute()
+    _fails.pop(ip, None)  # success clears the counter
     uid = int(row["user_id"])
     response.set_cookie(
         "session", _make_token(uid),
