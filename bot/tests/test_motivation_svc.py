@@ -543,3 +543,83 @@ def test_comeback_tone_guide_exists_and_celebrates():
         motivation_svc.generate_motivation_message("comeback", {"streak": 2})
     prompt = mock_claude._ask.call_args[0][0]
     assert "celebrate" in prompt.lower() or "came back" in prompt.lower()
+
+
+# ─── memory of what works: _responds_to ─────────────────────────────────────
+
+def _reengage_client(rows):
+    c = MagicMock()
+    c.table.return_value.select.return_value.eq.return_value.not_.is_.return_value.execute.return_value.data = rows
+    return c
+
+
+def test_responds_to_none_with_too_little_data():
+    rows = [{"trigger_type": "comeback", "reengaged": True}]  # only 1 scored
+    with patch("motivation_svc.get_client", return_value=_reengage_client(rows)):
+        assert motivation_svc._responds_to(1) is None
+
+
+def test_responds_to_none_when_nothing_landed():
+    rows = [{"trigger_type": "no_activity", "reengaged": False},
+            {"trigger_type": "streak_broken", "reengaged": False}]
+    with patch("motivation_svc.get_client", return_value=_reengage_client(rows)):
+        assert motivation_svc._responds_to(1) is None
+
+
+def test_responds_to_picks_best_trigger_by_rate():
+    rows = [
+        {"trigger_type": "comeback", "reengaged": True},
+        {"trigger_type": "comeback", "reengaged": True},
+        {"trigger_type": "no_activity", "reengaged": False},
+        {"trigger_type": "no_activity", "reengaged": False},
+    ]
+    with patch("motivation_svc.get_client", return_value=_reengage_client(rows)):
+        assert motivation_svc._responds_to(1) == "comeback"
+
+
+def test_responds_to_safe_on_db_error():
+    c = MagicMock()
+    c.table.side_effect = Exception("boom")
+    with patch("motivation_svc.get_client", return_value=c):
+        assert motivation_svc._responds_to(1) is None
+
+
+# ─── memory of what works: _score_recent_outcomes ───────────────────────────
+
+def test_score_recent_outcomes_marks_old_skips_recent():
+    from datetime import datetime as _dt, timezone as _tz
+    now = _dt.now(_tz.utc)
+    old = (now - timedelta(hours=30)).isoformat()   # window closed -> score it
+    fresh = (now - timedelta(hours=2)).isoformat()  # too early -> leave NULL
+    c = MagicMock()
+    c.table.return_value.select.return_value.eq.return_value.is_.return_value.gte.return_value.execute.return_value.data = [
+        {"id": "A", "sent_at": old, "reengaged": None},
+        {"id": "B", "sent_at": fresh, "reengaged": None},
+    ]
+    with patch("motivation_svc.get_client", return_value=c), \
+         patch("motivation_svc._user_reengaged_between", return_value=True) as ms:
+        motivation_svc._score_recent_outcomes(1)
+    # only the old (window-closed) row gets scored
+    ms.assert_called_once()
+    upd = c.table.return_value.update
+    upd.assert_called_once_with({"reengaged": True})
+    upd.return_value.eq.assert_called_once_with("id", "A")
+
+
+def test_score_recent_outcomes_never_raises():
+    c = MagicMock()
+    c.table.side_effect = Exception("db down")
+    with patch("motivation_svc.get_client", return_value=c):
+        motivation_svc._score_recent_outcomes(1)  # must not raise
+
+
+# ─── responds_to flows into gather_user_context + prompt ────────────────────
+
+def test_context_brief_includes_responds_to_hint():
+    brief = motivation_svc._context_brief({"responds_to": "comeback"})
+    assert "landed before" in brief.lower() and "welcome-back" in brief.lower()
+
+
+def test_context_brief_ignores_unknown_responds_to():
+    brief = motivation_svc._context_brief({"responds_to": "bogus"})
+    assert "landed before" not in brief.lower()

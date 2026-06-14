@@ -49,6 +49,86 @@ def _log_motivation_sent(user_id: int, trigger_type: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Memory of what works — after a nudge, did the user re-engage within 24h?
+# Score outcomes into motivation_log.reengaged, then bias the prompt toward
+# the trigger style that has actually been getting them back.
+# ---------------------------------------------------------------------------
+
+def _user_reengaged_between(user_id: int, start_iso: str, end_iso: str) -> bool:
+    """True if the user completed a habit/study/milestone in [start, end)."""
+    res = (
+        get_client().table("activity_log")
+        .select("id", count="exact")
+        .eq("user_id", user_id)
+        .in_("event_type", ["habit", "study", "milestone"])
+        .gte("created_at", start_iso)
+        .lt("created_at", end_iso)
+        .execute()
+    )
+    return bool(res.count or 0)
+
+
+def _score_recent_outcomes(user_id: int) -> None:
+    """Mark reengaged on past nudges that are now >=24h old and still unscored.
+    Best-effort — never raises (must not block the poller). Uses created_at on
+    activity_log so it works even if event_date lacks a timestamp."""
+    try:
+        now = datetime.now(timezone.utc)
+        floor = (now - timedelta(days=7)).isoformat()
+        rows = (
+            get_client().table("motivation_log")
+            .select("id, sent_at, reengaged")
+            .eq("user_id", user_id)
+            .is_("reengaged", "null")
+            .gte("sent_at", floor)
+            .execute()
+        ).data or []
+        for row in rows:
+            try:
+                sent = datetime.fromisoformat(row["sent_at"])
+            except Exception:
+                continue
+            window_end = sent + timedelta(hours=24)
+            if now < window_end:
+                continue  # too early — leave NULL until the window closes
+            got = _user_reengaged_between(user_id, sent.isoformat(), window_end.isoformat())
+            get_client().table("motivation_log").update(
+                {"reengaged": got}
+            ).eq("id", row["id"]).execute()
+    except Exception as e:
+        logger.warning(f"outcome scoring skipped for {user_id}: {e}")
+
+
+def _responds_to(user_id: int) -> str | None:
+    """The trigger style this user has re-engaged after most often. Returns None
+    until there's enough signal (>=2 scored nudges, >=1 re-engagement)."""
+    try:
+        rows = (
+            get_client().table("motivation_log")
+            .select("trigger_type, reengaged")
+            .eq("user_id", user_id)
+            .not_.is_("reengaged", "null")
+            .execute()
+        ).data or []
+    except Exception:
+        return None
+    if len(rows) < 2:
+        return None
+    from collections import defaultdict
+    hit, total = defaultdict(int), defaultdict(int)
+    for r in rows:
+        t = r.get("trigger_type") or "?"
+        total[t] += 1
+        if r.get("reengaged"):
+            hit[t] += 1
+    if not any(hit.values()):
+        return None
+    # best by re-engagement rate, then by volume
+    best = max(total, key=lambda t: (hit[t] / total[t], total[t]))
+    return best if hit[best] else None
+
+
+# ---------------------------------------------------------------------------
 # Trigger detectors
 # ---------------------------------------------------------------------------
 
@@ -322,7 +402,19 @@ def gather_user_context(user_id: int) -> dict:
         "best_weekday": _busiest_weekday(done_days),
         "worst_weekday": _busiest_weekday(skip_days),
         "recent_wins": _recent_wins(user_id),
+        "responds_to": _responds_to(user_id),
     }
+
+
+# Human-readable style each trigger embodies — used to tell the LLM which tone
+# has actually been getting THIS user back (memory of what works).
+_STYLE_HINT = {
+    "comeback": "celebratory, welcome-back energy",
+    "daily_skip_burst": "gentle, no-guilt end-of-day reassurance",
+    "streak_broken": "identity-based, 'you're still that person'",
+    "low_weekly_rate": "reflective, offering to adjust the plan together",
+    "no_activity": "soft, low-pressure check-in",
+}
 
 
 def _context_brief(ctx: dict) -> str:
@@ -343,6 +435,11 @@ def _context_brief(ctx: dict) -> str:
         lines.append(f"- Recent wins to reference by name: {', '.join(wins)}.")
     if ctx.get("n_active_habits"):
         lines.append(f"- They are tracking {ctx['n_active_habits']} active habit(s).")
+    if ctx.get("responds_to") in _STYLE_HINT:
+        lines.append(
+            f"- What's landed before: this user re-engages most after "
+            f"{_STYLE_HINT[ctx['responds_to']]} messages — lean into that tone."
+        )
     if not lines:
         return "No history yet — keep it warm and general, do NOT invent specifics."
     return "Real data about this user (use specifics, never invent):\n" + "\n".join(lines)
@@ -419,6 +516,10 @@ def generate_motivation_message(trigger_type: str, ctx: dict | None = None) -> s
 
 async def check_and_send_for_user(bot, user_id: int) -> None:
     """Called by motivation_poller for each user. Sends at most one message per 24h."""
+    # Close the loop on past nudges first (mark whether they landed), so the
+    # next message can lean on what's actually worked for this user.
+    _score_recent_outcomes(user_id)
+
     if _was_recently_motivated(user_id):
         return
 
