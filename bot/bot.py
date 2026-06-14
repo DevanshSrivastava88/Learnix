@@ -962,6 +962,8 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
             context_block = f"Recent conversation:\n{context}\n\n" if context else ""
             reply = claude_svc._ask(
                 f"{context_block}{persona_block}"
+                f"Read their mood from this message and mirror it: if they sound down or tired, soften and slow down; "
+                f"if they're hyped or celebrating, match their energy; if they're frustrated, acknowledge it lightly then lift. "
                 f"No therapy-speak ('that's a totally valid feeling', 'what challenges have you faced'), no generic pep talks, no restating their message back at them. "
                 f"Never mock, insult, or guilt-trip them — especially on sensitive stuff like weight, sleep, or how they're feeling. Tease situations, not the person. "
                 f"Don't invent personal experiences or a physical life of your own (no 'I just got back from brunch') — you're an AI, just a warm, funny one. "
