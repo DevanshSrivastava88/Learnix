@@ -17,17 +17,19 @@
     margin: 0;
     color: #f3f5f1;
     font-family: "Manrope", sans-serif;
-    /* Exocortex HUD: faint 42px grid over near-black */
+    /* cat wallpaper + faint HUD grid (both themes) */
     background-color: #080a0d;
     background-image:
-      linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px);
-    background-size: 42px 42px;
+      linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+      url(/focus-bg.png);
+    background-size: 42px 42px, 42px 42px, cover;
+    background-position: 0 0, 0 0, center;
     background-attachment: fixed;
     -webkit-font-smoothing: antialiased;
   }
 
-  /* subtle acid bloom from the top-left corner */
+  /* NIGHT (default): heavy dark scrim — the cat is moody/faint */
   body::before {
     content: "";
     position: fixed;
@@ -35,10 +37,36 @@
     z-index: 0;
     pointer-events: none;
     background:
-      radial-gradient(38rem 30rem at 0% -8%, rgba(199, 255, 56, 0.06), transparent 60%),
-      radial-gradient(34rem 30rem at 108% 110%, rgba(255, 85, 91, 0.05), transparent 62%);
+      radial-gradient(40rem 32rem at 0% -8%, rgba(199, 255, 56, 0.05), transparent 60%),
+      linear-gradient(rgba(6, 7, 12, 0.9), rgba(6, 7, 12, 0.88));
   }
 }
+
+/* ── DAY MODE: same cat wallpaper, but bright + frosted glass ────────────── */
+html[data-theme="day"] body::before {
+  /* light scrim — the cat stays vivid */
+  background:
+    radial-gradient(40rem 32rem at 0% -8%, rgba(199, 255, 56, 0.04), transparent 60%),
+    linear-gradient(rgba(20, 10, 44, 0.34), rgba(20, 10, 44, 0.46));
+}
+/* turn panels into frosted glass */
+html[data-theme="day"] .bg-panel,
+html[data-theme="day"] .bg-panel\/50,
+html[data-theme="day"] .bg-panel\/60,
+html[data-theme="day"] .bg-panel-2 {
+  background-color: rgba(255, 255, 255, 0.12) !important;
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+}
+/* lift text + borders for contrast on the bright bg */
+html[data-theme="day"] .text-text { color: #ffffff; }
+html[data-theme="day"] .text-muted { color: rgba(255, 255, 255, 0.74); }
+html[data-theme="day"] .text-muted-deep { color: rgba(255, 255, 255, 0.5); }
+html[data-theme="day"] .border-white\/10,
+html[data-theme="day"] .border-white\/12,
+html[data-theme="day"] .border-white\/5 { border-color: rgba(255, 255, 255, 0.28); }
+html[data-theme="day"] .bg-white\/\[0\.02\],
+html[data-theme="day"] .bg-white\/\[0\.04\] { background-color: rgba(255, 255, 255, 0.07); }
 
 /* liquid glass — frosted translucent panel over the dreamy bg */
 .glass {

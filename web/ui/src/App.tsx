@@ -134,6 +134,21 @@ function TaskApp({ onLogout }: { onLogout: () => void }) {
   const [adhd, setAdhd] = useState(() => localStorage.getItem("learnix_adhd") === "1");
   const [focusTask, setFocusTask] = useState<Task | null>(null);
   const [planning, setPlanning] = useState(false);
+  const [theme, setTheme] = useState<"night" | "day">(
+    () => (localStorage.getItem("learnix_theme") as "night" | "day") || "night"
+  );
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+  }, [theme]);
+
+  function toggleTheme() {
+    setTheme((t) => {
+      const next = t === "night" ? "day" : "night";
+      localStorage.setItem("learnix_theme", next);
+      return next;
+    });
+  }
 
   function refetch() {
     api.list().then((r) => setTasks([...r.active, ...r.completed])).catch(guard);
@@ -257,6 +272,16 @@ function TaskApp({ onLogout }: { onLogout: () => void }) {
           </div>
         </div>
         <div className="flex items-center gap-3">
+          <button
+            onClick={toggleTheme}
+            title={theme === "night" ? "Switch to day mode" : "Switch to night mode"}
+            aria-label="toggle theme"
+            className={`grid h-7 w-7 place-items-center rounded-full border text-sm transition ${
+              theme === "day" ? "border-acid/50 bg-acid/10" : "border-white/10 hover:bg-white/5"
+            }`}
+          >
+            🌙
+          </button>
           <button
             onClick={() => setPlanning(true)}
             title="Plan your day — drag tasks into time slots"
