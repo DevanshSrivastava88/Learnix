@@ -148,6 +148,7 @@ def _visible(rows: list) -> list:
 
 class NewTask(BaseModel):
     title: str
+    due: str | None = None  # optional ISO datetime to schedule it
 
 
 class TaskPatch(BaseModel):
@@ -217,7 +218,11 @@ def add(body: NewTask, uid: int = Depends(get_current_uid)):
     title = (body.title or "").strip()
     if not title:
         raise HTTPException(400, "Title is required")
-    return _shape(tasks_svc.create_task(uid, title, "task"))
+    row = tasks_svc.create_task(uid, title, "task")
+    if body.due and body.due.strip():
+        tasks_svc.update_task(row["id"], next_reminder_at=body.due.strip(), has_custom_time=True)
+        row["next_reminder_at"] = body.due.strip()
+    return _shape(row)
 
 
 @app.patch("/api/tasks/{task_id}")

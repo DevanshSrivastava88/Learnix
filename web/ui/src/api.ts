@@ -38,11 +38,11 @@ export const api = {
   activity: (): Promise<{ days: DayCell[] }> => fetch("/api/activity", opts()).then(json),
 
   list: (): Promise<TasksResponse> => fetch("/api/tasks", opts()).then(json),
-  add: (title: string): Promise<Task> =>
+  add: (title: string, due?: string | null): Promise<Task> =>
     fetch("/api/tasks", opts({
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title }),
+      body: JSON.stringify(due ? { title, due } : { title }),
     })).then(json),
   setStatus: (id: string, status: "active" | "completed"): Promise<Task> =>
     fetch(`/api/tasks/${id}`, opts({
