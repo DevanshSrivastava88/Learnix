@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type DragEvent as ReactDragEvent } from "react";
 import { motion } from "framer-motion";
 import { api, type Task } from "./api";
 
@@ -69,25 +69,27 @@ export default function DayPlanner({
     }
   }
 
-  function dropOnHour(h: number) {
+  function dropOnHour(h: number, e: ReactDragEvent) {
     setOverHour(null);
-    if (!dragId) return;
-    if (byHour.has(h) && byHour.get(h)!.id !== dragId) return; // occupied → reject (no push yet)
-    move(dragId, isoForHour(h));
+    const id = e.dataTransfer.getData("text/plain") || dragId;
     setDragId(null);
+    if (!id) return;
+    if (byHour.has(h) && byHour.get(h)!.id !== id) return; // occupied → reject (no push yet)
+    move(id, isoForHour(h));
   }
 
-  function dropOnTray() {
+  function dropOnTray(e: ReactDragEvent) {
     setOverHour(null);
-    if (!dragId) return;
-    move(dragId, null); // unschedule
+    const id = e.dataTransfer.getData("text/plain") || dragId;
     setDragId(null);
+    if (!id) return;
+    move(id, null); // unschedule
   }
 
   const TaskCard = ({ t, compact }: { t: Task; compact?: boolean }) => (
     <div
       draggable
-      onDragStart={() => setDragId(t.id)}
+      onDragStart={(e) => { e.dataTransfer.setData("text/plain", t.id); e.dataTransfer.effectAllowed = "move"; setDragId(t.id); }}
       onDragEnd={() => { setDragId(null); setOverHour(null); }}
       className={`glass cursor-grab select-none rounded-xl px-3 py-2 active:cursor-grabbing ${
         dragId === t.id ? "opacity-40" : ""
@@ -162,7 +164,7 @@ export default function DayPlanner({
                 <div
                   onDragOver={(e) => { if (free) { e.preventDefault(); setOverHour(h); } }}
                   onDragLeave={() => setOverHour((o) => (o === h ? null : o))}
-                  onDrop={() => dropOnHour(h)}
+                  onDrop={(e) => dropOnHour(h, e)}
                   className={`min-h-[48px] flex-1 rounded-xl border transition ${
                     isOver && free
                       ? "border-acid/60 bg-acid/10"
