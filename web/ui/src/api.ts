@@ -50,6 +50,12 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status }),
     })).then(json),
+  reschedule: (id: string, dueISO: string | null): Promise<Task> =>
+    fetch(`/api/tasks/${id}`, opts({
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ due: dueISO ?? "" }),
+    })).then(json),
   remove: (id: string): Promise<{ ok: boolean }> =>
     fetch(`/api/tasks/${id}`, opts({ method: "DELETE" })).then(json),
 };

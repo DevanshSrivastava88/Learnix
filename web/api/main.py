@@ -153,6 +153,7 @@ class NewTask(BaseModel):
 class TaskPatch(BaseModel):
     status: str | None = None
     title: str | None = None
+    due: str | None = None  # ISO datetime to (re)schedule; "" to unschedule
 
 
 class LoginCode(BaseModel):
@@ -229,6 +230,12 @@ def patch(task_id: str, body: TaskPatch, uid: int = Depends(get_current_uid)):
         fields["status"] = body.status
     if body.title is not None and body.title.strip():
         fields["title"] = body.title.strip()
+    if body.due is not None:
+        if body.due.strip():
+            fields["next_reminder_at"] = body.due.strip()
+            fields["has_custom_time"] = True
+        else:
+            fields["next_reminder_at"] = None  # unschedule
     if not fields:
         raise HTTPException(400, "Nothing to update")
     tasks_svc.update_task(task_id, **fields)

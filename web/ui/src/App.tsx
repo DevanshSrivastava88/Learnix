@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
 import { api, AuthError, type Task, type Stats, type DayCell } from "./api";
 import FocusTimer from "./FocusTimer";
+import DayPlanner from "./DayPlanner";
 
 const PROMPTS = [
   "one small win still counts.",
@@ -132,6 +133,11 @@ function TaskApp({ onLogout }: { onLogout: () => void }) {
   const [draft, setDraft] = useState("");
   const [adhd, setAdhd] = useState(() => localStorage.getItem("learnix_adhd") === "1");
   const [focusTask, setFocusTask] = useState<Task | null>(null);
+  const [planning, setPlanning] = useState(false);
+
+  function refetch() {
+    api.list().then((r) => setTasks([...r.active, ...r.completed])).catch(guard);
+  }
   const inputRef = useRef<HTMLInputElement>(null);
   const prompt = useMemo(() => PROMPTS[Math.floor(Math.random() * PROMPTS.length)], []);
 
@@ -227,6 +233,12 @@ function TaskApp({ onLogout }: { onLogout: () => void }) {
             onExit={() => setFocusTask(null)}
           />
         )}
+        {planning && (
+          <DayPlanner
+            tasks={tasks}
+            onClose={(c) => { setPlanning(false); if (c) refetch(); }}
+          />
+        )}
       </AnimatePresence>
 
       <motion.div
@@ -245,6 +257,13 @@ function TaskApp({ onLogout }: { onLogout: () => void }) {
           </div>
         </div>
         <div className="flex items-center gap-3">
+          <button
+            onClick={() => setPlanning(true)}
+            title="Plan your day — drag tasks into time slots"
+            className="flex items-center gap-1.5 rounded-full border border-white/10 px-2.5 py-1 font-mono text-[9px] tracking-[0.14em] text-muted transition hover:text-text"
+          >
+            📅 PLAN
+          </button>
           <button
             onClick={toggleAdhd}
             title="Focus mode — adds a ▶ to each task"
