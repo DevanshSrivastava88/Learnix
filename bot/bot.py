@@ -30,6 +30,16 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     uid = update.effective_user.id
     settings_svc.get_settings(uid)  # creates row with defaults if new user
     first_name = update.effective_user.first_name or "there"
+    # Welcome-back: if we have a prior session recap, open with where we left off.
+    try:
+        import asyncio as _aio_wb
+        import memory_svc as _ms_wb
+        wb = await _aio_wb.to_thread(_ms_wb.welcome_back, uid)
+        if wb:
+            await update.message.reply_text(f"👋 Welcome back, *{first_name}*. {wb}",
+                                            parse_mode=ParseMode.MARKDOWN)
+    except Exception:
+        pass
     await update.message.reply_text(
         f"👋 Hey *{first_name}*! I'm your AI life OS — just talk to me naturally.\n\n"
         f"📚 *Study* — /goal, /study\n"
@@ -42,6 +52,56 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         f"⚙️ /settings — tweak reminder times",
         parse_mode=ParseMode.MARKDOWN,
     )
+
+
+# ---------------------------------------------------------------------------
+# /wrap — conclude this chat session: extract long-term memory from the transcript
+# (one cheap LLM call), store durable facts + a sentiment timeline. Session-end
+# write path of the memory spine (see docs/MEMORY_INTEGRATION.md). Never breaks chat.
+# ---------------------------------------------------------------------------
+
+async def cmd_wrap(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    import asyncio as _aio
+    import claude_svc as _cs
+    import memory_svc as _ms
+    import chat_history_svc as _chs
+    from telegram.constants import ChatAction
+    uid = update.effective_user.id
+    past = await _aio.to_thread(_chs.load_history, uid)
+    if not past:
+        await update.message.reply_text("Nothing to wrap yet — chat with me first. 🌙")
+        return
+    await update.message.chat.send_action(ChatAction.TYPING)
+    transcript = "\n".join(past)
+    try:
+        known = [f["text"] for f in await _aio.to_thread(_ms.load_facts, uid)]
+        data = await _aio.to_thread(_cs.extract_memory, transcript, known)
+    except Exception:
+        await update.message.reply_text("Couldn't wrap that one — try again in a bit. 🌙")
+        return
+    if not isinstance(data, dict) or not data.get("notable"):
+        await update.message.reply_text("Wrapped 🌙 — nothing big to remember this time.")
+        return
+    changes = await _aio.to_thread(_ms.apply_extraction, uid, data)
+    # store the session recap so the next session can open with "welcome back…"
+    await _aio.to_thread(
+        _ms.save_session, uid, (data.get("summary") or ""),
+        (data.get("mood") or ""), data.get("open_threads") or [])
+    bits = []
+    if changes.get("facts_added"):
+        bits.append(f"{changes['facts_added']} new fact(s)")
+    if changes.get("facts_updated"):
+        bits.append(f"{changes['facts_updated']} update(s)")
+    if changes.get("events"):
+        bits.append(f"{changes['events']} moment(s)")
+    msg = "🧠 Wrapped. Saved " + (", ".join(bits) if bits else "nothing new") + "."
+    summary = (data.get("summary") or "").strip()
+    if summary:
+        msg += f"\n\n_{summary}_"
+    threads = data.get("open_threads") or []
+    if threads:
+        msg += "\n\nOpen for next time: " + "; ".join(str(t) for t in threads[:3])
+    await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
 
 
 # ---------------------------------------------------------------------------
@@ -495,6 +555,18 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
     # Pre-check common bare keywords — instant response, no API call
     ascii_text = text.encode("ascii", errors="ignore").decode().strip()
     _bare = ascii_text.lower()
+    # Returning-user welcome-back on a natural greeting (once per session). If we have
+    # a prior session recap, open with "where we left off"; else fall through to chat.
+    if _bare in {"hi", "hey", "hello", "yo", "hiya", "heya", "sup", "hola", "gm",
+                 "good morning", "good evening", "good afternoon"} \
+            and not ctx.user_data.get("wb_shown"):
+        import asyncio as _aio_wb2
+        import memory_svc as _ms_wb2
+        ctx.user_data["wb_shown"] = True
+        _wb = await _aio_wb2.to_thread(_ms_wb2.welcome_back, update.effective_user.id)
+        if _wb:
+            await update.message.reply_text(f"👋 {_wb}")
+            return
     if _bare in {"list", "tasks", "my tasks", "show list", "show tasks"}:
         from tasks.handlers import cmd_tasks
         await cmd_tasks(update, ctx)
@@ -738,6 +810,19 @@ async def handle_free_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
     if _re.search(r'\b(delete|remove|clear|wipe|del)\b.{0,20}\bunscheduled\b', text, _re.IGNORECASE):
         history.append("Bot: [deleted unscheduled tasks]")
         await _delete_unscheduled_tasks(update)
+        return
+
+    # Conclude-session ("wrap") — natural language, no slash command. Extracts
+    # long-term memory from the transcript + stores a recap (welcome-back next time).
+    if _re.search(
+        r"\b(wrap (?:this|it|things)?\s*up|wrap up|let'?s wrap|that'?s (?:all|it) for now|"
+        r"done for (?:now|today|the day)|that'?s a wrap|callin? it (?:a day|here)|"
+        r"gotta go|g2g|gtg|heading out|i'?m off|talk later|catch you later|sign(?:ing)? off|"
+        r"save (?:this|what we talked about)|remember (?:this|all this))\b",
+        _bare,
+    ):
+        history.append("Bot: [wrapped session]")
+        await cmd_wrap(update, ctx)
         return
 
     await update.message.chat.send_action(ChatAction.TYPING)

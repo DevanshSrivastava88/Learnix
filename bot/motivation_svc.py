@@ -482,6 +482,16 @@ def gather_user_context(user_id: int) -> dict:
     except Exception:
         days_since = 999
 
+    # Long-term memory (exo-cortex spine): durable facts + recent sentiment timeline.
+    # Best-effort — degrades to empty so the coach never invents.
+    mem_facts, mem_events = [], []
+    try:
+        import memory_svc
+        mem_facts = [f["text"] for f in memory_svc.load_facts(user_id)][:8]
+        mem_events = [f"({e['type']}) {e['summary']}" for e in memory_svc.load_events(user_id, 5)]
+    except Exception:
+        pass
+
     return {
         "streak": streak,
         "persona": persona,
@@ -493,6 +503,8 @@ def gather_user_context(user_id: int) -> dict:
         "worst_weekday": _busiest_weekday(skip_days),
         "recent_wins": _recent_wins(user_id),
         "responds_to": _responds_to(user_id),
+        "memory_facts": mem_facts,
+        "memory_events": mem_events,
     }
 
 
@@ -530,6 +542,10 @@ def _context_brief(ctx: dict) -> str:
             f"- What's landed before: this user re-engages most after "
             f"{_STYLE_HINT[ctx['responds_to']]} messages — lean into that tone."
         )
+    for fact in (ctx.get("memory_facts") or []):
+        lines.append(f"- Known about them: {fact}")
+    for ev in (ctx.get("memory_events") or []):
+        lines.append(f"- Recent moment: {ev}")
     if not lines:
         return "No history yet — keep it warm and general, do NOT invent specifics."
     return "Real data about this user (use specifics, never invent):\n" + "\n".join(lines)

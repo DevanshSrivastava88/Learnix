@@ -816,6 +816,60 @@ def transcribe_voice(file_path: str) -> str:
     return transcription.strip() if isinstance(transcription, str) else transcription.text.strip()
 
 
+_MEMORY_EXTRACTOR = (
+    "You are the memory module of a personal coach (productivity + motivation + addiction-recovery). "
+    "You read a conversation transcript plus the facts already stored, and decide what is worth "
+    "remembering long-term about THIS user. Be a strict filter — most chat is not worth storing.\n\n"
+    "WORTH REMEMBERING: durable facts about the user (their goals + WHY, struggles, addictions they're "
+    "quitting, what motivates them, health/context, people in their life); progress/wins/setbacks; mood; "
+    "recurring patterns or triggers; what coaching tone lands for them.\n\n"
+    "NEVER STORE: pleasantries, small talk, one-off logistics, anything trivial or already known; and "
+    "NEVER meta-events about the conversation itself ('user said hi', 'asked a question', 'introduced "
+    "themselves'). Capturing the underlying fact is enough.\n\n"
+    "GROUND TRUTH: store ONLY what the USER stated or confirmed. The COACH's guesses/suggestions are "
+    "context only — never turn them into memory. Never invent.\n\n"
+    "Tag every item with a pillar: productivity | motivation | addiction | general.\n\n"
+    "If a NEW statement corrects/replaces a stored fact (e.g. a date changed, they quit something, a "
+    "number updated), put it in fact_updates with the OLD fact text and the NEW text — do NOT also add "
+    "it to facts_add.\n\n"
+    "Return ONE JSON object, exactly these keys (empty when nothing applies):\n"
+    "{\n"
+    '  "notable": true|false,\n'
+    '  "facts_add": [{"text": "", "pillar": "general"}],\n'
+    '  "fact_updates": [{"old": "", "new": "", "pillar": "general"}],\n'
+    '  "events": [{"type": "mood|progress|setback|milestone|insight|prediction", "summary": "", '
+    '"detail": "", "pillar": "general", "sentiment": 0.0, "intensity": 0.0}],\n'
+    '  "summary": "", "mood": "", "open_threads": []\n'
+    "}\n"
+    "sentiment -1.0..1.0 (0 = neutral); intensity 0.0..1.0. summary = 2-4 sentences of what the user "
+    "worked on; mood = their overall tone; open_threads = unresolved things to follow up next time. "
+    "If nothing is worth storing, return notable=false with empty fields. Output ONLY the JSON object."
+)
+
+
+def extract_memory(transcript: str, known_facts: list[str] | None = None) -> dict:
+    """Session-end memory extraction: read the whole transcript + existing facts,
+    return durable facts/updates/events + a session recap. Strict ground-truth filter.
+    Never raises — returns {"notable": False} on any failure (memory must not break chat)."""
+    known = "\n".join(f"- {f}" for f in (known_facts or [])) or "(none yet)"
+    prompt = (
+        "ALREADY STORED FACTS (do not duplicate; correct via fact_updates if changed):\n"
+        f"{known}\n\n"
+        "CONVERSATION TRANSCRIPT:\n"
+        f"{transcript}\n\n"
+        "Return the memory JSON object."
+    )
+    try:
+        full = _MEMORY_EXTRACTOR + "\n\n" + prompt
+        try:
+            result = _ask_json(full, max_tokens=900, model="llama-3.3-70b-versatile")
+        except Exception:
+            result = _ask_json(full, max_tokens=900)
+        return result if isinstance(result, dict) else {"notable": False}
+    except Exception:
+        return {"notable": False}
+
+
 def daily_summary(status: dict) -> str:
     prompt = (
         "Write a punchy daily learning reminder (under 150 words, use emojis, Telegram Markdown).\n\n"
