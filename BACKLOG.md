@@ -1,8 +1,23 @@
 # Learnix Backlog
 
-_Last updated: 2026-06-15_
+_Last updated: 2026-06-16_
 _Project status: workInProgress_
 _Auto-agent: enabled_
+
+## ✅ Done (2026-06-16) — Long-term memory spine (exo-cortex port, commit 0b0262b7)
+- **v1 spine** — migrations 015 (`user_facts` + `mem_events`, pillar-tagged: productivity/
+  motivation/addiction/general); `memory_svc.py` (dedup/supersede store + `memory_brief` recall);
+  `claude_svc.extract_memory` (session-end, ground-truth + anti-meta + fact-update). **Our fix vs
+  Atlas's append-only gap:** `fact_updates` supersede stale facts (no contradictions).
+- **v2a sessions** — migration 016 (`mem_sessions`); recap stored on wrap, welcome-back greeting.
+- **Natural language only (no slash commands — user rule):** "wrap up / gotta go" concludes a
+  session; "hi/hey" → welcome-back. Recall plugged into `gather_user_context`.
+- 14 new unit tests (`test_memory_svc.py`), full suite **346 green**, live Telethon-verified.
+- Decisions log: `docs/MEMORY_INTEGRATION.md`. Deployed via `railway up` (not pushed).
+- **v2 next:** idle/daily auto-wrap (scheduler), `people` table, addiction `quit_goals`/`relapse_log`
+  + sobriety streak, web tab-close beacon, then port to the new merged web+chat app.
+- **Dead-code note:** `classify_intent` (claude_svc.py) confirmed dead (tests-only) — safe to remove
+  later; `parse_task` + `skip_time_parser` still in use (NOT dead).
 
 ## ✅ Done (2026-06-14, autonomous overnight)
 - **Motivation 10x — Increment 1 (context engine)** — `gather_user_context()` pulls real
