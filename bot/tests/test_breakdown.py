@@ -74,20 +74,6 @@ def test_extract_breakdown_subject_falls_back_to_text():
 
 
 # ---------------------------------------------------------------------------
-# classify_intent recognises breakdown
-# ---------------------------------------------------------------------------
-
-def test_classify_intent_breakdown():
-    with patch.object(claude_svc, '_ask_json', return_value={"intent": "breakdown"}):
-        assert claude_svc.classify_intent("break down morning workout") == "breakdown"
-
-
-def test_classify_intent_breakdown_learning_path():
-    with patch.object(claude_svc, '_ask_json', return_value={"intent": "breakdown"}):
-        assert claude_svc.classify_intent("learning path for Python") == "breakdown"
-
-
-# ---------------------------------------------------------------------------
 # tasks_svc.create_task used for step tasks
 # ---------------------------------------------------------------------------
 
@@ -192,20 +178,3 @@ def test_extract_topic_name_falls_back_to_empty():
     with patch.object(claude_svc, '_ask_json', return_value={}):
         result = claude_svc.extract_topic_name("jump somewhere")
     assert result == ""
-
-
-# ---------------------------------------------------------------------------
-# classify_intent new intents
-# ---------------------------------------------------------------------------
-
-def test_classify_intent_show_topics():
-    with patch.object(claude_svc, '_ask_json', return_value={"intent": "show_topics"}):
-        assert claude_svc.classify_intent("show my topics") == "show_topics"
-
-def test_classify_intent_study_topic():
-    with patch.object(claude_svc, '_ask_json', return_value={"intent": "study_topic"}):
-        assert claude_svc.classify_intent("study OOP Basics") == "study_topic"
-
-def test_classify_intent_skip_topic():
-    with patch.object(claude_svc, '_ask_json', return_value={"intent": "skip_topic"}):
-        assert claude_svc.classify_intent("skip File I/O") == "skip_topic"

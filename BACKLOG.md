@@ -1,6 +1,6 @@
 # Learnix Backlog
 
-_Last updated: 2026-06-15_
+_Last updated: 2026-06-19_
 _Project status: workInProgress_
 _Auto-agent: enabled_
 
@@ -59,7 +59,7 @@ engine, #8 sentiment read, Exocortex crisis classifier (safety — fold in soon)
 
 - [ ] **Monitor 70B quota** — understand_message uses llama-3.3-70b-versatile with 8B fallback; if quota exhausts midday, routing quality drops (8B misclassifies). Watch logs for fallback hits.
 - [x] **chat_history table growth** — rows accumulate forever; add periodic cleanup (delete rows older than 7 days)
-- [ ] **Remove dead code** — classify_intent + parse_task in claude_svc.py are now only used by /newtask conversation flow + tests; skip_time_parser only by legacy time_str path. Consolidate later.
+- [x] **Remove dead code** — `claude_svc.classify_intent` had zero production callers (superseded by `understand_message`'s unified intent+task extraction); removed the function + its 5 now-orphaned tests in `test_breakdown.py`. `parse_task` and `skip_time_parser` are still actively used (by `/newtask` and the skip/timesheet flows respectively) — not dead, left as-is.
 - [ ] **Test new features live** — skip flow, /timesheet, /skipgraph in Telegram
 - [x] **Fix "Cancel" pre-check bug** — bare "Cancel" text gets Gemini-classified as a task; needs string check before hitting Gemini in `handle_free_text`
 - [ ] **Deploy to Railway** — still failing: "Failed to read app source directory" from nixpacks. Railway incident not resolved. Retry later.
