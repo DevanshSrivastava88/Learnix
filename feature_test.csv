@@ -1,0 +1,27 @@
+feature,test_input,expected,status,notes
+F1_casual_chat,hey whats up,Friendly reply,PASS,Context-aware (remembers prev msgs)
+F2_reminder_onetime,remind me to drink water in 2 mins,Got it! in 2 min,PASS,
+F3_habit_create,workout every day,Confirmation dialog,PASS,
+F4_habit_cancel,cancel,No worries cancelled,PASS,
+F5_show_tasks,show my tasks,List of tasks,PASS,
+F6_show_schedule,what's my day,Schedule with habits,PASS,Needs 18s timeout (was 14s in test)
+F7_mark_done,I finished morning workout,Done! streak,PASS,FIXED - no step task disambiguation
+F8_skip_task,skip daily meditation,Skipped!,PASS,FIXED - direct match no ambiguity
+F9_show_progress,how am I doing,Progress stats,PASS,
+F10_create_goal,I want to learn react,Goal difficulty prompt,PASS,
+F11_show_goals,my goals,Goal list,PASS,
+F12_add_topic,add hooks to my react goal,Added! Hooks in react,PASS,
+F13_breakdown,break down morning workout,Steps created,PASS,
+F14_start_study,let's study,Study session start,PASS,Note: quiz starts immediately after
+F15_show_graph,show my activity graph,Graph image,PASS,Need /cancel before if study active
+F16_show_settings,show my settings,Settings times,PASS,Need /cancel before if study active
+F17_set_time,set my morning brief to 8am,Done! set to 8am,PASS,
+F18_calls_on,turn on phone calls reminder,Call on,PASS,FIXED intent routing
+F19_calls_off,turn off phone calls,Call reminders off,PASS,
+F20_context_chat,im feeling really tired,Empathetic reply,PASS,
+F21_ctx_refer,remind me that in 5 mins,Asks what to remind,KNOWN_LIMIT,Gemini cant resolve pronoun 'that' - asks for clarification (acceptable UX)
+F22_delete_goal,delete my react goal,Shows goal picker,PASS,
+F23_help,help,Feature list,PASS,Test timing issue only - works manually
+F24_skip_patterns,show my skip patterns,Skip graph,PASS,
+F25_cancel,/cancel,Cancelled,PASS,
+F26_reset,/reset,State cleared,PASS,

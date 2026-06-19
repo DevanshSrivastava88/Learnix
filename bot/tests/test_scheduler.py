@@ -37,3 +37,13 @@ def test_format_eod_empty():
         msg = scheduler.format_eod(123)
         assert 'wrap' in msg.lower() or 'eod' in msg.lower() or 'day' in msg.lower()
         assert '2' in msg
+
+def test_get_missed_yesterday_runs_without_nameerror():
+    # Regression: timedelta used at module scope must be importable, else NameError.
+    sb = MagicMock()
+    sb.table.return_value.select.return_value.eq.return_value.eq.return_value.eq.return_value.execute.return_value = MagicMock(data=[])
+    sb.table.return_value.select.return_value.eq.return_value.eq.return_value.in_.return_value.execute.return_value = MagicMock(data=[])
+    with patch('supabase_svc.get_client', return_value=sb):
+        result = scheduler.get_missed_yesterday(123)
+    assert isinstance(result, list)
+    assert result == []

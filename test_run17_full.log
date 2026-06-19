@@ -1,0 +1,145 @@
+
+Testing 40 features
+=======================================================
+
+[setup]  ->  '/reset'
+
+[test] F1_hi  ->  'hi'
+  FAIL — no reply within 25s
+
+[test] F2_casual  ->  'hey whats up'
+  FAIL — no reply within 25s
+
+[test] F3_reminder  ->  'remind me to drink water in 2 mins'
+  FAIL — no reply within 25s
+
+[test] F4_habit  ->  'workout every day'
+  FAIL — no reply within 25s
+
+[test] F5_cancel  ->  'cancel'
+  FAIL — no reply within 25s
+
+[test] F6_tasks  ->  'show my tasks'
+  FAIL — no reply within 25s
+
+[setup]  ->  '/cancel'
+
+[test] F7_schedule  ->  "what's my day"
+  FAIL — no reply within 25s
+
+[setup]  ->  '/cancel'
+
+[test] F8_done  ->  'I finished morning workout'
+  FAIL — no reply within 25s
+
+[test] F9_skip  ->  'skip daily meditation'
+  FAIL — no reply within 25s
+
+[test] F10_reschedule  ->  'move morning workout to 7am'
+  FAIL — no reply within 25s
+
+[test] F11_delay  ->  'delay 30 mins'
+  FAIL — no reply within 25s
+
+[test] F12_important  ->  'mark morning workout as important'
+  FAIL — no reply within 25s
+
+[test] F13_graph  ->  'show my activity graph'
+  FAIL — no reply within 25s
+
+[test] F14_skipgraph  ->  'show my skip patterns'
+  FAIL — no reply within 25s
+
+[test] F15_settings  ->  'show my settings'
+  FAIL — no reply within 25s
+
+[test] F16_set_time  ->  'set my morning brief to 8am'
+  FAIL — no reply within 25s
+
+[test] F17_calls_on  ->  'turn on phone calls reminder'
+  FAIL — no reply within 25s
+
+[test] F18_calls_off  ->  'turn off phone calls'
+  FAIL — no reply within 25s
+
+[test] F19_help  ->  'help'
+  FAIL — no reply within 25s
+
+[setup]  ->  '/reset'
+
+[test] C1_hi_after_reset  ->  'hi'
+  FAIL — no reply within 25s
+
+[test] C2_topic  ->  'im trying to lose weight'
+  FAIL — no reply within 25s
+
+[test] C3_remind_this  ->  'remind me about this every morning'
+  FAIL — no reply within 25s
+
+[test] C4_sleep  ->  'what should I do to sleep better?'
+  FAIL — no reply within 25s
+
+[test] C5_remind_that  ->  'remind me to do that at 10pm'
+  FAIL — no reply within 25s
+
+[test] C6_echo_not_task  ->  'shall we tackle something?'
+  FAIL — no reply within 25s
+
+[setup]  ->  '/reset'
+
+[test] S1_slang_task  ->  'yo remind me to hit the gym at 6'
+  FAIL — no reply within 25s
+
+[test] S2_typo_habit  ->  'i wanna read evry single day'
+  FAIL — no reply within 25s
+
+[test] S3_vague_done  ->  'yep did it'
+  FAIL — no reply within 25s
+
+[test] S4_no_match_task  ->  'mark my guitar practice as done'
+  FAIL — no reply within 25s
+
+[test] S5_casual_chat  ->  'ngl today was rough lol'
+  FAIL — no reply within 25s
+
+[test] S6_slangy_skip  ->  'nah skip the reading thing today'
+  FAIL — no reply within 25s
+
+[setup]  ->  '/reset'
+
+[test] ST1_create_goal  ->  'i want to learn react'
+  FAIL — no reply within 25s
+
+[setup]  ->  '/cancel'
+
+[test] ST2_show_goals  ->  'show my study goals'
+  FAIL — no reply within 25s
+
+[test] ST3_show_topics  ->  'what topics do i have'
+  FAIL — no reply within 25s
+
+[test] ST4_start_study  ->  "let's study"
+  FAIL — no reply within 25s
+
+[setup]  ->  '/cancel'
+
+[test] ST5_progress  ->  "how's my study progress"
+  FAIL — no reply within 25s
+
+[setup]  ->  '/reset'
+
+[test] T1_no_time_task  ->  'remind me to call mom'
+  FAIL — no reply within 25s
+
+[test] T2_optional_time  ->  'skip'
+  FAIL — no reply within 25s
+
+[test] T3_breakdown  ->  'break learning guitar into steps'
+  FAIL — no reply within 25s
+
+[test] T4_tasks_list  ->  'show my tasks'
+  FAIL — no reply within 25s
+
+=======================================================
+PASS:0  WARN:0  FAIL:40
+Results: D:\Projects\learnix\feature_test_results.csv

@@ -1,0 +1,126 @@
+feature,sent,status,reply
+F1_hi,hi,PASS,Hey back at ya. What kind of trouble are you getting into today?
+F2_casual,hey whats up,WARN,Just stuck in a never-ending loop of bad coffee and meetings
+F3_reminder,remind me to drink water in 2 mins,PASS,"""2 mins, huh? Don't make me water-nag you"""
+F4_habit,workout every day,PASS,"Got it:
+
+**workout every day** — every day
+
+Look right?"
+F5_cancel,cancel,PASS,"No worries, cancelled! 👋"
+F6_tasks,show my tasks,PASS,"**📋 Here's what you're tracking**
+
+**🗒 No fixed time**
+  • Do 20 pushups (daily)
+  • Read 10 pages (daily)
+  • Track sleep habit (daily)
+  • Daily Meditation (daily)
+  • Do 10 pushups (daily)
+
+Say ""do"
+F7_schedule,what's my day,PASS,"📅 **Your Day — Sun, 07 Jun**
+
+🔔 **Automatics**
+  🌅 `08:00` IST  Morning brief
+  📚 `09:02` IST  Study session
+  🌙 `21:30` IST  EOD check-in
+
+✅ **Habits** — 5 active
+  • **Do 20 pushups** (daily)  →  in"
+F8_done,I finished morning workout,PASS,"Don't see **morning workout** on your list — here's what you've got:
+  • Do 20 pushups
+  • Read 10 pages
+  • Track sleep habit
+  • Daily Meditation
+  • Do 10 pushups
+Say the name again and I'll get it"
+F9_skip,skip daily meditation,PASS,"Done! ✅ **Daily Meditation**  🔥 2 day streak!
+I'll remind you again in 1 day(s)."
+F10_reschedule,move morning workout to 7am,PASS,"Don't see **morning workout** on your list — here's what you've got:
+  • Do 20 pushups
+  • Read 10 pages
+  • Track sleep habit
+  • Daily Meditation
+  • Do 10 pushups
+Say the name again and I'll get it"
+F11_delay,delay 30 mins,PASS,"No recent reminder to delay. Say the task name explicitly, e.g. 'delay workout by 30 mins'."
+F12_important,mark morning workout as important,PASS,"Don't see **morning workout** on your list — here's what you've got:
+  • Do 20 pushups
+  • Read 10 pages
+  • Track sleep habit
+  • Daily Meditation
+  • Do 10 pushups
+Say the name again and I'll get it"
+F13_graph,show my activity graph,PASS,Generating your activity graph... 📊
+F14_skipgraph,show my skip patterns,PASS,Generating your skip analytics... 📊
+F15_settings,show my settings,PASS,"**⚙️ Your settings**
+
+📖 Study time: **09:02** IST — /settime
+🌅 Morning brief: **08:00** IST — /setmorning
+🌙 EOD check-in: **21:30** IST — /seteod
+📞 Call reminders: **OFF ⏸** — /twilio on \| /twilio of"
+F16_set_time,set my morning brief to 8am,PASS,Done! Morning brief set to **08:00** IST. 🕐
+F17_calls_on,turn on phone calls reminder,PASS,Call on 📞
+F18_calls_off,turn off phone calls,PASS,Call reminders off. ⏸
+F19_help,help,PASS,"🤖 **Learnix — Your AI Life OS**
+
+Just talk to me naturally — or use commands.
+
+━━━━━━━━━━━━━━━━━━
+📚 **STUDY**
+/goal — Create a learning goal
+/goals — See all your goals
+/addtopic — Add a topic to a go"
+C1_hi_after_reset,hi,PASS,Hey! How's life in human mode treating you today?
+C2_topic,im trying to lose weight,PASS,"Losing weight can be a battle, but at least you've got an excuse to eat all the veggies you've been putting off"
+C3_remind_this,remind me about this every morning,PASS,⏰ Got it! I'll remind you about **Losing Weight Reminders** in 1h.
+C4_sleep,what should I do to sleep better?,PASS,Breaking **to sleep better** into steps... ⚡
+C5_remind_that,remind me to do that at 10pm,PASS,⏰ Got it! I'll remind you about **Remind at 10pm** in 7h.
+C6_echo_not_task,shall we tackle something?,PASS,"Your daily veggie reminders are still on schedule (don't worry, I won't tell), but I'm game if you are - what's the agenda for day one of tackling that to-do list?"
+S1_slang_task,yo remind me to hit the gym at 6,WARN,"Hmm, didn't catch that — say it again?"
+S2_typo_habit,i wanna read evry single day,PASS,"Got it:
+
+**Read Daily** — every day
+
+Look right?"
+S3_vague_done,yep did it,PASS,Which task do you mean? Try /tasks to see your list.
+S4_no_match_task,mark my guitar practice as done,PASS,"Don't see **guitar practice** on your list — here's what you've got:
+  • Do 20 pushups
+  • Read 10 pages
+  • Track sleep habit
+  • Daily Meditation
+  • Do 10 pushups
+Say the name again and I'll get it"
+S5_casual_chat,ngl today was rough lol,PASS,"""Rough"" enough to forget to hit the gym at 6?"
+S6_slangy_skip,nah skip the reading thing today,PASS,"Got it:
+
+**skip the reading thing today** — every day
+
+Look right?"
+ST1_create_goal,i want to learn react,PASS,"Let's set up a learning goal! 🎯
+
+Goal: **React**
+
+What difficulty?"
+ST2_show_goals,show my study goals,PASS,No study goals yet. Use /goal to set one up!
+ST3_show_topics,what topics do i have,PASS,No study goals yet. Use /goal to set one up!
+ST4_start_study,let's study,PASS,No study goals yet! Use /goal to set one up first.
+ST5_progress,how's my study progress,PASS,No goals yet! Use /goal to create one.
+T1_no_time_task,remind me to call mom,PASS,"Got it:
+
+**Call Mom** — every day
+__Call my mom__
+
+Look right?"
+T2_optional_time,skip,PASS,"Bail on mom time? That'll get you the ""when was the last time I saw you?"" lecture"
+T3_breakdown,break learning guitar into steps,PASS,Breaking **learning guitar** into steps... ⚡
+T4_tasks_list,show my tasks,PASS,"**📋 Here's what you're tracking**
+
+**🗒 No fixed time**
+  • Do 20 pushups (daily)
+  • Read 10 pages (daily)
+  • Track sleep habit (daily)
+  • Daily Meditation (daily)
+  • Do 10 pushups (daily)
+
+Say ""do"

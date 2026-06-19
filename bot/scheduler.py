@@ -10,7 +10,7 @@ scheduler.py — Polling-based scheduler for all users.
 
 import logging
 import os
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 
 import pytz
 from telegram.ext import Application, ContextTypes
@@ -369,7 +369,7 @@ async def reminder_poller(ctx: ContextTypes.DEFAULT_TYPE) -> None:
     Important habits: remind every 1hr from first reminder until user's eod_time (IST).
                       After eod_time, stop for today. Next day resets to normal cadence.
     """
-    from datetime import timezone as _tz, timedelta
+    from datetime import timezone as _tz
     due = tasks_svc.get_due_tasks()
     railway_url = os.environ.get("RAILWAY_URL", "")
 

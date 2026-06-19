@@ -42,31 +42,55 @@
   }
 }
 
-/* ── DAY MODE: same cat wallpaper, but bright + frosted glass ────────────── */
+/* ── DAY MODE: bright + airy — vivid wallpaper glows soft behind frosted white
+   glass, with dark ink text. A real light theme, not night-with-a-haze. ───── */
+html[data-theme="day"] { color-scheme: light; }
+
+/* light wash: pastels the photo so it stays dreamy but the page reads bright
+   and dark text is legible even over the busy butterfly highlights */
 html[data-theme="day"] body::before {
-  /* light scrim — the cat stays vivid */
   background:
-    radial-gradient(40rem 32rem at 0% -8%, rgba(199, 255, 56, 0.04), transparent 60%),
-    linear-gradient(rgba(20, 10, 44, 0.34), rgba(20, 10, 44, 0.46));
+    radial-gradient(46rem 34rem at 50% -10%, rgba(199, 255, 56, 0.10), transparent 60%),
+    linear-gradient(rgba(247, 245, 255, 0.68), rgba(251, 249, 255, 0.80));
 }
-/* turn panels into frosted glass */
+
+/* frosted WHITE panels — opaque enough that dark text stays crisp */
 html[data-theme="day"] .bg-panel,
 html[data-theme="day"] .bg-panel\/50,
 html[data-theme="day"] .bg-panel\/60,
 html[data-theme="day"] .bg-panel-2 {
-  background-color: rgba(255, 255, 255, 0.12) !important;
-  backdrop-filter: blur(18px) saturate(140%);
-  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  background-color: rgba(255, 255, 255, 0.58) !important;
+  backdrop-filter: blur(22px) saturate(150%);
+  -webkit-backdrop-filter: blur(22px) saturate(150%);
 }
-/* lift text + borders for contrast on the bright bg */
-html[data-theme="day"] .text-text { color: #ffffff; }
-html[data-theme="day"] .text-muted { color: rgba(255, 255, 255, 0.74); }
-html[data-theme="day"] .text-muted-deep { color: rgba(255, 255, 255, 0.5); }
+html[data-theme="day"] .glass {
+  background: rgba(255, 255, 255, 0.52);
+  border-color: rgba(40, 20, 70, 0.12);
+  box-shadow:
+    0 10px 40px -12px rgba(60, 30, 90, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.75);
+}
+
+/* dark ink text (the key fix — white text was invisible on a bright bg) */
+html[data-theme="day"] .text-text { color: #1c1330; }
+html[data-theme="day"] .text-muted { color: rgba(28, 19, 48, 0.66); }
+html[data-theme="day"] .text-muted-deep { color: rgba(28, 19, 48, 0.46); }
+
+/* deeper acid so the accent is legible on white; bright acid fills stay bright */
+html[data-theme="day"] .text-acid { color: #5f8a0c; }
+html[data-theme="day"] .border-acid\/40,
+html[data-theme="day"] .border-acid\/50 { border-color: rgba(95, 138, 12, 0.45); }
+
+/* darker hairlines + faint fills tuned for the bright bg */
 html[data-theme="day"] .border-white\/10,
 html[data-theme="day"] .border-white\/12,
-html[data-theme="day"] .border-white\/5 { border-color: rgba(255, 255, 255, 0.28); }
+html[data-theme="day"] .border-white\/5 { border-color: rgba(30, 15, 50, 0.14); }
 html[data-theme="day"] .bg-white\/\[0\.02\],
-html[data-theme="day"] .bg-white\/\[0\.04\] { background-color: rgba(255, 255, 255, 0.07); }
+html[data-theme="day"] .bg-white\/\[0\.04\],
+html[data-theme="day"] .bg-white\/5 { background-color: rgba(30, 15, 50, 0.05); }
+html[data-theme="day"] .hover\:bg-white\/5:hover { background-color: rgba(30, 15, 50, 0.07); }
+
+html[data-theme="day"] ::selection { background: rgba(95, 138, 12, 0.22); color: #1c1330; }
 
 /* liquid glass — frosted translucent panel over the dreamy bg */
 .glass {

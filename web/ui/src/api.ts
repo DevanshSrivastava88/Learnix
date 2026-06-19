@@ -5,6 +5,7 @@ export type Task = {
   type: string;
   due?: string | null;
   recurrence?: number | null;
+  ordering?: number | null;
   created_at?: string;
 };
 
@@ -49,6 +50,16 @@ export const api = {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status }),
+    })).then(json),
+  // habit-aware completion: a habit logs today's done + advances its reminder
+  // (stays active); a one-off task closes. Mirrors the Telegram bot.
+  complete: (id: string): Promise<Task> =>
+    fetch(`/api/tasks/${id}/complete`, opts({ method: "POST" })).then(json),
+  reorder: (ids: string[]): Promise<{ ok: boolean }> =>
+    fetch("/api/tasks/reorder", opts({
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids }),
     })).then(json),
   reschedule: (id: string, dueISO: string | null): Promise<Task> =>
     fetch(`/api/tasks/${id}`, opts({

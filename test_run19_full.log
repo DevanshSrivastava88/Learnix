@@ -1,0 +1,145 @@
+
+Testing 40 features
+=======================================================
+
+[setup]  ->  '/reset'
+
+[test] F1_hi  ->  'hi'
+  PASS: Hey back at ya. What kind of trouble are you getting into today?
+
+[test] F2_casual  ->  'hey whats up'
+  WARN: Just stuck in a never-ending loop of bad coffee and meetings
+
+[test] F3_reminder  ->  'remind me to drink water in 2 mins'
+  PASS: "2 mins, huh? Don't make me water-nag you"
+
+[test] F4_habit  ->  'workout every day'
+  PASS: Got it:  **workout every day** — every day  Look right?
+
+[test] F5_cancel  ->  'cancel'
+  PASS: No worries, cancelled! 👋
+
+[test] F6_tasks  ->  'show my tasks'
+  PASS: **📋 Here's what you're tracking**  **🗒 No fixed time**   • Do 20 pushups (daily)   • Read 10 pages (
+
+[setup]  ->  '/cancel'
+
+[test] F7_schedule  ->  "what's my day"
+  PASS: 📅 **Your Day — Sun, 07 Jun**  🔔 **Automatics**   🌅 `08:00` IST  Morning brief   📚 `09:02` IST  Study
+
+[setup]  ->  '/cancel'
+
+[test] F8_done  ->  'I finished morning workout'
+  PASS: Don't see **morning workout** on your list — here's what you've got:   • Do 20 pushups   • Read 10 p
+
+[test] F9_skip  ->  'skip daily meditation'
+  PASS: Done! ✅ **Daily Meditation**  🔥 2 day streak! I'll remind you again in 1 day(s).
+
+[test] F10_reschedule  ->  'move morning workout to 7am'
+  PASS: Don't see **morning workout** on your list — here's what you've got:   • Do 20 pushups   • Read 10 p
+
+[test] F11_delay  ->  'delay 30 mins'
+  PASS: No recent reminder to delay. Say the task name explicitly, e.g. 'delay workout by 30 mins'.
+
+[test] F12_important  ->  'mark morning workout as important'
+  PASS: Don't see **morning workout** on your list — here's what you've got:   • Do 20 pushups   • Read 10 p
+
+[test] F13_graph  ->  'show my activity graph'
+  PASS: Generating your activity graph... 📊
+
+[test] F14_skipgraph  ->  'show my skip patterns'
+  PASS: Generating your skip analytics... 📊
+
+[test] F15_settings  ->  'show my settings'
+  PASS: **⚙️ Your settings**  📖 Study time: **09:02** IST — /settime 🌅 Morning brief: **08:00** IST — /setmo
+
+[test] F16_set_time  ->  'set my morning brief to 8am'
+  PASS: Done! Morning brief set to **08:00** IST. 🕐
+
+[test] F17_calls_on  ->  'turn on phone calls reminder'
+  PASS: Call on 📞
+
+[test] F18_calls_off  ->  'turn off phone calls'
+  PASS: Call reminders off. ⏸
+
+[test] F19_help  ->  'help'
+  PASS: 🤖 **Learnix — Your AI Life OS**  Just talk to me naturally — or use commands.  ━━━━━━━━━━━━━━━━━━ 📚 
+
+[setup]  ->  '/reset'
+
+[test] C1_hi_after_reset  ->  'hi'
+  PASS: Hey! How's life in human mode treating you today?
+
+[test] C2_topic  ->  'im trying to lose weight'
+  PASS: Losing weight can be a battle, but at least you've got an excuse to eat all the veggies you've been 
+
+[test] C3_remind_this  ->  'remind me about this every morning'
+  PASS: ⏰ Got it! I'll remind you about **Losing Weight Reminders** in 1h.
+
+[test] C4_sleep  ->  'what should I do to sleep better?'
+  PASS: Breaking **to sleep better** into steps... ⚡
+
+[test] C5_remind_that  ->  'remind me to do that at 10pm'
+  PASS: ⏰ Got it! I'll remind you about **Remind at 10pm** in 7h.
+
+[test] C6_echo_not_task  ->  'shall we tackle something?'
+  PASS: Your daily veggie reminders are still on schedule (don't worry, I won't tell), but I'm game if you a
+
+[setup]  ->  '/reset'
+
+[test] S1_slang_task  ->  'yo remind me to hit the gym at 6'
+  WARN: Hmm, didn't catch that — say it again?
+
+[test] S2_typo_habit  ->  'i wanna read evry single day'
+  PASS: Got it:  **Read Daily** — every day  Look right?
+
+[test] S3_vague_done  ->  'yep did it'
+  PASS: Which task do you mean? Try /tasks to see your list.
+
+[test] S4_no_match_task  ->  'mark my guitar practice as done'
+  PASS: Don't see **guitar practice** on your list — here's what you've got:   • Do 20 pushups   • Read 10 p
+
+[test] S5_casual_chat  ->  'ngl today was rough lol'
+  PASS: "Rough" enough to forget to hit the gym at 6?
+
+[test] S6_slangy_skip  ->  'nah skip the reading thing today'
+  PASS: Got it:  **skip the reading thing today** — every day  Look right?
+
+[setup]  ->  '/reset'
+
+[test] ST1_create_goal  ->  'i want to learn react'
+  PASS: Let's set up a learning goal! 🎯  Goal: **React**  What difficulty?
+
+[setup]  ->  '/cancel'
+
+[test] ST2_show_goals  ->  'show my study goals'
+  PASS: No study goals yet. Use /goal to set one up!
+
+[test] ST3_show_topics  ->  'what topics do i have'
+  PASS: No study goals yet. Use /goal to set one up!
+
+[test] ST4_start_study  ->  "let's study"
+  PASS: No study goals yet! Use /goal to set one up first.
+
+[setup]  ->  '/cancel'
+
+[test] ST5_progress  ->  "how's my study progress"
+  PASS: No goals yet! Use /goal to create one.
+
+[setup]  ->  '/reset'
+
+[test] T1_no_time_task  ->  'remind me to call mom'
+  PASS: Got it:  **Call Mom** — every day __Call my mom__  Look right?
+
+[test] T2_optional_time  ->  'skip'
+  PASS: Bail on mom time? That'll get you the "when was the last time I saw you?" lecture
+
+[test] T3_breakdown  ->  'break learning guitar into steps'
+  PASS: Breaking **learning guitar** into steps... ⚡
+
+[test] T4_tasks_list  ->  'show my tasks'
+  PASS: **📋 Here's what you're tracking**  **🗒 No fixed time**   • Do 20 pushups (daily)   • Read 10 pages (
+
+=======================================================
+PASS:38  WARN:2  FAIL:0
+Results: D:\Projects\learnix\feature_test_results.csv

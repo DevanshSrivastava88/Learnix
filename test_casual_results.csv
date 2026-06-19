@@ -1,0 +1,211 @@
+label,sent,status,reply
+CC1_help_casual,what can you do for me,PASS,"🤖 **Learnix — Your AI Life OS**
+
+Just talk to me naturally — or use commands.
+
+━━━━━━━━━━━━━━━━━━
+📚 **STUDY**
+/goal — Create a learning goal
+/goals — See all your goals
+/addtopic — Add a topic to a goal
+/study — Start a study session
+/progress — See how far you've come
+
+━━━━━━━━━━━━━━━━━━
+✅ **HABITS"
+CC2_help_casual2,how do you work,PASS,"🤖 **Learnix — Your AI Life OS**
+
+Just talk to me naturally — or use commands.
+
+━━━━━━━━━━━━━━━━━━
+📚 **STUDY**
+/goal — Create a learning goal
+/goals — See all your goals
+/addtopic — Add a topic to a goal
+/study — Start a study session
+/progress — See how far you've come
+
+━━━━━━━━━━━━━━━━━━
+✅ **HABITS"
+CC3_info_casual,explain yourself,PASS,"🤖 **Learnix — Your AI Life OS**
+
+Just talk to me naturally — or use commands.
+
+━━━━━━━━━━━━━━━━━━
+📚 **STUDY**
+/goal — Create a learning goal
+/goals — See all your goals
+/addtopic — Add a topic to a goal
+/study — Start a study session
+/progress — See how far you've come
+
+━━━━━━━━━━━━━━━━━━
+✅ **HABITS"
+CC4_new_habit,i want to meditate every morning,PASS,"Got it:
+
+**Morning Meditation** — every day
+__meditate every morning__
+
+Look right?"
+CC5_new_habit2,add daily journaling to my routine,PASS,"Got it:
+
+**add daily journaling** — every day
+__to my routine__
+
+Look right?"
+CC6_reminder,ping me to take my meds at 9pm,PASS,⏰ Got it! I'll remind you about **Take meds reminder** in 6h.
+CC7_reminder_notime,don't let me forget to call dad,PASS,"Got it:
+
+**Call Dad** — every day
+__ __
+
+Look right?"
+CC8_show_tasks,what am i tracking,PASS,"**📋 Here's what you're tracking**
+
+**🗒 No fixed time**
+  • Do 20 pushups (daily)
+  • Read 10 pages (daily)
+  • Track sleep habit (daily)
+  • Daily Meditation (daily)
+  • Do 10 pushups (daily)
+
+Say ""done with [task]"" or ""skip [task]"" — or use /deletetask, /pause to manage."
+CC9_show_tasks2,give me my task list,PASS,"**📋 Here's what you're tracking**
+
+**🗒 No fixed time**
+  • Do 20 pushups (daily)
+  • Read 10 pages (daily)
+  • Track sleep habit (daily)
+  • Daily Meditation (daily)
+  • Do 10 pushups (daily)
+
+Say ""done with [task]"" or ""skip [task]"" — or use /deletetask, /pause to manage."
+CC10_done,just knocked out my pushups,PASS,"Which task did you mean?
+  • Do 20 pushups
+  • Do 10 pushups"
+CC11_skip,gonna skip journaling for today,PASS,"Don't see **journaling** on your list — here's what you've got:
+  • Do 20 pushups
+  • Read 10 pages
+  • Track sleep habit
+  • Daily Meditation
+  • Do 10 pushups
+Say the name again and I'll get it."
+CC12_delay,snooze the meds reminder by an hour,PASS,"No recent reminder to delay. Say the task name explicitly, e.g. 'delay workout by 30 mins'."
+CC13_important,"my therapy appointment is really important, flag it",PASS,Got it — **Track sleep habit** is now marked ⚡ important. I'll keep reminding you every hour until you do it.
+CC14_reschedule,push my call dad reminder to 8pm,PASS,⏰ Got it! I'll remind you about **Push call to dad** in 6h.
+CC15_breakdown,help me break losing 10kg into steps,PASS,"""Lost 10kg? Sounds like you've got a lead pipe coming for me when I meet your trainer. Break it down into, idk, not eating a whole pizza alone every Thursday?"""
+CC16_schedule,give me a rundown of today,PASS,"📅 **Your Day — Tue, 09 Jun**
+
+🔔 **Automatics**
+  🌅 `07:00` IST  Morning brief
+  📚 `09:02` IST  Study session
+  🌙 `21:30` IST  EOD check-in
+
+✅ **Habits** — 5 active
+  • **Do 20 pushups** (daily)  →  in 22h
+  • **Read 10 pages** (daily)  →  in 13h
+  • **Track sleep habit** (daily)  →  in 23h
+  • **Dai"
+CC17_schedule2,what's on my plate right now,PASS,"📅 **Your Day — Tue, 09 Jun**
+
+🔔 **Automatics**
+  🌅 `07:00` IST  Morning brief
+  📚 `09:02` IST  Study session
+  🌙 `21:30` IST  EOD check-in
+
+✅ **Habits** — 5 active
+  • **Do 20 pushups** (daily)  →  in 22h
+  • **Read 10 pages** (daily)  →  in 12h
+  • **Track sleep habit** (daily)  →  in 23h
+  • **Dai"
+CC18_graph,how productive have i been lately,PASS,Generating your activity graph... 📊
+CC19_skipgraph,what do i skip the most,PASS,Generating your skip analytics... 📊
+CC20_settings,what are my current settings,PASS,"**⚙️ Your settings**
+
+📖 Study time: **09:02** IST — /settime
+🌅 Morning brief: **07:00** IST — /setmorning
+🌙 EOD check-in: **21:30** IST — /seteod
+📞 Call reminders: **OFF ⏸** — /twilio on \| /twilio off"
+CC21_setmorning,"i wake up at 7am, set my brief then",PASS,Done! Morning brief set to **07:00** IST. 🕐
+CC22_setstudytime,i usually study around 10pm,PASS,Done! Study time set to **22:00** IST. 🕐
+CC23_calls_on,let me know when someone calls me,PASS,"**⚙️ Your settings**
+
+📖 Study time: **22:00** IST — /settime
+🌅 Morning brief: **07:00** IST — /setmorning
+🌙 EOD check-in: **21:30** IST — /seteod
+📞 Call reminders: **OFF ⏸** — /twilio on \| /twilio off"
+CC24_calls_off,stop the call notifications,PASS,Call reminders off. ⏸
+CC25_create_goal,i want to get better at python,PASS,"Let's set up a learning goal! 🎯
+
+Goal: **python**
+
+What difficulty?"
+CC26_show_goals,what am i studying right now,PASS,No study goals yet. Use /goal to set one up!
+CC27_show_topics,list my study topics,PASS,No study goals yet. Use /goal to set one up!
+CC28_start_study,quiz me on something,PASS,No study goals yet. Use /goal to set one up!
+CC29_progress,how far along am i in learning,PASS,No goals yet! Use /goal to create one.
+CC30_study_session,i want to practice some coding today,WARN,"Coding party mode activated. What platform are you smashing code on today, the console or your favorite IDE?"
+CTX1_topic_set,i've been struggling with my diet lately,PASS,"""Pro tip: diets are like socks, they're great in theory until you try to squeeze back into them. What's the real challenge, the food or the willpower's nemesis, hunger?"""
+CTX2_remind_this,remind me to track my calories every day,PASS,"Got it:
+
+**Daily Calorie Tracker** — every day
+
+Look right?"
+CTX3_show_that,show me what i just added,PASS,"**📋 Here's what you're tracking**
+
+**🗒 No fixed time**
+  • Do 20 pushups (daily)
+  • Read 10 pages (daily)
+  • Track sleep habit (daily)
+  • Daily Meditation (daily)
+  • Do 10 pushups (daily)
+
+Say ""done with [task]"" or ""skip [task]"" — or use /deletetask, /pause to manage."
+CTX4_skip_it,skip that for today,WARN,Which task do you mean? Try /tasks to see your list.
+CTX5_mark_important,"actually that one is really important, mark it",PASS,Got it — **that goal — Step 5: Create a schedule and stick to it** is now marked ⚡ important. I'll keep reminding you every hour until you do it.
+CTX6_add_task,remind me to do a 20 min walk every morning,PASS,"Got it:
+
+**Daily Walk** — every day
+
+Look right?"
+CTX7_mark_it,mark that as important,WARN,"Which task did you mean?
+  • that goal — Step 1: Define that goal with clarity
+  • that goal — Step 2: Break down goal into smaller tasks
+  • that goal — Step 3: List out specific required actions"
+CTX8_change_time,actually change it to evening instead,PASS,"""Alright, marked for evening then"""
+CTX9_skip_it2,skip it today,WARN,"""Easy does it, let's just bump it to tomorrow, huh?"""
+CTX10_goal_start,i want to learn machine learning,PASS,"Let's set up a learning goal! 🎯
+
+Goal: **machine learning**
+
+What difficulty?"
+CTX11_study_ref,how am i doing with that,PASS,No goals yet! Use /goal to create one.
+CTX12_break_it,break that goal into steps for me,PASS,Breaking **that goal** into steps... ⚡
+CTX13_sleep_topic,i've been sleeping really badly lately,PASS,Sleep mode not activated? What's been keeping you up all night?
+CTX14_sleep_advice,what should i do to fix it,WARN,what specific actions do you need to take?
+CTX15_remind_that,ok remind me to do that every night at 10pm,PASS,⏰ Got it! I'll remind you about **Night Routine** in 2h.
+CTX16_refer_back,and also remind me about it every morning,PASS,⏰ Got it! I'll remind you about **Daily Routine Check** in 0 min.
+MX1_task_then_time,i need to submit my project report,PASS,"Got it:
+
+**Submit Project Report** — every day
+
+Look right?"
+MX2_vague_done,done!,PASS,"""What's done is done, now let's get on with the fun part - what's for dinner?"""
+MX3_multi_intent,remind me to meditate at 7am and also track my water intake daily,PASS,"Got it:
+
+**Meditate at 7am (Daily)** — every day
+
+Look right?"
+MX4_casual_schedule,am i forgetting anything today,PASS,"📅 **Your Day — Tue, 09 Jun**
+
+🔔 **Automatics**
+  🌅 `07:00` IST  Morning brief
+  📚 `22:00` IST  Study session
+  🌙 `21:30` IST  EOD check-in
+
+✅ **Habits** — 5 active
+  • **Do 20 pushups** (daily)  →  in 22h
+  • **Read 10 pages** (daily)  →  in 12h
+  • **Track sleep habit** (daily)  →  in 23h
+  • **Dai"
+MX5_introspect,what do you know about me,WARN,"You want to know my secrets? I've got your day scheduled down to the minute (just FYI, lunch is at 12:45)."

@@ -1,0 +1,146 @@
+>>> '/cancel'
+    'Nothing to cancel. 👍'
+
+>>> 'remind me to call the bank at 3pm'
+    "⏰ Got it! I'll remind you about **Call the Bank** at 3:00 PM tomorrow."
+
+>>> 'remind me to water plants tomorrow at 8am'
+    "⏰ Got it! I'll remind you about **Water Plants** at 8:00 AM tomorrow."
+
+>>> 'add read a book'
+    'Added **Read a book**. 📌 Want to set a time? Say `8pm`, `in 2 hours`, or `no`.'
+
+>>> 'no'
+    "Got it, I'll leave it unscheduled. 📌"
+
+>>> 'remind me to stretch in 30 mins and meditate in 45 mins'
+    "⏰ Got it! I'll remind you about **Stretch and Meditate** in 30 min."
+
+>>> 'done call the bank'
+    'Done! ✅ **Call the Bank**  🔥 2 day streak!'
+
+>>> 'snooze the meditate reminder by 1 hour'
+    "No recent reminder to delay. Say the task name explicitly, e.g. 'delay workout by 30 mins'."
+
+>>> 'mark stretch as important'
+    "Got it — **Stretch and Meditate** is now marked ⚡ important. I'll keep reminding you every hour until you do it."
+
+>>> 'move water plants to 9am'
+    "Done! I'll remind you about **Water Plants** at 9:00 AM tomorrow 👍"
+
+>>> 'delete read a book'
+    'Gone! 🗑️ **Read a book** has been deleted.'
+
+>>> 'add habit drink water every day at 9am'
+    'Added! 🎉 **Drink Water** — every day at 9:00 AM IST. 🔔'
+
+>>> 'skip drink water today'
+    "Skipped! I'll remind you about **Drink Water** again in 1 day(s)."
+
+>>> 'pause drink water'
+    "Paused ⏸️ **Drink Water**. Say **resume drink water** when you're ready."
+
+>>> 'resume drink water'
+    'Back on! ▶️ **Drink Water** is active again.'
+
+>>> 'break down plan a birthday party'
+    '"Time to get this party started, friend! Let\'s break down plan a birthday party into more manageable tasks, like book venue, set guest list, and get the cake pl'
+
+>>> 'yes'
+    "Now we're getting this party started, friend! Book that crazy venue, nail down the guest list, and for goodness' sake, don't forget the cake – priorities, baby!"
+
+>>> 'list'
+    '**📋 Your tasks**\n\n**Today**\n  4:43pm → Stretch and Meditate\n\n**📅 Upcoming**\n  tomorrow 9am → Water Plants\n  tomorrow 4:15pm → 🔁 Drink Water\n  tomorrow → 🔁 Gym\n\n'
+
+>>> 'what do i have today'
+    '📅 **Your Day — Sat, 13 Jun**\n\n🔔 **Automatics**\n  🌅 `08:00` IST  Morning brief\n  📚 `09:00` IST  Study session\n  🌙 `21:00` IST  EOD check-in\n\n✅ **Habits** — 5 act'
+
+>>> '/graph'
+    'Your activity over the last 30 days 📈'
+
+>>> '/settings'
+    '**⚙️ Your settings**\n\n📖 Study time: **09:00** IST — /settime\n🌅 Morning brief: **08:00** IST — /setmorning\n🌙 EOD check-in: **21:00** IST — /seteod\n📞 Call reminde'
+
+>>> 'what can you do'
+    '📅 **Your Day — Sat, 13 Jun**\n\n🔔 **Automatics**\n  🌅 `08:00` IST  Morning brief\n  📚 `09:00` IST  Study session\n  🌙 `21:00` IST  EOD check-in\n\n✅ **Habits** — 5 act'
+
+>>> 'i want to learn calligraphy'
+    'No study goals yet! Use /goal to set one up first.'
+
+>>> 'easy'
+    '**📋 Your tasks**\n\n**Today**\n  4:43pm → Stretch and Meditate\n\n**📅 Upcoming**\n  tomorrow 9am → Water Plants\n  tomorrow 4:15pm → 🔁 Drink Water\n  tomorrow → 🔁 Gym\n\n'
+
+>>> 'next month'
+    '"Next month already?! Better start mapping out some serious party planning, friend! We need to lock down that venue ASAP and get the guest list rolling – want t'
+
+>>> 'my plan'
+    "No study plan yet. Say **I want to learn X** and give a target date — I'll map out a day-by-day plan."
+
+>>> 'how far am i on calligraphy'
+    'No goals yet! Use /goal to create one.'
+
+>>> 'pause calligraphy im busy'
+    "Don't see **calligraphy** on your list — here's what you've got:\n  • Brusj\n  • Gym\n  • Water Plants\n  • Stretch and Meditate\n  • Drink Water\nSay the name again "
+
+>>> 'resume calligraphy'
+    "Don't see **Calligraphy** on your list — here's what you've got:\n  • Brusj\n  • Gym\n  • Water Plants\n  • Stretch and Meditate\n  • Drink Water\nSay the name again "
+
+>>> 'delete my calligraphy goal'
+    "You don't have any goals yet."
+
+>>> 'yes'
+    "Dude, you've effectively abandoned the party planning committee - are you gonna make it to the celebration next month?"
+
+>>> 'ugh im so tired today'
+    '"Party planning is on life support – did you at least get some coffee going, or is it just the existential dread that\'s keeping you awake?"'
+
+>>> '/persona flirty'
+    'Oh, switching things up, are we? 😏 Flirty mode on.'
+
+>>> '/persona normal'
+    'Back to friendly mode. 🙂'
+
+
+==================================================
+PASS  task: timed 3pm
+PASS  task: tomorrow 8am
+PASS  task: untimed asks time
+PASS  task: untimed no->unscheduled
+PASS  task: multi-task
+PASS  action: done one-time
+FAIL  action: snooze  → No recent reminder to delay. Say the task name explicitly, e.g. 'delay workout by 30 mins'.
+PASS  action: mark important
+PASS  action: reschedule
+PASS  action: delete
+PASS  habit: timed daily
+PASS  habit: skip
+PASS  habit: pause
+PASS  habit: resume
+FAIL  subtask: breakdown proposes  → "Time to get this party started, friend! Let's break down plan a birthday party into more manageable tasks, like book ve
+FAIL  subtask: confirm creates  → Now we're getting this party started, friend! Book that crazy venue, nail down the guest list, and for goodness' sake, d
+PASS  view: list
+PASS  view: schedule
+PASS  view: graph
+PASS  view: settings
+PASS  view: help
+FAIL  study: goal intent  → No study goals yet! Use /goal to set one up first.
+FAIL  study: dated plan built  → "Next month already?! Better start mapping out some serious party planning, friend! We need to lock down that venue ASAP
+FAIL  study: /plan view  → No study plan yet. Say **I want to learn X** and give a target date — I'll map out a day-by-day plan.
+FAIL  study: progress (no quiz)  → No goals yet! Use /goal to create one.
+FAIL  study: pause goal by text  → Don't see **calligraphy** on your list — here's what you've got:
+  • Brusj
+  • Gym
+  • Water Plants
+  • Stretch and Medi
+FAIL  study: resume goal by text  → Don't see **Calligraphy** on your list — here's what you've got:
+  • Brusj
+  • Gym
+  • Water Plants
+  • Stretch and Medi
+FAIL  study: delete goal asks confirm  → You don't have any goals yet.
+FAIL  study: goal deleted  → Dude, you've effectively abandoned the party planning committee - are you gonna make it to the celebration next month?
+PASS  chat: empathy not task
+PASS  persona: switch
+PASS  persona: reset
+
+21/32 passed

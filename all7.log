@@ -1,0 +1,169 @@
+>>> '/cancel'
+    'Nothing to cancel. 👍'
+
+>>> 'remind me to call the bank at 3pm'
+    "⏰ Got it! I'll remind you about **Call the Bank** at 3:00 PM."
+
+>>> 'remind me to water plants tomorrow at 8am'
+    "⏰ Got it! I'll remind you about **Water Plants** at 8:00 AM tomorrow."
+
+>>> 'add read a book'
+    'Added **Read a Book**. 📌 Want to set a time? Say `8pm`, `in 2 hours`, or `no`.'
+
+>>> 'no'
+    "Got it, I'll leave it unscheduled. 📌"
+
+>>> 'remind me to stretch in 30 mins and meditate in 45 mins'
+    "⏰ Got it! I'll remind you about **Meditate** in 45 min."
+
+>>> 'done call the bank'
+    'Done! ✅ **Call the Bank**  🔥 2 day streak!'
+
+>>> 'snooze the stretch reminder by 1 hour'
+    "Got it! I'll remind you about **Stretch** in 1 hour. ⏳"
+
+>>> 'mark stretch as important'
+    "Got it — **Stretch** is now marked ⚡ important. I'll keep reminding you every hour until you do it."
+
+>>> 'move water plants to 9am'
+    "⏰ Got it! I'll remind you about **Water Plants** at 9:00 AM."
+
+>>> 'delete read a book'
+    'Gone! 🗑️ **Read a Book** has been deleted.'
+
+>>> 'add habit drink water every day at 9am'
+    'Added! 🎉 **Drink Water** — every day at 9:00 AM IST. 🔔'
+
+>>> 'skip drink water today'
+    "Skipped! I'll remind you about **Drink Water** again in 1 day(s)."
+
+>>> 'pause drink water'
+    "Paused ⏸️ **Drink Water**. Say **resume drink water** when you're ready."
+
+>>> 'resume drink water'
+    'Back on! ▶️ **Drink Water** is active again.'
+
+>>> 'break down plan a birthday party'
+    "Omg, you're really planning a rager this year, huh? Break down to me: who's the guest of honor, and when's the magic date?"
+
+>>> 'yes'
+    "So the birthday party rager is for real, huh? Who's the lucky recipient of this year's over-the-top shindig – a sibling, BFF, or is Mom finally getting the part"
+
+>>> 'list'
+    '**📋 Your tasks**\n\n**Today**\n  2:21am → Meditate\n  2:36am → Stretch\n  9am → Water Plants\n\n**📅 Upcoming**\n  tomorrow 1:38am → 🔁 Drink Water\n  tomorrow 8am → Water'
+
+>>> 'what do i have today'
+    '**📋 Your tasks**\n\n**Today**\n  2:21am → Meditate\n  2:36am → Stretch\n  9am → Water Plants\n\n**📅 Upcoming**\n  tomorrow 1:38am → 🔁 Drink Water\n  tomorrow 8am → Water'
+
+>>> '/graph'
+    'Your activity over the last 30 days 📈'
+
+>>> '/settings'
+    '**⚙️ Your settings**\n\n📖 Study time: **09:00** IST — /settime\n🌅 Morning brief: **08:00** IST — /setmorning\n🌙 EOD check-in: **21:00** IST — /seteod\n📞 Call reminde'
+
+>>> 'what can you do'
+    "I'm like a digital Swiss Army knife – I can skip, pause, and resume your tasks (but no, I won't skip on our chat), breakdown party planning (though I'm low-key "
+
+>>> 'i want to learn calligraphy'
+    "Let's set up a learning goal! 🎯\n\nGoal: **Calligraphy**\n\nWhat difficulty?"
+
+>>> 'easy'
+    'When do you want to finish by? Say a date like **next month**, **in 3 weeks**, **by August**, **2026-12-01** — or **no deadline**.'
+
+>>> 'next month'
+    '📚 **Study plan: Calligraphy** (Easy 🟢)\n\n  1. **Introduction to Calligraphy Tools** · today\n  2. **Basic Handwriting Styles & Letterforms** · Sun 14 Jun\n  3. **U'
+
+>>> 'my plan'
+    '📚 **Calligraphy** — Day 1/5 (on track ✅)\n  ⬜ Introduction to Calligraphy Tools · today\n  ⬜ Basic Handwriting Styles & Letterforms · Sun 14 Jun\n  ⬜ Understanding'
+
+>>> 'how far am i on calligraphy'
+    '**📊 Your progress**\n\n🎯 **Calligraphy** — Day 1/5 (on track ✅)\n   0/5 topics done\n   👉 Up next: **Introduction to Calligraphy Tools** — say **study Calligraphy**'
+
+>>> 'pause calligraphy im busy'
+    'Paused ⏸️ **Calligraphy**. Say **resume calligraphy goal** to pick it back up.'
+
+>>> 'resume calligraphy'
+    'Back on! ▶️ **Calligraphy** is active again.'
+
+>>> 'delete my calligraphy goal'
+    'Delete **Calligraphy** and its 5 topic(s)? Say **yes** to confirm or **no** to keep it.'
+
+>>> 'yes'
+    'Gone! 🗑️ **Calligraphy** deleted.'
+
+>>> 'ugh im so tired today'
+    '"Sleep deprivation: when the only thing more exhausting than being tired is realizing you\'ve been tired for days."'
+
+>>> '/persona flirty'
+    'Oh, switching things up, are we? 😏 Flirty mode on.'
+
+>>> '/persona normal'
+    'Back to friendly mode. 🙂'
+
+>>> 'i keep failing at everything'
+    '"Failing can be super overwhelming and it\'s completely normal to feel this way. But just so you know, that 2-day streak you had going? That\'s still something to'
+
+>>> 'honestly i feel like giving up'
+    '"Feeling like giving up is normal. Your 2-day streak still means you\'re making progress & took action. That\'s something to hold onto. One thing to lighten the l'
+
+>>> 'remd me to clal mom at 5pm'
+    "⏰ Got it! I'll remind you about **Call Mom** at 5:00 PM."
+
+>>> 'add yoga\nand buy milk'
+    'Added **Add Yoga**. 📌 Want to set a time? Say `8pm`, `in 2 hours`, or `no`.'
+
+>>> 'no'
+    "Got it, I'll leave it unscheduled. 📌"
+
+>>> '🏃'
+    '[none]'
+
+
+==================================================
+PASS  task: timed 3pm
+PASS  task: tomorrow 8am
+PASS  task: untimed asks time
+PASS  task: untimed no->unscheduled
+PASS  task: multi-task
+PASS  action: done one-time
+PASS  action: snooze
+PASS  action: mark important
+PASS  action: reschedule
+PASS  action: delete
+PASS  habit: timed daily
+PASS  habit: skip
+PASS  habit: pause
+PASS  habit: resume
+FAIL  subtask: breakdown proposes  → Omg, you're really planning a rager this year, huh? Break down to me: who's the guest of honor, and when's the magic dat
+FAIL  subtask: confirm creates  → So the birthday party rager is for real, huh? Who's the lucky recipient of this year's over-the-top shindig – a sibling,
+PASS  view: list
+FAIL  view: schedule  → **📋 Your tasks**
+
+**Today**
+  2:21am → Meditate
+  2:36am → Stretch
+  9am → Water Plants
+
+**📅 Upcoming**
+  tomorrow 1:38a
+PASS  view: graph
+PASS  view: settings
+PASS  view: help
+PASS  study: goal intent
+PASS  study: dated plan built
+PASS  study: /plan view
+PASS  study: progress (no quiz)
+PASS  study: pause goal by text
+PASS  study: resume goal by text
+PASS  study: delete goal asks confirm
+PASS  study: goal deleted
+PASS  chat: empathy not task
+PASS  persona: switch
+PASS  persona: reset
+PASS  motiv: struggle support
+PASS  motiv: giving-up support
+PASS  edge: heavy typos
+PASS  edge: newline input
+PASS  edge: emoji-only -> chat not task
+
+34/37 passed

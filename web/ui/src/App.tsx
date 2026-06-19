@@ -1,5 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
+import {
+  DndContext,
+  PointerSensor,
+  TouchSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  useDraggable,
+  useDroppable,
+  type DragEndEvent,
+} from "@dnd-kit/core";
 import { api, AuthError, type Task, type Stats, type DayCell } from "./api";
 import FocusTimer from "./FocusTimer";
 import DayPlanner from "./DayPlanner";
@@ -164,10 +175,15 @@ function TaskApp({ onLogout }: { onLogout: () => void }) {
   }
 
   async function completeFromFocus(task: Task) {
-    setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, status: "completed" } : t)));
+    // Habit-aware (same as the list toggle): habit stays active with an advanced
+    // reminder, one-off task closes.
+    if (task.type !== "habit") {
+      setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, status: "completed" } : t)));
+    }
     setFocusTask(null);
     try {
-      await api.setStatus(task.id, "completed");
+      const updated = await api.complete(task.id);
+      setTasks((prev) => prev.map((t) => (t.id === task.id ? updated : t)));
     } catch (e) {
       guard(e);
     }
@@ -190,7 +206,21 @@ function TaskApp({ onLogout }: { onLogout: () => void }) {
     api.activity().then((r) => setActivity(r.days)).catch(() => {});
   }, []);
 
-  const active = tasks.filter((t) => t.status === "active");
+  // Manual drag order wins (sort_order); otherwise scheduled tasks float up
+  // (soonest first) and unscheduled sink — overdue naturally leads the stack.
+  // Mirrors the server's _order_active so optimistic + fetched state agree.
+  const active = useMemo(() => {
+    const ts = (t: Task) => {
+      const n = t.due ? new Date(t.due).getTime() : NaN;
+      return isNaN(n) ? Infinity : n;
+    };
+    const all = tasks.filter((t) => t.status === "active");
+    const hasManual = all.some((t) => t.ordering != null);
+    if (!hasManual) return [...all].sort((a, b) => ts(a) - ts(b));
+    const manual = all.filter((t) => t.ordering != null).sort((a, b) => a.ordering! - b.ordering!);
+    const rest = all.filter((t) => t.ordering == null).sort((a, b) => ts(a) - ts(b));
+    return [...manual, ...rest];
+  }, [tasks]);
   const completed = tasks.filter((t) => t.status === "completed");
   const doneCount = completed.length;
   const total = tasks.length;
@@ -212,12 +242,61 @@ function TaskApp({ onLogout }: { onLogout: () => void }) {
   }
 
   async function toggle(task: Task) {
-    const next = task.status === "active" ? "completed" : "active";
-    setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, status: next } : t)));
+    // Un-checking a cleared task just flips it back to active.
+    if (task.status === "completed") {
+      setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, status: "active" } : t)));
+      try {
+        await api.setStatus(task.id, "active");
+      } catch (e) {
+        setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, status: "completed" } : t)));
+        guard(e);
+      }
+      return;
+    }
+    // Completing: a habit logs today's done + advances its reminder and STAYS
+    // in the list; a one-off task closes. The server decides — we reconcile
+    // with whatever it returns (habit comes back active with a new due).
+    const isHabit = task.type === "habit";
+    if (!isHabit) {
+      setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, status: "completed" } : t)));
+    }
     try {
-      await api.setStatus(task.id, next);
+      const updated = await api.complete(task.id);
+      setTasks((prev) => prev.map((t) => (t.id === task.id ? updated : t)));
     } catch (e) {
-      setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, status: task.status } : t)));
+      if (!isHabit) {
+        setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, status: "active" } : t)));
+      }
+      guard(e);
+    }
+  }
+
+  // tap vs drag: require an 8px move (pointer) / short hold (touch) so the
+  // check/delete buttons still click cleanly. Same constraints as DayPlanner.
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 180, tolerance: 8 } })
+  );
+
+  async function onReorder(e: DragEndEvent) {
+    const fromId = String(e.active.id);
+    const overId = e.over ? String(e.over.id) : null;
+    if (!overId || fromId === overId) return;
+    const order = active.map((t) => t.id);
+    const from = order.indexOf(fromId);
+    const to = order.indexOf(overId);
+    if (from < 0 || to < 0) return;
+    order.splice(to, 0, order.splice(from, 1)[0]);
+    // write the new index onto every active task so the local sort agrees
+    const rank = new Map(order.map((id, i) => [id, i]));
+    const snapshot = tasks;
+    setTasks((prev) =>
+      prev.map((t) => (rank.has(t.id) ? { ...t, ordering: rank.get(t.id)! } : t))
+    );
+    try {
+      await api.reorder(order);
+    } catch (e) {
+      setTasks(snapshot);
       guard(e);
     }
   }
@@ -385,20 +464,22 @@ function TaskApp({ onLogout }: { onLogout: () => void }) {
               <span className="font-mono text-[10px] tracking-[0.18em] text-muted">// ACTIVE</span>
               <span className="h-px flex-1 bg-white/10" />
             </div>
-            <ul className="space-y-2">
-              <AnimatePresence initial={false}>
-                {active.map((t, i) => (
-                  <Row
-                    key={t.id}
-                    task={t}
-                    index={i}
-                    onToggle={toggle}
-                    onRemove={remove}
-                    onPlay={adhd ? setFocusTask : undefined}
-                  />
-                ))}
-              </AnimatePresence>
-            </ul>
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onReorder}>
+              <ul className="space-y-2">
+                <AnimatePresence initial={false}>
+                  {active.map((t, i) => (
+                    <DraggableRow
+                      key={t.id}
+                      task={t}
+                      index={i}
+                      onToggle={toggle}
+                      onRemove={remove}
+                      onPlay={adhd ? setFocusTask : undefined}
+                    />
+                  ))}
+                </AnimatePresence>
+              </ul>
+            </DndContext>
 
             {active.length === 0 && (
               <motion.div
@@ -517,19 +598,50 @@ const TYPE_BADGE: Record<string, { label: string; cls: string }> = {
   milestone: { label: "◈ GOAL", cls: "border-fuchsia-400/30 text-fuchsia-300" },
 };
 
-function dueLabel(due?: string | null): string | null {
+function dueLabel(due?: string | null): { text: string; overdue: boolean } | null {
   if (!due) return null;
   const d = new Date(due);
   if (isNaN(d.getTime())) return null;
   const now = new Date();
+  const overdue = d.getTime() < now.getTime();
   const sameDay = d.toDateString() === now.toDateString();
   const tomorrow = new Date(now);
   tomorrow.setDate(now.getDate() + 1);
   const isTomorrow = d.toDateString() === tomorrow.toDateString();
   const time = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-  if (sameDay) return time;
-  if (isTomorrow) return `tmrw ${time}`;
-  return d.toLocaleDateString([], { month: "short", day: "numeric" });
+  let text: string;
+  if (sameDay) text = time;
+  else if (isTomorrow) text = `tmrw ${time}`;
+  else text = d.toLocaleDateString([], { month: "short", day: "numeric" });
+  return { text, overdue };
+}
+
+// Active-list row that is both a drag source and a drop target. The drag
+// listeners live on the index grip (see Row) so the check/delete buttons stay
+// clickable; the whole li is the droppable.
+function DraggableRow(props: {
+  task: Task;
+  index: number;
+  onToggle: (t: Task) => void;
+  onRemove: (t: Task) => void;
+  onPlay?: (t: Task) => void;
+}) {
+  const { attributes, listeners, setNodeRef: setDragRef, isDragging } = useDraggable({
+    id: props.task.id,
+  });
+  const { setNodeRef: setDropRef } = useDroppable({ id: props.task.id });
+  const ref = (el: HTMLElement | null) => {
+    setDragRef(el);
+    setDropRef(el);
+  };
+  return (
+    <Row
+      {...props}
+      dragRef={ref}
+      dragHandle={{ ...listeners, ...attributes }}
+      isDragging={isDragging}
+    />
+  );
 }
 
 function Row({
@@ -538,28 +650,50 @@ function Row({
   onToggle,
   onRemove,
   onPlay,
+  dragRef,
+  dragHandle,
+  isDragging,
 }: {
   task: Task;
   index: number;
   onToggle: (t: Task) => void;
   onRemove: (t: Task) => void;
   onPlay?: (t: Task) => void;
+  // drag wiring (active list only); absent for the cleared list
+  dragRef?: (el: HTMLElement | null) => void;
+  dragHandle?: Record<string, unknown>;
+  isDragging?: boolean;
 }) {
   const done = task.status === "completed";
   const badge = TYPE_BADGE[task.type];
   const due = !done ? dueLabel(task.due) : null;
   return (
     <motion.li
+      ref={dragRef}
       layout
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, x: -16, transition: { duration: 0.2 } }}
       transition={{ layout: { type: "spring", stiffness: 320, damping: 32 }, delay: index * 0.03 }}
-      className="group flex items-center gap-3 rounded-xl border border-white/10 bg-panel px-4 py-3.5 transition hover:border-acid/30 hover:bg-panel-2"
+      className={`group flex items-center gap-3 rounded-xl border border-white/10 bg-panel px-4 py-3.5 transition hover:border-acid/30 hover:bg-panel-2 ${
+        isDragging ? "opacity-40 ring-1 ring-acid/40" : ""
+      }`}
     >
-      <span className="w-6 shrink-0 font-mono text-[10px] text-muted-deep">
-        {String(index + 1).padStart(2, "0")}
-      </span>
+      {dragHandle ? (
+        <span
+          {...dragHandle}
+          title="Drag to reorder"
+          aria-label="drag to reorder"
+          style={{ touchAction: "none" }}
+          className="w-6 shrink-0 cursor-grab select-none text-center font-mono text-[10px] text-muted-deep transition hover:text-acid active:cursor-grabbing"
+        >
+          {String(index + 1).padStart(2, "0")}
+        </span>
+      ) : (
+        <span className="w-6 shrink-0 font-mono text-[10px] text-muted-deep">
+          {String(index + 1).padStart(2, "0")}
+        </span>
+      )}
 
       <button
         onClick={() => onToggle(task)}
@@ -591,7 +725,9 @@ function Row({
               </span>
             )}
             {due && (
-              <span className="font-mono text-[10px] text-muted-deep">⏰ {due}</span>
+              <span className={`font-mono text-[10px] ${due.overdue ? "text-red" : "text-muted-deep"}`}>
+                {due.overdue ? "⏰ overdue · " : "⏰ "}{due.text}
+              </span>
             )}
           </div>
         )}

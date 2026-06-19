@@ -1,8 +1,44 @@
 # Learnix Backlog
 
-_Last updated: 2026-06-16_
+_Last updated: 2026-06-20_
 _Project status: workInProgress_
 _Auto-agent: enabled_
+
+## ✅ Done (2026-06-20, pt.2) — web: habit-done vs task-done + drag-reorder
+- **Habit-done vs task-done (api/main.py, ui/src/App.tsx + api.ts):** the web toggle used a single
+  `PATCH status=completed` path for everything. Now there's a dedicated `POST /api/tasks/{id}/complete`
+  that mirrors the bot's done-handler exactly: `log_activity(uid,"habit",title)` + `update_streak`
+  for any type, then **habit → `mark_done()`** (advances next reminder, task STAYS active — completing
+  logs today's done/streak, doesn't remove it) vs **one-off task → `status=completed`** (closes,
+  moves to CLEARED). Frontend `toggle()` + `completeFromFocus()` are habit-aware: a habit stays in the
+  ACTIVE list and reconciles with the server-returned task (new due); a task moves to CLEARED. Un-check
+  of a cleared task still flips back to active via the existing PATCH. Reuses bot svc (no 2nd source of truth).
+- **Drag-reorder for manual ordering (migration 017 `tasks.sort_order int`, applied via Mgmt API):**
+  active tasks are draggable by the index grip (@dnd-kit/core, already a dep — no new install). Drop
+  persists via `POST /api/tasks/reorder {ids:[]}` → writes `sort_order = index`. `_order_active` (server)
+  + the `active` useMemo (client, mirrored) honour manual order when any `sort_order` is set, else fall
+  back to the due-time sort (unscheduled sink). Optimistic with snapshot rollback on failure.
+- **Verified:** `npm run build` clean (TS, 393 modules). `pytest` bot suite **347 passed**. FastAPI app
+  imports in the dedicated `web/api/.venv` (avoids the global starlette/fastapi conflict) — all routes
+  register incl. the 2 new ones. `_order_active` unit-checked (manual-wins + due-fallback both correct).
+  No browser verification (user hadn't started one). No servers left running. Not committed.
+
+## ✅ Done (2026-06-20) — web: due-time ordering + overdue chips, scheduler NameError fix
+- **Web (ui/src/App.tsx):** active tasks now sort by due time (soonest first; unscheduled sink
+  to the bottom). Overdue active tasks lead the list and render a red `⏰ overdue · <time>` chip
+  instead of the muted one. Surgical change; matches the bot's Today/Upcoming mental model and
+  helps the ADHD-focus use case (overdue items can't hide mid-stack). `npm run build` clean.
+  **Live-verified** in browser against real data (uid 584321397): seeded one overdue + one future
+  due, confirmed the overdue task sorts to row 01 and gets `text-red`; future stays `text-muted-deep`.
+  Reverted the seeded due times afterward (both back to unscheduled).
+- **Bot (scheduler.py):** fixed a latent `NameError` — `get_missed_yesterday()` uses `timedelta`
+  at module scope but the import only pulled it in locally inside `reminder_poller`. Moved
+  `timedelta` to the top-level `datetime` import. Added regression test. `pytest tests/test_scheduler.py` → 4 passed.
+  (This + the day-mode CSS rework below were already in the working tree from a prior session.)
+- **Web day-mode CSS (ui/src/index.css, prior-session work, verified building):** real light theme —
+  dark ink text on frosted-white glass over a pastel-washed wallpaper (was white-on-bright = invisible).
+- **NOTE:** `claude_svc.py` actually uses **GROQ_API_KEY**, not Anthropic — the "blocked on Anthropic
+  key" memory note is stale for the LLM path. (Gemini still used for voice transcription only.)
 
 ## ✅ Done (2026-06-16) — Long-term memory spine (exo-cortex port, commit 0b0262b7)
 - **v1 spine** — migrations 015 (`user_facts` + `mem_events`, pillar-tagged: productivity/
@@ -40,8 +76,8 @@ _Auto-agent: enabled_
   session (public gap CLOSED). Login screen renders.
 - [x] **Web polish pass** — DONE (35b87cf6): type badges (habit/study/goal), due-time chips,
   LX favicon + title/meta, loading skeleton, 4-digit numeric login + IP rate-limit, /start
-  surfaces /weblogin. Live-verified. **Remaining nice-to-have:** drag-reorder, web habit-done
-  vs task-done distinction, surface streak/study on web.
+  surfaces /weblogin. Live-verified. **Remaining nice-to-have:** ~~drag-reorder~~ (done 2026-06-20),
+  ~~web habit-done vs task-done distinction~~ (done 2026-06-20), surface streak/study on web.
 
 ## 🎯 Motivation engine 10x — remaining increments
 

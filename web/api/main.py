@@ -10,6 +10,7 @@ user_id — every user sees only their own tasks.
 import hashlib
 import hmac
 import os
+from datetime import datetime
 import secrets
 import sys
 import time
@@ -44,6 +45,8 @@ sys.path.insert(0, str(BOT_DIR))
 load_dotenv(BOT_DIR / ".env")  # no-op in prod; Railway injects env vars directly
 
 import tasks.svc as tasks_svc            # noqa: E402  (path set above)
+import analytics_svc                      # noqa: E402
+import settings_svc                       # noqa: E402
 from supabase_svc import get_client      # noqa: E402
 
 # Sessions are signed with this secret. Set SESSION_SECRET in prod so sessions
@@ -136,6 +139,7 @@ def _shape(t: dict) -> dict:
         "type": t.get("task_type", "task"),
         "due": t.get("next_reminder_at"),
         "recurrence": t.get("recurrence_days"),
+        "ordering": t.get("sort_order"),
         "created_at": t.get("created_at"),
     }
 
@@ -159,6 +163,10 @@ class TaskPatch(BaseModel):
 
 class LoginCode(BaseModel):
     code: str
+
+
+class ReorderBody(BaseModel):
+    ids: list[str]  # active task ids in the desired top-to-bottom order
 
 
 # --- auth routes -------------------------------------------------------------
@@ -206,9 +214,32 @@ def logout(response: Response):
 
 # --- task routes (scoped to the logged-in user) ------------------------------
 
+def _order_active(active: list[dict]) -> list[dict]:
+    """Manual order (sort_order) wins; ties / unset fall back to due-time then
+    creation order. Mirrors the web UI's mental model: a user-dragged order
+    overrides the due-based sort, but unordered tasks still sort by due."""
+    def due_ts(t: dict):
+        d = t.get("due")
+        if not d:
+            return float("inf")
+        try:
+            return datetime.fromisoformat(str(d)).timestamp()
+        except Exception:
+            return float("inf")
+
+    has_manual = any(t.get("ordering") is not None for t in active)
+    if not has_manual:
+        return sorted(active, key=due_ts)
+    # Manually-ordered tasks first (by sort_order), then the rest by due time.
+    manual = sorted((t for t in active if t.get("ordering") is not None),
+                    key=lambda t: t["ordering"])
+    rest = sorted((t for t in active if t.get("ordering") is None), key=due_ts)
+    return manual + rest
+
+
 @app.get("/api/tasks")
 def list_all(uid: int = Depends(get_current_uid)):
-    active = _visible(tasks_svc.list_tasks(uid, status="active"))
+    active = _order_active(_visible(tasks_svc.list_tasks(uid, status="active")))
     completed = _visible(tasks_svc.list_tasks(uid, status="completed"))
     return {"active": active, "completed": completed}
 
@@ -245,6 +276,41 @@ def patch(task_id: str, body: TaskPatch, uid: int = Depends(get_current_uid)):
         raise HTTPException(400, "Nothing to update")
     tasks_svc.update_task(task_id, **fields)
     return _shape({**task, **fields})
+
+
+@app.post("/api/tasks/{task_id}/complete")
+def complete(task_id: str, uid: int = Depends(get_current_uid)):
+    """Complete a task the way the bot does (bot.py done-handler):
+    log the activity + bump the streak for any type, then —
+      • habit  → mark_done(): advance the next reminder, task STAYS active
+      • else   → status=completed: one-off task closes and leaves the list.
+    Returns the reshaped task so the client can reconcile (a habit comes back
+    with its new due time and status still 'active')."""
+    from datetime import date
+    task = tasks_svc.get_task(task_id)
+    if not task or task.get("user_id") != uid:
+        raise HTTPException(404, "Task not found")
+
+    analytics_svc.log_activity(uid, "habit", note=task.get("title", ""))
+    settings_svc.update_streak(uid, date.today())
+
+    if task.get("task_type") == "habit":
+        tasks_svc.mark_done(task_id)
+        # re-read so the response carries the advanced next_reminder_at
+        return _shape(tasks_svc.get_task(task_id) or task)
+    tasks_svc.update_task(task_id, status="completed")
+    return _shape({**task, "status": "completed"})
+
+
+@app.post("/api/tasks/reorder")
+def reorder(body: ReorderBody, uid: int = Depends(get_current_uid)):
+    """Persist a manual top-to-bottom order for active tasks. Only ids the user
+    owns are written; sort_order is the index in the given list."""
+    owned = {t["id"] for t in tasks_svc.list_tasks(uid, status="active")}
+    for idx, tid in enumerate(body.ids):
+        if tid in owned:
+            tasks_svc.update_task(tid, sort_order=idx)
+    return {"ok": True}
 
 
 @app.delete("/api/tasks/{task_id}")

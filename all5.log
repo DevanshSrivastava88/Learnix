@@ -1,0 +1,163 @@
+>>> '/cancel'
+    'Nothing to cancel. 👍'
+
+>>> 'remind me to call the bank at 3pm'
+    "⏰ Got it! I'll remind you about **Call the Bank** at 3:00 PM."
+
+>>> 'remind me to water plants tomorrow at 8am'
+    "⏰ Got it! I'll remind you about **Water Plants** at 8:00 AM tomorrow."
+
+>>> 'add read a book'
+    'Added **Read A Book**. 📌 Want to set a time? Say `8pm`, `in 2 hours`, or `no`.'
+
+>>> 'no'
+    "Got it, I'll leave it unscheduled. 📌"
+
+>>> 'remind me to stretch in 30 mins and meditate in 45 mins'
+    "⏰ Got it! I'll remind you about **Meditate** in 45 min."
+
+>>> 'done call the bank'
+    'Done! ✅ **Call the Bank**  🔥 2 day streak!'
+
+>>> 'snooze the meditate reminder by 1 hour'
+    "Got it! I'll remind you about **Meditate** in 1 hour. ⏳"
+
+>>> 'mark stretch as important'
+    "Got it — **Stretch** is now marked ⚡ important. I'll keep reminding you every hour until you do it."
+
+>>> 'move water plants to 9am'
+    "⏰ Got it! I'll remind you about **Move Water Plants** at 9:00 AM tomorrow."
+
+>>> 'delete read a book'
+    'Gone! 🗑️ **Read A Book** has been deleted.'
+
+>>> 'add habit drink water every day at 9am'
+    'Added! 🎉 **Drink Water** — every day at 9:00 AM IST. 🔔'
+
+>>> 'skip drink water today'
+    "Skipped! I'll remind you about **Drink Water** again in 1 day(s)."
+
+>>> 'pause drink water'
+    "Skipped! I'll remind you about **Drink Water** again in 1 day(s).\n\nThat's a couple today. Totally fine — tomorrow's a clean slate. 🌱"
+
+>>> 'resume drink water'
+    'Back on! ▶️ **Drink Water** is active again.'
+
+>>> 'break down plan a birthday party'
+    "Here's my plan for **birthday party** 👇\n\n  1. Plan the birthday party theme\n  2. Create a guest list and invitations\n  3. Choose a party date and venue\n  4. Sen"
+
+>>> 'yes'
+    'Added 7 subtasks under **Birthday Party** ✅\nKnock them off with **done [subtask]** — see /tasks.'
+
+>>> 'list'
+    '**📋 Your tasks**\n\n**Today**\n  1:44am → Stretch\n  2:15am → Meditate\n\n**📅 Upcoming**\n  tomorrow 1:16am → 🔁 Drink Water\n  tomorrow 8am → Water Plants\n  tomorrow 9a'
+
+>>> 'what do i have today'
+    '📅 **Your Day — Sun, 14 Jun**\n\n🔔 **Automatics**\n  🌅 `08:00` IST  Morning brief\n  📚 `09:00` IST  Study session\n  🌙 `21:00` IST  EOD check-in\n\n✅ **Habits** — 9 act'
+
+>>> '/graph'
+    'Your activity over the last 30 days 📈'
+
+>>> '/settings'
+    '**⚙️ Your settings**\n\n📖 Study time: **09:00** IST — /settime\n🌅 Morning brief: **08:00** IST — /setmorning\n🌙 EOD check-in: **21:00** IST — /seteod\n📞 Call reminde'
+
+>>> 'what can you do'
+    '📅 **Your Day — Sun, 14 Jun**\n\n🔔 **Automatics**\n  🌅 `08:00` IST  Morning brief\n  📚 `09:00` IST  Study session\n  🌙 `21:00` IST  EOD check-in\n\n✅ **Habits** — 9 act'
+
+>>> 'i want to learn calligraphy'
+    "Let's set up a learning goal! 🎯\n\nGoal: **Calligraphy**\n\nWhat difficulty?"
+
+>>> 'easy'
+    'When do you want to finish by? Say a date like **next month**, **in 3 weeks**, **by August**, **2026-12-01** — or **no deadline**.'
+
+>>> 'next month'
+    '📚 **Study plan: Calligraphy** (Easy 🟢)\n\n  1. **History of Calligraphy** · today\n  2. **Basic Hand Tools** · Sun 14 Jun\n  3. **Fundamental Lettering Styles** · M'
+
+>>> 'my plan'
+    '📚 **Calligraphy** — Day 1/5 (on track ✅)\n  ⬜ History of Calligraphy · today\n  ⬜ Basic Hand Tools · Sun 14 Jun\n  ⬜ Fundamental Lettering Styles · Mon 15 Jun\n  ⬜ '
+
+>>> 'how far am i on calligraphy'
+    '**📊 Your progress**\n\n🎯 **Calligraphy** — Day 1/5 (on track ✅)\n   0/5 topics done\n   👉 Up next: **History of Calligraphy** — say **study Calligraphy**'
+
+>>> 'pause calligraphy im busy'
+    'Paused ⏸️ **Calligraphy**. Say **resume calligraphy goal** to pick it back up.'
+
+>>> 'resume calligraphy'
+    'Back on! ▶️ **Calligraphy** is active again.'
+
+>>> 'delete my calligraphy goal'
+    'Delete **Calligraphy** and its 5 topic(s)? Say **yes** to confirm or **no** to keep it.'
+
+>>> 'yes'
+    'Gone! 🗑️ **Calligraphy** deleted.'
+
+>>> 'ugh im so tired today'
+    '"Caffeine emergency, stat! You survived Mondays before, you can do it again"'
+
+>>> '/persona flirty'
+    'Oh, switching things up, are we? 😏 Flirty mode on.'
+
+>>> '/persona normal'
+    'Back to friendly mode. 🙂'
+
+>>> 'i keep failing at everything'
+    '"I\'m so sorry to hear you\'re feeling like that. It\'s totally normal to feel overwhelmed. Your 2-day streak is still going, that\'s amazing! Sometimes taking a sm'
+
+>>> 'honestly i feel like giving up'
+    '"Hey, I get it. Feeling overwhelmed can be really tough. You know what\'s cool though? Your 2-day streak still counts - you\'re already a step ahead. Would you wa'
+
+>>> 'remd me to clal mom at 5pm'
+    "⏰ Got it! I'll remind you about **Call Mom** at 5:00 PM."
+
+>>> 'add yoga\nand buy milk'
+    'Added **add milk**. 📌 Want to set a time? Say `8pm`, `in 2 hours`, or `no`.'
+
+>>> 'no'
+    "Got it, I'll leave it unscheduled. 📌"
+
+>>> '🏃'
+    '[none]'
+
+
+==================================================
+PASS  task: timed 3pm
+PASS  task: tomorrow 8am
+PASS  task: untimed asks time
+PASS  task: untimed no->unscheduled
+PASS  task: multi-task
+PASS  action: done one-time
+PASS  action: snooze
+PASS  action: mark important
+PASS  action: reschedule
+PASS  action: delete
+PASS  habit: timed daily
+PASS  habit: skip
+FAIL  habit: pause  → Skipped! I'll remind you about **Drink Water** again in 1 day(s).
+
+That's a couple today. Totally fine — tomorrow's a cl
+PASS  habit: resume
+PASS  subtask: breakdown proposes
+PASS  subtask: confirm creates
+PASS  view: list
+PASS  view: schedule
+PASS  view: graph
+PASS  view: settings
+PASS  view: help
+PASS  study: goal intent
+PASS  study: dated plan built
+PASS  study: /plan view
+PASS  study: progress (no quiz)
+PASS  study: pause goal by text
+PASS  study: resume goal by text
+PASS  study: delete goal asks confirm
+PASS  study: goal deleted
+PASS  chat: empathy not task
+PASS  persona: switch
+PASS  persona: reset
+PASS  motiv: struggle support
+PASS  motiv: giving-up support
+PASS  edge: heavy typos
+PASS  edge: newline input
+PASS  edge: emoji-only -> chat not task
+
+36/37 passed
