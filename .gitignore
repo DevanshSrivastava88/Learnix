@@ -4,3 +4,16 @@ node_modules/
 __pycache__/
 *.pyc
 .next/
+
+# Python envs / build
+.venv/
+*.egg-info/
+dist/
+build/
+
+# Telethon session files — contain auth secrets, never commit
+*.session
+*.session-journal
+
+# Office temp lock files (e.g. ~$learnix_commands.xlsx)
+~$*

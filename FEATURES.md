@@ -5,15 +5,16 @@ changed. Every code change must keep everything below working._
 
 Bot: **@Quest3131Bot** (disrupto) · LIVE on Railway · 201 unit tests · `test_all.py` = 37/37 live.
 
-> **Full live regression:** `python test_all.py` runs all 32 feature checks end-to-end
-> (robust harness: per-run session copy, settle-based replies, DB pre-clean). Last: 32/32.
+> **Full live regression:** `python tests/e2e/test_all.py` (run from the repo root) runs all 32
+> feature checks end-to-end (robust harness: per-run session copy, settle-based replies, DB
+> pre-clean). Last: 32/32.
 
 ---
 
 ## 🛡 Change Guidelines (read before touching code)
 
 1. **Never break a feature in this list.** Before shipping, run the relevant live
-   Telethon test (`test_*.py`) AND `pytest bot/tests` (must stay green).
+   Telethon test (`tests/e2e/test_*.py`) AND `pytest bot/tests` (must stay green).
 2. **One concern per change.** Small, surgical edits — no drive-by refactors.
 3. **Deploy = `railway up` from `bot/`**, wait until status leaves Building, then
    wait ~45s more for the container to actually swap before live-testing (early

@@ -11,3 +11,10 @@
 *.log
 .playwright-mcp
 web/api/_bot
+
+# Not needed in the web image
+legacy
+tests
+docs
+gen_ai
+supabase
