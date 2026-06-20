@@ -54,6 +54,10 @@ from supabase_svc import get_client      # noqa: E402
 # on restart, but never insecure).
 SESSION_SECRET = os.environ.get("SESSION_SECRET") or secrets.token_hex(32)
 SESSION_TTL = 30 * 24 * 3600  # 30 days
+# TEMPORARY admin bypass: when ADMIN_KEY is set, the login box accepts a code of
+# the form "<ADMIN_KEY>:<uid>" to open any user's account without a Telegram code.
+# Unset ADMIN_KEY in the Railway env to disable it.
+ADMIN_KEY = os.environ.get("ADMIN_KEY")
 COOKIE_SECURE = os.environ.get("COOKIE_SECURE", "1") == "1"  # set 0 for local http
 
 app = FastAPI(title="Learnix Tasks")
@@ -178,6 +182,19 @@ def auth_verify(body: LoginCode, request: Request, response: Response):
     code = (body.code or "").strip()
     if not code:
         raise HTTPException(400, "Enter the code from Telegram")
+    # admin bypass: "<ADMIN_KEY>:<uid>" opens that user's account directly.
+    if ADMIN_KEY and code.startswith(ADMIN_KEY + ":"):
+        try:
+            uid = int(code.split(":", 1)[1])
+        except ValueError:
+            _record_fail(ip)
+            raise HTTPException(400, "admin code format is KEY:uid")
+        _fails.pop(ip, None)
+        response.set_cookie(
+            "session", _make_token(uid),
+            httponly=True, secure=COOKIE_SECURE, samesite="lax", max_age=SESSION_TTL,
+        )
+        return {"ok": True, "uid": uid, "admin": True}
     res = get_client().table("web_login_codes").select("*").eq("code", code).limit(1).execute()
     row = res.data[0] if res.data else None
     if not row or row.get("used"):

@@ -1,0 +1,10 @@
+**/node_modules
+**/.venv
+**/dist
+**/__pycache__
+**/*.pyc
+**/*.session
+**/*.session-journal
+*.log
+.playwright-mcp
+web/api/_bot
