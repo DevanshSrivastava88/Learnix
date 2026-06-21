@@ -1,6 +1,6 @@
 # Learnix Backlog
 
-_Last updated: 2026-06-19_
+_Last updated: 2026-06-21_
 _Project status: workInProgress_
 _Auto-agent: enabled_
 
@@ -57,7 +57,7 @@ engine, #8 sentiment read, Exocortex crisis classifier (safety — fold in soon)
 - [x] **Multi-task in one message** — "add call shreysh in 1 h and mum in 2 h" only creates the
   first task; understand_message returns a single task object. Needs tasks: [] array support.
 
-- [ ] **Monitor 70B quota** — understand_message uses llama-3.3-70b-versatile with 8B fallback; if quota exhausts midday, routing quality drops (8B misclassifies). Watch logs for fallback hits.
+- [x] **Monitor 70B quota** — the 70B→8B fallback in `understand_message` failed silently (no log line existed); added `logger.warning(...)` on the except path (+ module logger) so fallback hits are now visible in Railway logs. Watching the logs themselves is still a manual follow-up.
 - [x] **chat_history table growth** — rows accumulate forever; add periodic cleanup (delete rows older than 7 days)
 - [x] **Remove dead code** — `claude_svc.classify_intent` had zero production callers (superseded by `understand_message`'s unified intent+task extraction); removed the function + its 5 now-orphaned tests in `test_breakdown.py`. `parse_task` and `skip_time_parser` are still actively used (by `/newtask` and the skip/timesheet flows respectively) — not dead, left as-is.
 - [ ] **Test new features live** — skip flow, /timesheet, /skipgraph in Telegram

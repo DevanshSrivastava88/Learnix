@@ -1,5 +1,6 @@
 """understand_message — routing and multi-task extraction."""
 import json
+import logging
 from unittest.mock import MagicMock, patch
 
 import claude_svc
@@ -100,3 +101,24 @@ def test_chat_intent_returns_no_extra_tasks():
     assert result["intent"] == "chat"
     assert result["extra_tasks"] == []
     assert result["task"] is None
+
+
+def test_70b_failure_falls_back_to_8b_and_logs_warning(caplog):
+    """When the 70B routing call raises (e.g. quota exhausted), fall back to the
+    default 8B model and log a warning so the fallback is visible in production logs."""
+    payload = json.dumps({"intent": "chat", "task": None, "extra_tasks": [], "task_ref": ""})
+    calls = []
+
+    def fake_ask_json(prompt, max_tokens=400, model=None):
+        calls.append(model)
+        if model == "llama-3.3-70b-versatile":
+            raise RuntimeError("rate_limit_exceeded")
+        return json.loads(payload)
+
+    with patch.object(claude_svc, "_ask_json", side_effect=fake_ask_json), \
+         caplog.at_level(logging.WARNING, logger="claude_svc"):
+        result = claude_svc.understand_message("hello")
+
+    assert calls == ["llama-3.3-70b-versatile", None]
+    assert result["intent"] == "chat"
+    assert any("falling back to 8B" in r.message for r in caplog.records)

@@ -2,10 +2,13 @@ import os
 import json
 import re
 import time
+import logging
 from dotenv import load_dotenv
 from openai import OpenAI, RateLimitError
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 MODEL = "llama-3.1-8b-instant"
 _client = None
@@ -233,7 +236,8 @@ def understand_message(text: str, context: str = "") -> dict:
     # 400 tokens needed for multi-task responses (extra_tasks array adds ~100 tokens per task).
     try:
         result = _ask_json(prompt, max_tokens=400, model="llama-3.3-70b-versatile")
-    except Exception:
+    except Exception as e:
+        logger.warning(f"70B routing model unavailable, falling back to 8B: {e}")
         result = _ask_json(prompt, max_tokens=400)
     if isinstance(result, dict) and result.get("intent"):
         intent = result.get("intent", "chat")
