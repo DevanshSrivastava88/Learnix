@@ -271,6 +271,20 @@ function TaskApp({ onLogout }: { onLogout: () => void }) {
     }
   }
 
+  // repeat toggle: habit repeats daily (stays active on complete), task is one-off
+  async function toggleRepeat(task: Task) {
+    if (task.type !== "task" && task.type !== "habit") return;
+    const next = task.type === "habit" ? "task" : "habit";
+    setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, type: next } : t)));
+    try {
+      const updated = await api.setType(task.id, next);
+      setTasks((prev) => prev.map((t) => (t.id === task.id ? updated : t)));
+    } catch (e) {
+      setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, type: task.type } : t)));
+      guard(e);
+    }
+  }
+
   // tap vs drag: require an 8px move (pointer) / short hold (touch) so the
   // check/delete buttons still click cleanly. Same constraints as DayPlanner.
   const sensors = useSensors(
@@ -475,6 +489,8 @@ function TaskApp({ onLogout }: { onLogout: () => void }) {
                       onToggle={toggle}
                       onRemove={remove}
                       onPlay={adhd ? setFocusTask : undefined}
+                      onOpen={setFocusTask}
+                      onRepeat={toggleRepeat}
                     />
                   ))}
                 </AnimatePresence>
@@ -625,6 +641,8 @@ function DraggableRow(props: {
   onToggle: (t: Task) => void;
   onRemove: (t: Task) => void;
   onPlay?: (t: Task) => void;
+  onOpen?: (t: Task) => void;
+  onRepeat?: (t: Task) => void;
 }) {
   const { attributes, listeners, setNodeRef: setDragRef, isDragging } = useDraggable({
     id: props.task.id,
@@ -650,6 +668,8 @@ function Row({
   onToggle,
   onRemove,
   onPlay,
+  onOpen,
+  onRepeat,
   dragRef,
   dragHandle,
   isDragging,
@@ -659,6 +679,8 @@ function Row({
   onToggle: (t: Task) => void;
   onRemove: (t: Task) => void;
   onPlay?: (t: Task) => void;
+  onOpen?: (t: Task) => void;
+  onRepeat?: (t: Task) => void;
   // drag wiring (active list only); absent for the cleared list
   dragRef?: (el: HTMLElement | null) => void;
   dragHandle?: Record<string, unknown>;
@@ -714,7 +736,13 @@ function Row({
       </button>
 
       <div className="flex min-w-0 flex-1 flex-col gap-1">
-        <span className={`strike font-sans text-base leading-snug transition-colors ${done ? "on font-medium text-muted" : "text-text"}`}>
+        <span
+          onClick={!done && onOpen ? () => onOpen(task) : undefined}
+          title={!done && onOpen ? "Start a focus session" : undefined}
+          className={`strike font-sans text-base leading-snug transition-colors ${
+            done ? "on font-medium text-muted" : "text-text"
+          } ${!done && onOpen ? "cursor-pointer hover:text-acid" : ""}`}
+        >
           {task.title}
         </span>
         {(badge || due) && (
@@ -733,6 +761,20 @@ function Row({
         )}
       </div>
 
+      {onRepeat && !done && (task.type === "task" || task.type === "habit") && (
+        <button
+          onClick={() => onRepeat(task)}
+          aria-label="toggle repeat"
+          title={task.type === "habit" ? "Repeats daily — tap to make one-off" : "Make repeatable (daily)"}
+          className={`grid h-7 w-7 shrink-0 place-items-center rounded-full border text-[13px] transition ${
+            task.type === "habit"
+              ? "border-acid/60 bg-acid/15 text-acid"
+              : "border-white/10 text-muted hover:border-acid/40 hover:text-acid"
+          }`}
+        >
+          ↻
+        </button>
+      )}
       {onPlay && (
         <button
           onClick={() => onPlay(task)}

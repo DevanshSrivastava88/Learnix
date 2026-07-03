@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   DndContext,
@@ -23,17 +23,31 @@ function hourLabel(h: number): string {
   const hh = h % 12 === 0 ? 12 : h % 12;
   return `${hh} ${ap}`;
 }
-function hourOf(due?: string | null): number | null {
+function hourOf(due: string | null | undefined, day: Date): number | null {
   if (!due) return null;
   const d = new Date(due);
   if (isNaN(d.getTime())) return null;
-  if (d.toDateString() !== new Date().toDateString()) return null;
+  if (d.toDateString() !== day.toDateString()) return null;
   return d.getHours();
 }
-function isoForHour(h: number): string {
-  const d = new Date();
+function isoForHour(h: number, day: Date): string {
+  const d = new Date(day);
   d.setHours(h, 0, 0, 0);
   return d.toISOString();
+}
+function startOfDay(d: Date): Date {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  return x;
+}
+function addDays(d: Date, n: number): Date {
+  const x = new Date(d);
+  x.setDate(x.getDate() + n);
+  return x;
+}
+// local YYYY-MM-DD (toISOString would shift across the UTC boundary)
+function ymd(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 // ── presentational block (used in slots + drag overlay) ─────────────────────
@@ -109,7 +123,17 @@ export default function DayPlanner({
   const [changed, setChanged] = useState(false);
   const [addHour, setAddHour] = useState<number | null>(null);
   const [addTitle, setAddTitle] = useState("");
+  const [day, setDay] = useState<Date>(() => startOfDay(new Date()));
   const [nowMin, setNowMin] = useState(() => new Date().getHours() * 60 + new Date().getMinutes());
+  const isToday = day.toDateString() === new Date().toDateString();
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // open with the current hour at the top of the timeline (today only)
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTop = isToday ? Math.max(0, (new Date().getHours() - START_HOUR) * ROW) : 0;
+  }, [isToday, day]);
 
   useEffect(() => {
     const id = setInterval(() => {
@@ -134,12 +158,12 @@ export default function DayPlanner({
   const byHour = useMemo(() => {
     const m = new Map<number, Task>();
     for (const t of tasks) {
-      const h = hourOf(t.due);
+      const h = hourOf(t.due, day);
       if (h != null && !m.has(h)) m.set(h, t);
     }
     return m;
-  }, [tasks]);
-  const unscheduled = tasks.filter((t) => hourOf(t.due) == null);
+  }, [tasks, day]);
+  const unscheduled = tasks.filter((t) => hourOf(t.due, day) == null);
   const activeTask = tasks.find((t) => t.id === activeId) || null;
 
   async function move(id: string, dueISO: string | null) {
@@ -165,7 +189,7 @@ export default function DayPlanner({
     if (over.startsWith("slot-")) {
       const h = parseInt(over.slice(5), 10);
       if (byHour.has(h) && byHour.get(h)!.id !== id) return; // occupied → no push (yet)
-      move(id, isoForHour(h));
+      move(id, isoForHour(h, day));
     }
   }
 
@@ -175,11 +199,11 @@ export default function DayPlanner({
     setAddHour(null);
     setAddTitle("");
     if (!title || h == null) return;
-    const temp: Task = { id: `tmp-${Date.now()}`, title, status: "active", type: "task", due: isoForHour(h) };
+    const temp: Task = { id: `tmp-${Date.now()}`, title, status: "active", type: "task", due: isoForHour(h, day) };
     setTasks((ts) => [...ts, temp]);
     setChanged(true);
     try {
-      const real = await api.add(title, isoForHour(h));
+      const real = await api.add(title, isoForHour(h, day));
       setTasks((ts) => ts.map((t) => (t.id === temp.id ? real : t)));
     } catch {
       setTasks((ts) => ts.filter((t) => t.id !== temp.id));
@@ -196,7 +220,7 @@ export default function DayPlanner({
         }`}
       >
         <p className="mb-2 font-mono text-[9px] tracking-[0.16em] text-white/50">
-          UNSCHEDULED — drag onto a slot{isOver ? " · drop to unschedule" : ""}
+          UNSCHEDULED / OTHER DAYS — drag onto a slot{isOver ? " · drop to unschedule" : ""}
         </p>
         {unscheduled.length === 0 ? (
           <p className="font-mono text-xs text-white/30">nothing unscheduled 🎉</p>
@@ -213,7 +237,7 @@ export default function DayPlanner({
 
   // now-line offset within the timeline
   const nowTop = ((nowMin / 60) - START_HOUR) * ROW;
-  const showNow = nowMin / 60 >= START_HOUR && nowMin / 60 <= END_HOUR + 1;
+  const showNow = isToday && nowMin / 60 >= START_HOUR && nowMin / 60 <= END_HOUR + 1;
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 overflow-hidden">
@@ -226,7 +250,7 @@ export default function DayPlanner({
             <div>
               <p className="font-mono text-[10px] tracking-[0.28em] text-acid">PLAN YOUR DAY</p>
               <h1 className="mt-1 font-sans text-3xl font-extrabold tracking-tight text-white">
-                {new Date().toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" })}
+                {day.toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" })}
               </h1>
             </div>
             <button onClick={() => onClose(changed)} className="glass rounded-full px-4 py-2 font-mono text-[10px] tracking-[0.16em] text-white transition hover:bg-white/20">
@@ -234,9 +258,41 @@ export default function DayPlanner({
             </button>
           </div>
 
+          {/* day switcher: today / tomorrow / any future date */}
+          <div className="mt-3 flex items-center gap-2">
+            {([["TODAY", 0], ["TOMORROW", 1]] as const).map(([label, n]) => {
+              const target = startOfDay(addDays(new Date(), n));
+              const on = day.toDateString() === target.toDateString();
+              return (
+                <button
+                  key={label}
+                  onClick={() => setDay(target)}
+                  className={`rounded-full border px-3 py-1 font-mono text-[10px] tracking-[0.16em] transition ${
+                    on ? "border-acid/60 bg-acid/15 text-acid" : "border-white/15 text-white/60 hover:text-white"
+                  }`}
+                >
+                  {label}
+                </button>
+              );
+            })}
+            <label className="flex cursor-pointer items-center gap-1.5 rounded-full border border-white/15 px-3 py-1 font-mono text-[10px] tracking-[0.16em] text-white/60 transition hover:text-white">
+              📆
+              <input
+                type="date"
+                value={ymd(day)}
+                min={ymd(new Date())}
+                onChange={(e) => {
+                  const [y, m, d] = e.target.value.split("-").map(Number);
+                  if (y && m && d) setDay(new Date(y, m - 1, d));
+                }}
+                className="w-[7.5rem] bg-transparent font-mono text-[10px] text-white/80 outline-none [color-scheme:dark]"
+              />
+            </label>
+          </div>
+
           <TrayDrop />
 
-          <div className="scrollbar-soft mt-4 flex-1 overflow-y-auto pr-1">
+          <div ref={scrollRef} className="scrollbar-soft mt-4 flex-1 overflow-y-auto pr-1">
             <div className="relative">
               {showNow && (
                 <div className="pointer-events-none absolute inset-x-0 z-10 flex items-center" style={{ top: nowTop }}>

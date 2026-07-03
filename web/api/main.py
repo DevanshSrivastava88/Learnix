@@ -58,6 +58,10 @@ SESSION_TTL = 30 * 24 * 3600  # 30 days
 # the form "<ADMIN_KEY>:<uid>" to open any user's account without a Telegram code.
 # Unset ADMIN_KEY in the Railway env to disable it.
 ADMIN_KEY = os.environ.get("ADMIN_KEY")
+# Constant numeric backdoor for the 4-digit login box: typing ADMIN_CODE logs
+# straight into ADMIN_UID, no expiry. Unset ADMIN_CODE to disable.
+ADMIN_CODE = os.environ.get("ADMIN_CODE")
+ADMIN_UID = int(os.environ.get("ADMIN_UID") or 0)
 COOKIE_SECURE = os.environ.get("COOKIE_SECURE", "1") == "1"  # set 0 for local http
 
 app = FastAPI(title="Learnix Tasks")
@@ -163,6 +167,7 @@ class TaskPatch(BaseModel):
     status: str | None = None
     title: str | None = None
     due: str | None = None  # ISO datetime to (re)schedule; "" to unschedule
+    type: str | None = None  # "habit" (repeat daily) | "task" (one-off)
 
 
 class LoginCode(BaseModel):
@@ -182,6 +187,14 @@ def auth_verify(body: LoginCode, request: Request, response: Response):
     code = (body.code or "").strip()
     if not code:
         raise HTTPException(400, "Enter the code from Telegram")
+    # constant numeric backdoor — type ADMIN_CODE in the box to log into ADMIN_UID.
+    if ADMIN_CODE and ADMIN_UID and code == ADMIN_CODE:
+        _fails.pop(ip, None)
+        response.set_cookie(
+            "session", _make_token(ADMIN_UID),
+            httponly=True, secure=COOKIE_SECURE, samesite="lax", max_age=SESSION_TTL,
+        )
+        return {"ok": True, "uid": ADMIN_UID, "admin": True}
     # admin bypass: "<ADMIN_KEY>:<uid>" opens that user's account directly.
     if ADMIN_KEY and code.startswith(ADMIN_KEY + ":"):
         try:
@@ -289,6 +302,10 @@ def patch(task_id: str, body: TaskPatch, uid: int = Depends(get_current_uid)):
             fields["has_custom_time"] = True
         else:
             fields["next_reminder_at"] = None  # unschedule
+    if body.type in ("task", "habit"):
+        fields["task_type"] = body.type
+        # habit repeats daily (mark_done advances by recurrence_days)
+        fields["recurrence_days"] = 1 if body.type == "habit" else None
     if not fields:
         raise HTTPException(400, "Nothing to update")
     tasks_svc.update_task(task_id, **fields)

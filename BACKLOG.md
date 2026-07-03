@@ -1,8 +1,12 @@
 # Learnix Backlog
 
-_Last updated: 2026-06-20_
+_Last updated: 2026-07-03_
 _Project status: workInProgress_
 _Auto-agent: enabled_
+
+## 📋 Pending
+- **Merge the plan page and the main task page** (web) — user request 2026-07-03: unify DayPlanner
+  into the home task view instead of a separate fullscreen overlay. Do when user asks.
 
 ## ✅ Done (2026-06-20, pt.2) — web: habit-done vs task-done + drag-reorder
 - **Habit-done vs task-done (api/main.py, ui/src/App.tsx + api.ts):** the web toggle used a single
