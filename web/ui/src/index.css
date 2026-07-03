@@ -52,8 +52,11 @@ html[data-theme="day"] body::before {
   background:
     radial-gradient(46rem 34rem at 50% -10%, rgba(199, 255, 56, 0.08), transparent 60%),
     linear-gradient(rgba(250, 246, 255, 0.18) 0%, rgba(249, 245, 255, 0.38) 22rem, rgba(251, 249, 255, 0.52) 100%);
-  backdrop-filter: blur(14px) saturate(135%);
-  -webkit-backdrop-filter: blur(14px) saturate(135%);
+  /* --cat-blur is driven by scroll (App.tsx): blur eases off as you scroll
+     down so the cat sharpens. Falls back to 14px with no JS. */
+  backdrop-filter: blur(var(--cat-blur, 14px)) saturate(135%);
+  -webkit-backdrop-filter: blur(var(--cat-blur, 14px)) saturate(135%);
+  transition: backdrop-filter 0.12s linear, -webkit-backdrop-filter 0.12s linear;
   /* fade the frosted veil out toward the top so the cat photo stays crisp
      behind the hero; panels below still sit on the dreamy blur */
   -webkit-mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.25) 0, rgba(0, 0, 0, 0.7) 14rem, #000 26rem);

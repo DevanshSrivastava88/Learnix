@@ -140,6 +140,23 @@ function TaskApp({ onLogout }: { onLogout: () => void }) {
     document.documentElement.setAttribute("data-theme", theme);
   }, [theme]);
 
+  // day mode: ease the cat's backdrop blur off as the page scrolls down, so the
+  // wallpaper sharpens the further you go. 14px at top → 0 by ~500px.
+  useEffect(() => {
+    const root = document.documentElement;
+    if (theme !== "day") {
+      root.style.removeProperty("--cat-blur");
+      return;
+    }
+    const apply = () => {
+      const px = Math.max(0, 14 - window.scrollY / 36);
+      root.style.setProperty("--cat-blur", `${px.toFixed(1)}px`);
+    };
+    apply();
+    window.addEventListener("scroll", apply, { passive: true });
+    return () => window.removeEventListener("scroll", apply);
+  }, [theme]);
+
   function toggleTheme() {
     setTheme((t) => {
       const next = t === "night" ? "day" : "night";

@@ -14,7 +14,7 @@ import {
 } from "@dnd-kit/core";
 import { type Task } from "./api";
 
-const START_HOUR = 6;
+const START_HOUR = 0;
 const END_HOUR = 23;
 const ROW = 60; // px per hour row
 const PANE = 440; // timeline viewport height — bottom spacer lets ANY hour scroll to the top
