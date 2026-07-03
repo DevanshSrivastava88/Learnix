@@ -12,7 +12,7 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
-import { api, type Task } from "./api";
+import { type Task } from "./api";
 
 const START_HOUR = 6;
 const END_HOUR = 23;
@@ -58,9 +58,9 @@ function TaskBlock({ t, dragging }: { t: Task; dragging?: boolean }) {
         dragging ? "scale-[1.03] shadow-2xl ring-1 ring-white/40" : ""
       }`}
     >
-      <span className={`h-7 w-1 rounded-full ${t.type === "habit" ? "bg-acid" : "bg-white/70"}`} />
+      <span className={`h-7 w-1 rounded-full ${t.type === "habit" ? "bg-acid" : "bg-muted"}`} />
       <div className="min-w-0">
-        <p className="truncate font-sans text-sm font-semibold leading-tight text-white">{t.title}</p>
+        <p className="truncate font-sans text-sm font-semibold leading-tight text-text">{t.title}</p>
         {t.type === "habit" && <p className="font-mono text-[8px] tracking-[0.14em] text-acid">↻ HABIT</p>}
       </div>
     </div>
@@ -68,7 +68,7 @@ function TaskBlock({ t, dragging }: { t: Task; dragging?: boolean }) {
 }
 
 function DraggableTask({ t }: { t: Task }) {
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: t.id });
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: `plan-${t.id}` });
   return (
     <div
       ref={setNodeRef}
@@ -101,7 +101,7 @@ function Slot({ hour, task, onAdd }: { hour: number; task?: Task; onAdd: (h: num
       {task ? (
         <div className="p-1"><DraggableTask t={task} /></div>
       ) : (
-        <div className="grid h-full place-items-center font-mono text-[10px] text-white/15">
+        <div className="grid h-full place-items-center font-mono text-[10px] text-muted-deep">
           {isOver ? "drop here" : "+ add"}
         </div>
       )}
@@ -109,18 +109,22 @@ function Slot({ hour, task, onAdd }: { hour: number; task?: Task; onAdd: (h: num
   );
 }
 
+// Inline day-planner section — shares the task state with the home page: the
+// parent owns tasks and persistence, this only renders + raises onMove/onAdd.
 export default function DayPlanner({
-  tasks: initial,
-  onClose,
+  tasks: all,
+  onMove,
+  onAdd,
 }: {
   tasks: Task[];
-  onClose: (changed: boolean) => void;
+  onMove: (id: string, dueISO: string | null) => void;
+  onAdd: (title: string, dueISO: string) => void;
 }) {
-  const [tasks, setTasks] = useState<Task[]>(() =>
-    initial.filter((t) => t.status === "active" && !t.title.includes(" — Step "))
+  const tasks = useMemo(
+    () => all.filter((t) => t.status === "active" && !t.title.includes(" — Step ")),
+    [all]
   );
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [changed, setChanged] = useState(false);
   const [addHour, setAddHour] = useState<number | null>(null);
   const [addTitle, setAddTitle] = useState("");
   const [day, setDay] = useState<Date>(() => startOfDay(new Date()));
@@ -166,48 +170,29 @@ export default function DayPlanner({
   const unscheduled = tasks.filter((t) => hourOf(t.due, day) == null);
   const activeTask = tasks.find((t) => t.id === activeId) || null;
 
-  async function move(id: string, dueISO: string | null) {
-    const prev = tasks;
-    setTasks((ts) => ts.map((t) => (t.id === id ? { ...t, due: dueISO } : t)));
-    setChanged(true);
-    try {
-      await api.reschedule(id, dueISO);
-    } catch {
-      setTasks(prev);
-    }
-  }
-
   function onDragStart(e: DragStartEvent) {
-    setActiveId(String(e.active.id));
+    setActiveId(String(e.active.id).replace(/^plan-/, ""));
   }
   function onDragEnd(e: DragEndEvent) {
-    const id = String(e.active.id);
+    const id = String(e.active.id).replace(/^plan-/, "");
     setActiveId(null);
     const over = e.over?.id ? String(e.over.id) : null;
     if (!over) return;
-    if (over === "tray") return move(id, null);
+    if (over === "tray") return onMove(id, null);
     if (over.startsWith("slot-")) {
       const h = parseInt(over.slice(5), 10);
       if (byHour.has(h) && byHour.get(h)!.id !== id) return; // occupied → no push (yet)
-      move(id, isoForHour(h, day));
+      onMove(id, isoForHour(h, day));
     }
   }
 
-  async function addTask() {
+  function addTask() {
     const title = addTitle.trim();
     const h = addHour;
     setAddHour(null);
     setAddTitle("");
     if (!title || h == null) return;
-    const temp: Task = { id: `tmp-${Date.now()}`, title, status: "active", type: "task", due: isoForHour(h, day) };
-    setTasks((ts) => [...ts, temp]);
-    setChanged(true);
-    try {
-      const real = await api.add(title, isoForHour(h, day));
-      setTasks((ts) => ts.map((t) => (t.id === temp.id ? real : t)));
-    } catch {
-      setTasks((ts) => ts.filter((t) => t.id !== temp.id));
-    }
+    onAdd(title, isoForHour(h, day));
   }
 
   const TrayDrop = () => {
@@ -219,11 +204,11 @@ export default function DayPlanner({
           isOver ? "border-acid/60 bg-acid/10" : "border-white/10 bg-white/[0.04]"
         }`}
       >
-        <p className="mb-2 font-mono text-[9px] tracking-[0.16em] text-white/50">
+        <p className="mb-2 font-mono text-[9px] tracking-[0.16em] text-muted">
           UNSCHEDULED / OTHER DAYS — drag onto a slot{isOver ? " · drop to unschedule" : ""}
         </p>
         {unscheduled.length === 0 ? (
-          <p className="font-mono text-xs text-white/30">nothing unscheduled 🎉</p>
+          <p className="font-mono text-xs text-muted-deep">nothing unscheduled 🎉</p>
         ) : (
           <div className="flex flex-wrap gap-2">
             {unscheduled.map((t) => (
@@ -240,76 +225,69 @@ export default function DayPlanner({
   const showNow = isToday && nowMin / 60 >= START_HOUR && nowMin / 60 <= END_HOUR + 1;
 
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 overflow-hidden">
-      <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: "url(/focus-bg.png)" }} />
-      <div className="absolute inset-0 bg-[#0a0613]/82 backdrop-blur-2xl" />
+    <div className="mt-10">
+      <div className="mb-3 flex items-center gap-3">
+        <span className="font-mono text-[10px] tracking-[0.18em] text-muted">// PLAN</span>
+        <span className="h-px flex-1 bg-white/10" />
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="font-sans text-2xl font-extrabold tracking-tight text-text">
+          {day.toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" })}
+        </h2>
+        {/* day switcher: today / tomorrow / any future date */}
+        <div className="flex items-center gap-2">
+          {([["TODAY", 0], ["TOMORROW", 1]] as const).map(([label, n]) => {
+            const target = startOfDay(addDays(new Date(), n));
+            const on = day.toDateString() === target.toDateString();
+            return (
+              <button
+                key={label}
+                onClick={() => setDay(target)}
+                className={`rounded-full border px-3 py-1 font-mono text-[10px] tracking-[0.16em] transition ${
+                  on ? "border-acid/60 bg-acid/15 text-acid" : "border-white/10 text-muted hover:text-text"
+                }`}
+              >
+                {label}
+              </button>
+            );
+          })}
+          <label className="flex cursor-pointer items-center gap-1.5 rounded-full border border-white/10 px-3 py-1 font-mono text-[10px] tracking-[0.16em] text-muted transition hover:text-text">
+            📆
+            <input
+              type="date"
+              value={ymd(day)}
+              min={ymd(new Date())}
+              onChange={(e) => {
+                const [y, m, d] = e.target.value.split("-").map(Number);
+                if (y && m && d) setDay(new Date(y, m - 1, d));
+              }}
+              className="w-[7.5rem] bg-transparent font-mono text-[10px] text-muted outline-none"
+            />
+          </label>
+        </div>
+      </div>
 
       <DndContext sensors={sensors} onDragStart={onDragStart} onDragEnd={onDragEnd}>
-        <div className="relative z-10 mx-auto flex h-full max-w-2xl flex-col px-5 py-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="font-mono text-[10px] tracking-[0.28em] text-acid">PLAN YOUR DAY</p>
-              <h1 className="mt-1 font-sans text-3xl font-extrabold tracking-tight text-white">
-                {day.toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" })}
-              </h1>
-            </div>
-            <button onClick={() => onClose(changed)} className="glass rounded-full px-4 py-2 font-mono text-[10px] tracking-[0.16em] text-white transition hover:bg-white/20">
-              ✓ DONE
-            </button>
-          </div>
+        <TrayDrop />
 
-          {/* day switcher: today / tomorrow / any future date */}
-          <div className="mt-3 flex items-center gap-2">
-            {([["TODAY", 0], ["TOMORROW", 1]] as const).map(([label, n]) => {
-              const target = startOfDay(addDays(new Date(), n));
-              const on = day.toDateString() === target.toDateString();
-              return (
-                <button
-                  key={label}
-                  onClick={() => setDay(target)}
-                  className={`rounded-full border px-3 py-1 font-mono text-[10px] tracking-[0.16em] transition ${
-                    on ? "border-acid/60 bg-acid/15 text-acid" : "border-white/15 text-white/60 hover:text-white"
-                  }`}
-                >
-                  {label}
-                </button>
-              );
-            })}
-            <label className="flex cursor-pointer items-center gap-1.5 rounded-full border border-white/15 px-3 py-1 font-mono text-[10px] tracking-[0.16em] text-white/60 transition hover:text-white">
-              📆
-              <input
-                type="date"
-                value={ymd(day)}
-                min={ymd(new Date())}
-                onChange={(e) => {
-                  const [y, m, d] = e.target.value.split("-").map(Number);
-                  if (y && m && d) setDay(new Date(y, m - 1, d));
-                }}
-                className="w-[7.5rem] bg-transparent font-mono text-[10px] text-white/80 outline-none [color-scheme:dark]"
-              />
-            </label>
-          </div>
-
-          <TrayDrop />
-
-          <div ref={scrollRef} className="scrollbar-soft mt-4 flex-1 overflow-y-auto pr-1">
-            <div className="relative">
-              {showNow && (
-                <div className="pointer-events-none absolute inset-x-0 z-10 flex items-center" style={{ top: nowTop }}>
-                  <span className="ml-12 h-2 w-2 rounded-full bg-acid shadow-glow" />
-                  <span className="h-px flex-1 bg-acid/70" />
-                </div>
-              )}
-              <div className="space-y-2">
-                {hours.map((h) => (
-                  <div key={h} className="flex items-stretch gap-3" style={{ minHeight: ROW - 8 }}>
-                    <span className="w-12 shrink-0 pt-1 text-right font-mono text-[10px] tracking-[0.1em] text-white/40">
-                      {hourLabel(h)}
-                    </span>
-                    <Slot hour={h} task={byHour.get(h)} onAdd={(hr) => { setAddHour(hr); setAddTitle(""); }} />
-                  </div>
-                ))}
+        <div ref={scrollRef} className="scrollbar-soft mt-4 max-h-[440px] overflow-y-auto pr-1">
+          <div className="relative">
+            {showNow && (
+              <div className="pointer-events-none absolute inset-x-0 z-10 flex items-center" style={{ top: nowTop }}>
+                <span className="ml-12 h-2 w-2 rounded-full bg-acid shadow-glow" />
+                <span className="h-px flex-1 bg-acid/70" />
               </div>
+            )}
+            <div className="space-y-2">
+              {hours.map((h) => (
+                <div key={h} className="flex items-stretch gap-3" style={{ minHeight: ROW - 8 }}>
+                  <span className="w-12 shrink-0 pt-1 text-right font-mono text-[10px] tracking-[0.1em] text-muted">
+                    {hourLabel(h)}
+                  </span>
+                  <Slot hour={h} task={byHour.get(h)} onAdd={(hr) => { setAddHour(hr); setAddTitle(""); }} />
+                </div>
+              ))}
             </div>
           </div>
         </div>
@@ -322,7 +300,7 @@ export default function DayPlanner({
       {/* tap-to-add dialog */}
       <AnimatePresence>
         {addHour != null && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 z-30 grid place-items-center bg-black/50 px-6">
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-40 grid place-items-center bg-black/50 px-6">
             <motion.div initial={{ scale: 0.92, y: 12 }} animate={{ scale: 1, y: 0 }} className="glass w-full max-w-xs rounded-3xl p-6">
               <p className="font-mono text-[10px] tracking-[0.2em] text-acid">NEW TASK · {hourLabel(addHour)}</p>
               <input
@@ -331,18 +309,18 @@ export default function DayPlanner({
                 onKeyDown={(e) => e.key === "Enter" && addTask()}
                 autoFocus
                 placeholder="what needs doing?"
-                className="mt-3 w-full rounded-2xl border border-white/25 bg-white/10 px-4 py-3 font-sans text-base text-white placeholder:text-white/40 focus:border-white/50 focus:outline-none"
+                className="mt-3 w-full rounded-2xl border border-white/10 bg-panel px-4 py-3 font-sans text-base text-text placeholder:text-muted-deep focus:border-acid/40 focus:outline-none"
               />
-              <button onClick={addTask} className="mt-4 w-full rounded-2xl bg-white/90 py-3 font-sans font-bold text-purple-900 transition hover:bg-white active:scale-[0.98]">
+              <button onClick={addTask} className="mt-4 w-full rounded-2xl bg-acid py-3 font-sans font-bold text-bg transition hover:brightness-110 active:scale-[0.98]">
                 Add at {hourLabel(addHour)}
               </button>
-              <button onClick={() => setAddHour(null)} className="mt-2 w-full text-center font-mono text-[11px] tracking-[0.14em] text-white/55 transition hover:text-white/90">
+              <button onClick={() => setAddHour(null)} className="mt-2 w-full text-center font-mono text-[11px] tracking-[0.14em] text-muted transition hover:text-text">
                 cancel
               </button>
             </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
-    </motion.div>
+    </div>
   );
 }

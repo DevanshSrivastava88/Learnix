@@ -46,12 +46,18 @@
    glass, with dark ink text. A real light theme, not night-with-a-haze. ───── */
 html[data-theme="day"] { color-scheme: light; }
 
-/* light wash: pastels the photo so it stays dreamy but the page reads bright
-   and dark text is legible even over the busy butterfly highlights */
+/* dreamy wash: the planner-page look — vivid cat photo softened by a frosted
+   blur + light veil, sharpest at the top so the cat reads clearly up there */
 html[data-theme="day"] body::before {
   background:
-    radial-gradient(46rem 34rem at 50% -10%, rgba(199, 255, 56, 0.10), transparent 60%),
-    linear-gradient(rgba(247, 245, 255, 0.68), rgba(251, 249, 255, 0.80));
+    radial-gradient(46rem 34rem at 50% -10%, rgba(199, 255, 56, 0.08), transparent 60%),
+    linear-gradient(rgba(250, 246, 255, 0.18) 0%, rgba(249, 245, 255, 0.38) 22rem, rgba(251, 249, 255, 0.52) 100%);
+  backdrop-filter: blur(14px) saturate(135%);
+  -webkit-backdrop-filter: blur(14px) saturate(135%);
+  /* fade the frosted veil out toward the top so the cat photo stays crisp
+     behind the hero; panels below still sit on the dreamy blur */
+  -webkit-mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.25) 0, rgba(0, 0, 0, 0.7) 14rem, #000 26rem);
+  mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.25) 0, rgba(0, 0, 0, 0.7) 14rem, #000 26rem);
 }
 
 /* frosted WHITE panels — opaque enough that dark text stays crisp */

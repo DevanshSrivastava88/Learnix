@@ -144,7 +144,6 @@ function TaskApp({ onLogout }: { onLogout: () => void }) {
   const [draft, setDraft] = useState("");
   const [adhd, setAdhd] = useState(() => localStorage.getItem("learnix_adhd") === "1");
   const [focusTask, setFocusTask] = useState<Task | null>(null);
-  const [planning, setPlanning] = useState(false);
   const [theme, setTheme] = useState<"night" | "day">(
     () => (localStorage.getItem("learnix_theme") as "night" | "day") || "night"
   );
@@ -161,9 +160,6 @@ function TaskApp({ onLogout }: { onLogout: () => void }) {
     });
   }
 
-  function refetch() {
-    api.list().then((r) => setTasks([...r.active, ...r.completed])).catch(guard);
-  }
   const inputRef = useRef<HTMLInputElement>(null);
   const prompt = useMemo(() => PROMPTS[Math.floor(Math.random() * PROMPTS.length)], []);
 
@@ -271,6 +267,31 @@ function TaskApp({ onLogout }: { onLogout: () => void }) {
     }
   }
 
+  // planner section: reschedule a task into an hour slot (null = unschedule)
+  async function planMove(id: string, dueISO: string | null) {
+    const prev = tasks;
+    setTasks((ts) => ts.map((t) => (t.id === id ? { ...t, due: dueISO } : t)));
+    try {
+      await api.reschedule(id, dueISO);
+    } catch (e) {
+      setTasks(prev);
+      guard(e);
+    }
+  }
+
+  // planner section: tap an empty slot → new task scheduled at that hour
+  async function planAdd(title: string, dueISO: string) {
+    const temp: Task = { id: `tmp-${Date.now()}`, title, status: "active", type: "task", due: dueISO };
+    setTasks((prev) => [...prev, temp]);
+    try {
+      const real = await api.add(title, dueISO);
+      setTasks((prev) => prev.map((t) => (t.id === temp.id ? real : t)));
+    } catch (e) {
+      setTasks((prev) => prev.filter((t) => t.id !== temp.id));
+      guard(e);
+    }
+  }
+
   // repeat toggle: habit repeats daily (stays active on complete), task is one-off
   async function toggleRepeat(task: Task) {
     if (task.type !== "task" && task.type !== "habit") return;
@@ -341,12 +362,6 @@ function TaskApp({ onLogout }: { onLogout: () => void }) {
             onExit={() => setFocusTask(null)}
           />
         )}
-        {planning && (
-          <DayPlanner
-            tasks={tasks}
-            onClose={(c) => { setPlanning(false); if (c) refetch(); }}
-          />
-        )}
       </AnimatePresence>
 
       <motion.div
@@ -374,13 +389,6 @@ function TaskApp({ onLogout }: { onLogout: () => void }) {
             }`}
           >
             🌙
-          </button>
-          <button
-            onClick={() => setPlanning(true)}
-            title="Plan your day — drag tasks into time slots"
-            className="flex items-center gap-1.5 rounded-full border border-white/10 px-2.5 py-1 font-mono text-[9px] tracking-[0.14em] text-muted transition hover:text-text"
-          >
-            📅 PLAN
           </button>
           <button
             onClick={toggleAdhd}
@@ -507,6 +515,8 @@ function TaskApp({ onLogout }: { onLogout: () => void }) {
                 <p className="mt-2 font-mono text-sm text-acid">&gt; no active directives. rest up.</p>
               </motion.div>
             )}
+
+            <DayPlanner tasks={tasks} onMove={planMove} onAdd={planAdd} />
 
             {completed.length > 0 && (
               <div className="mt-10">
