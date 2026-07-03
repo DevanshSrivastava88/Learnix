@@ -411,6 +411,32 @@ def health():
     return {"ok": True}
 
 
+# --- account deletion ---------------------------------------------------------
+# ponytail: real table is "settings" (see settings_svc.py), not "user_settings" —
+# using the wrong name would silently no-op via the try/except below.
+_ACCOUNT_TABLES = [
+    "tasks", "activity_log", "task_skips", "motivation_log",
+    "user_facts", "mem_events", "chat_history", "settings", "web_login_codes",
+]
+
+
+@app.delete("/api/account")
+def delete_account(response: Response, uid: int = Depends(get_current_uid)):
+    c = get_client()
+    for table in _ACCOUNT_TABLES:
+        try:
+            c.table(table).delete().eq("user_id", uid).execute()
+        except Exception as e:
+            print(f"delete_account: {table} failed for uid={uid}: {e}")
+    response.delete_cookie("session")
+    return {"ok": True}
+
+
+@app.get("/privacy")
+def privacy():
+    return FileResponse(_HERE / "privacy.html", media_type="text/html")
+
+
 # --- serve the built frontend (single-service deploy) ------------------------
 _STATIC_CANDIDATES = [_HERE / "static", _HERE.parents[0] / "ui" / "dist"]
 STATIC_DIR = next((c for c in _STATIC_CANDIDATES if (c / "index.html").exists()), None)

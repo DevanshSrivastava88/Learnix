@@ -12,8 +12,6 @@ const PROMPTS = [
   "do the next thing. only that.",
 ];
 
-const BOT = "@Quest3131Bot";
-
 function todayLabel() {
   return new Date()
     .toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })
@@ -79,18 +77,40 @@ function Login({ onSuccess }: { onSuccess: () => void }) {
           </div>
         </div>
 
-        <h1 className="font-sans text-4xl font-extrabold tracking-[-0.03em] text-text">
+        <h2 className="font-sans text-3xl font-extrabold leading-tight tracking-[-0.03em] text-text sm:text-4xl">
+          Your AI life OS.
+        </h2>
+        <p className="mt-2 font-mono text-xs leading-relaxed text-muted">
+          task timeline, daily habits, focus timer, and a Telegram bot that plans your day.
+        </p>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <span className="rounded-full border border-white/10 bg-panel px-2.5 py-1 font-mono text-[10px] text-muted">⏱ day timeline</span>
+          <span className="rounded-full border border-white/10 bg-panel px-2.5 py-1 font-mono text-[10px] text-muted">↻ daily habits</span>
+          <span className="rounded-full border border-white/10 bg-panel px-2.5 py-1 font-mono text-[10px] text-muted">🎯 focus sessions</span>
+        </div>
+
+        <h1 className="mt-8 font-sans text-2xl font-extrabold tracking-[-0.03em] text-text">
           Log in
         </h1>
         <p className="mt-3 font-mono text-sm leading-relaxed text-muted">
           No passwords. Get a one-time code from the bot:
         </p>
 
-        <ol className="mt-4 space-y-2 font-mono text-sm text-muted">
-          <li><span className="text-acid">1.</span> Open Telegram → <span className="text-text">{BOT}</span></li>
-          <li><span className="text-acid">2.</span> Send <span className="text-text">/weblogin</span></li>
-          <li><span className="text-acid">3.</span> Enter the code below</li>
-        </ol>
+        <a
+          href="https://t.me/Quest3131Bot?start=weblogin"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-5 block w-full rounded-xl bg-acid py-3 text-center font-sans text-base font-bold text-bg transition hover:brightness-110"
+        >
+          Continue with Telegram →
+        </a>
+        <p className="mt-2 font-mono text-xs text-muted">
+          opens the bot — it sends you a 4-digit code
+        </p>
+
+        <p className="mt-4 font-mono text-sm text-muted">
+          <span className="text-acid">→</span> then enter the code below
+        </p>
 
         <input
           value={code}
@@ -312,6 +332,17 @@ function TaskApp({ onLogout }: { onLogout: () => void }) {
     onLogout();
   }
 
+  async function deleteAccount() {
+    if (!window.confirm("Delete your account and ALL tasks/data? This cannot be undone.")) return;
+    if (!window.confirm("Really sure? Everything will be wiped.")) return;
+    try {
+      await api.deleteAccount();
+      onLogout();
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
   return (
     <div className="relative z-10 mx-auto flex min-h-full max-w-2xl flex-col px-6 pb-24 pt-12 sm:pt-16">
       <AnimatePresence>
@@ -471,7 +502,17 @@ function TaskApp({ onLogout }: { onLogout: () => void }) {
       </div>
 
       <footer className="mt-12 text-center font-mono text-[9px] uppercase tracking-[0.28em] text-muted-deep">
-        learnix · your tasks
+        <p>learnix · your tasks</p>
+        <p className="mt-2 flex items-center justify-center gap-2">
+          <a href="/privacy" className="hover:text-acid">privacy</a>
+          <span>·</span>
+          <button
+            onClick={deleteAccount}
+            className="font-mono text-[9px] uppercase tracking-[0.28em] text-muted-deep hover:text-red"
+          >
+            delete account
+          </button>
+        </p>
       </footer>
     </div>
   );

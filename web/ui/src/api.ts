@@ -76,4 +76,7 @@ export const api = {
     })).then(json),
   remove: (id: string): Promise<{ ok: boolean }> =>
     fetch(`/api/tasks/${id}`, opts({ method: "DELETE" })).then(json),
+  // wipes the account: all tasks/history/settings + session
+  deleteAccount: (): Promise<{ ok: boolean }> =>
+    fetch("/api/account", opts({ method: "DELETE" })).then(json),
 };

@@ -19,8 +19,11 @@ COPY web/api/requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY web/api/main.py ./main.py
+COPY web/api/privacy.html ./privacy.html
 # vendor the thin data layer straight from the live bot/ (no drift)
 COPY bot/supabase_svc.py ./_bot/supabase_svc.py
+COPY bot/analytics_svc.py ./_bot/analytics_svc.py
+COPY bot/settings_svc.py ./_bot/settings_svc.py
 COPY bot/tasks ./_bot/tasks
 # built frontend
 COPY --from=ui /ui/dist ./static

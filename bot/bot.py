@@ -29,6 +29,9 @@ logger = logging.getLogger(__name__)
 async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     uid = update.effective_user.id
     settings_svc.get_settings(uid)  # creates row with defaults if new user
+    if ctx.args and ctx.args[0] == "weblogin":
+        await cmd_weblogin(update, ctx)
+        return
     first_name = update.effective_user.first_name or "there"
     # Welcome-back: if we have a prior session recap, open with where we left off.
     try:
@@ -2172,7 +2175,8 @@ async def cmd_weblogin(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
     await update.message.reply_text(
         f"🔐 Your web login code:\n\n<code>{code}</code>\n\n"
-        f"Enter it at {WEB_URL} — expires in 10 minutes. Don't share it.",
+        f"{WEB_URL}\n\n"
+        f"Come back to the browser tab and enter it — expires in 10 minutes. Don't share it.",
         parse_mode="HTML",
     )
 
