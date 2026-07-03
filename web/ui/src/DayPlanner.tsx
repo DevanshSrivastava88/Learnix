@@ -17,6 +17,7 @@ import { type Task } from "./api";
 const START_HOUR = 6;
 const END_HOUR = 23;
 const ROW = 60; // px per hour row
+const PANE = 440; // timeline viewport height — bottom spacer lets ANY hour scroll to the top
 
 function hourLabel(h: number): string {
   const ap = h < 12 ? "AM" : "PM";
@@ -200,7 +201,7 @@ export default function DayPlanner({
     return (
       <div
         ref={setNodeRef}
-        className={`mt-4 rounded-2xl border p-3 transition ${
+        className={`rounded-2xl border p-3 transition ${
           isOver ? "border-acid/60 bg-acid/10" : "border-white/10 bg-white/[0.04]"
         }`}
       >
@@ -269,26 +270,36 @@ export default function DayPlanner({
       </div>
 
       <DndContext sensors={sensors} onDragStart={onDragStart} onDragEnd={onDragEnd}>
-        <TrayDrop />
-
-        <div ref={scrollRef} className="scrollbar-soft mt-4 max-h-[440px] overflow-y-auto pr-1">
-          <div className="relative">
-            {showNow && (
-              <div className="pointer-events-none absolute inset-x-0 z-10 flex items-center" style={{ top: nowTop }}>
-                <span className="ml-12 h-2 w-2 rounded-full bg-acid shadow-glow" />
-                <span className="h-px flex-1 bg-acid/70" />
-              </div>
-            )}
-            <div className="space-y-2">
-              {hours.map((h) => (
-                <div key={h} className="flex items-stretch gap-3" style={{ minHeight: ROW - 8 }}>
-                  <span className="w-12 shrink-0 pt-1 text-right font-mono text-[10px] tracking-[0.1em] text-muted">
-                    {hourLabel(h)}
-                  </span>
-                  <Slot hour={h} task={byHour.get(h)} onAdd={(hr) => { setAddHour(hr); setAddTitle(""); }} />
+        {/* timeline left, unscheduled tray right (stacked on small screens) */}
+        <div className="mt-4 grid items-start gap-4 sm:grid-cols-[1fr_260px]">
+          <div
+            ref={scrollRef}
+            style={{ maxHeight: PANE }}
+            className="scrollbar-soft order-2 overflow-y-auto pr-1 sm:order-1"
+          >
+            <div className="relative">
+              {showNow && (
+                <div className="pointer-events-none absolute inset-x-0 z-10 flex items-center" style={{ top: nowTop }}>
+                  <span className="ml-12 h-2 w-2 rounded-full bg-acid shadow-glow" />
+                  <span className="h-px flex-1 bg-acid/70" />
                 </div>
-              ))}
+              )}
+              <div className="space-y-2">
+                {hours.map((h) => (
+                  <div key={h} className="flex items-stretch gap-3" style={{ minHeight: ROW - 8 }}>
+                    <span className="w-12 shrink-0 pt-1 text-right font-mono text-[10px] tracking-[0.1em] text-muted">
+                      {hourLabel(h)}
+                    </span>
+                    <Slot hour={h} task={byHour.get(h)} onAdd={(hr) => { setAddHour(hr); setAddTitle(""); }} />
+                  </div>
+                ))}
+              </div>
+              {/* spacer so late hours can still scroll to the top of the pane */}
+              <div style={{ height: PANE - ROW }} aria-hidden />
             </div>
+          </div>
+          <div className="order-1 sm:order-2">
+            <TrayDrop />
           </div>
         </div>
 
