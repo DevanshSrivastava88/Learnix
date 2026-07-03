@@ -1,16 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
-import {
-  DndContext,
-  PointerSensor,
-  TouchSensor,
-  closestCenter,
-  useSensor,
-  useSensors,
-  useDraggable,
-  useDroppable,
-  type DragEndEvent,
-} from "@dnd-kit/core";
 import { api, AuthError, type Task, type Stats, type DayCell } from "./api";
 import FocusTimer from "./FocusTimer";
 import DayPlanner from "./DayPlanner";
@@ -142,7 +131,6 @@ function TaskApp({ onLogout }: { onLogout: () => void }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
-  const [adhd, setAdhd] = useState(() => localStorage.getItem("learnix_adhd") === "1");
   const [focusTask, setFocusTask] = useState<Task | null>(null);
   const [theme, setTheme] = useState<"night" | "day">(
     () => (localStorage.getItem("learnix_theme") as "night" | "day") || "night"
@@ -162,13 +150,6 @@ function TaskApp({ onLogout }: { onLogout: () => void }) {
 
   const inputRef = useRef<HTMLInputElement>(null);
   const prompt = useMemo(() => PROMPTS[Math.floor(Math.random() * PROMPTS.length)], []);
-
-  function toggleAdhd() {
-    setAdhd((v) => {
-      localStorage.setItem("learnix_adhd", v ? "0" : "1");
-      return !v;
-    });
-  }
 
   async function completeFromFocus(task: Task) {
     // Habit-aware (same as the list toggle): habit stays active with an advanced
@@ -202,21 +183,6 @@ function TaskApp({ onLogout }: { onLogout: () => void }) {
     api.activity().then((r) => setActivity(r.days)).catch(() => {});
   }, []);
 
-  // Manual drag order wins (sort_order); otherwise scheduled tasks float up
-  // (soonest first) and unscheduled sink — overdue naturally leads the stack.
-  // Mirrors the server's _order_active so optimistic + fetched state agree.
-  const active = useMemo(() => {
-    const ts = (t: Task) => {
-      const n = t.due ? new Date(t.due).getTime() : NaN;
-      return isNaN(n) ? Infinity : n;
-    };
-    const all = tasks.filter((t) => t.status === "active");
-    const hasManual = all.some((t) => t.ordering != null);
-    if (!hasManual) return [...all].sort((a, b) => ts(a) - ts(b));
-    const manual = all.filter((t) => t.ordering != null).sort((a, b) => a.ordering! - b.ordering!);
-    const rest = all.filter((t) => t.ordering == null).sort((a, b) => ts(a) - ts(b));
-    return [...manual, ...rest];
-  }, [tasks]);
   const completed = tasks.filter((t) => t.status === "completed");
   const doneCount = completed.length;
   const total = tasks.length;
@@ -306,36 +272,6 @@ function TaskApp({ onLogout }: { onLogout: () => void }) {
     }
   }
 
-  // tap vs drag: require an 8px move (pointer) / short hold (touch) so the
-  // check/delete buttons still click cleanly. Same constraints as DayPlanner.
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 180, tolerance: 8 } })
-  );
-
-  async function onReorder(e: DragEndEvent) {
-    const fromId = String(e.active.id);
-    const overId = e.over ? String(e.over.id) : null;
-    if (!overId || fromId === overId) return;
-    const order = active.map((t) => t.id);
-    const from = order.indexOf(fromId);
-    const to = order.indexOf(overId);
-    if (from < 0 || to < 0) return;
-    order.splice(to, 0, order.splice(from, 1)[0]);
-    // write the new index onto every active task so the local sort agrees
-    const rank = new Map(order.map((id, i) => [id, i]));
-    const snapshot = tasks;
-    setTasks((prev) =>
-      prev.map((t) => (rank.has(t.id) ? { ...t, ordering: rank.get(t.id)! } : t))
-    );
-    try {
-      await api.reorder(order);
-    } catch (e) {
-      setTasks(snapshot);
-      guard(e);
-    }
-  }
-
   async function remove(task: Task) {
     const snapshot = tasks;
     setTasks((prev) => prev.filter((t) => t.id !== task.id));
@@ -389,16 +325,6 @@ function TaskApp({ onLogout }: { onLogout: () => void }) {
             }`}
           >
             🌙
-          </button>
-          <button
-            onClick={toggleAdhd}
-            title="Focus mode — adds a ▶ to each task"
-            className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-mono text-[9px] tracking-[0.14em] transition ${
-              adhd ? "border-acid/50 bg-acid/10 text-acid" : "border-white/10 text-muted hover:text-text"
-            }`}
-          >
-            <span className={`h-1.5 w-1.5 rounded-full ${adhd ? "bg-acid shadow-glow" : "bg-muted"}`} />
-            FIX ADHD
           </button>
           <button
             onClick={doLogout}
@@ -482,41 +408,15 @@ function TaskApp({ onLogout }: { onLogout: () => void }) {
 
         {!loading && (
           <LayoutGroup>
-            <div className="mb-3 flex items-center gap-3">
-              <span className="font-mono text-[10px] tracking-[0.18em] text-muted">// ACTIVE</span>
-              <span className="h-px flex-1 bg-white/10" />
-            </div>
-            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onReorder}>
-              <ul className="space-y-2">
-                <AnimatePresence initial={false}>
-                  {active.map((t, i) => (
-                    <DraggableRow
-                      key={t.id}
-                      task={t}
-                      index={i}
-                      onToggle={toggle}
-                      onRemove={remove}
-                      onPlay={adhd ? setFocusTask : undefined}
-                      onOpen={setFocusTask}
-                      onRepeat={toggleRepeat}
-                    />
-                  ))}
-                </AnimatePresence>
-              </ul>
-            </DndContext>
-
-            {active.length === 0 && (
-              <motion.div
-                initial={{ opacity: 0, scale: 0.97 }}
-                animate={{ opacity: 1, scale: 1 }}
-                className="rounded-xl border border-dashed border-white/12 bg-panel/50 px-6 py-12 text-center"
-              >
-                <p className="font-sans text-3xl font-extrabold tracking-tight text-text">ALL CLEAR</p>
-                <p className="mt-2 font-mono text-sm text-acid">&gt; no active directives. rest up.</p>
-              </motion.div>
-            )}
-
-            <DayPlanner tasks={tasks} onMove={planMove} onAdd={planAdd} />
+            <DayPlanner
+              tasks={tasks}
+              onMove={planMove}
+              onAdd={planAdd}
+              onToggle={toggle}
+              onRepeat={toggleRepeat}
+              onRemove={remove}
+              onOpen={setFocusTask}
+            />
 
             {completed.length > 0 && (
               <div className="mt-10">
@@ -642,90 +542,33 @@ function dueLabel(due?: string | null): { text: string; overdue: boolean } | nul
   return { text, overdue };
 }
 
-// Active-list row that is both a drag source and a drop target. The drag
-// listeners live on the index grip (see Row) so the check/delete buttons stay
-// clickable; the whole li is the droppable.
-function DraggableRow(props: {
-  task: Task;
-  index: number;
-  onToggle: (t: Task) => void;
-  onRemove: (t: Task) => void;
-  onPlay?: (t: Task) => void;
-  onOpen?: (t: Task) => void;
-  onRepeat?: (t: Task) => void;
-}) {
-  const { attributes, listeners, setNodeRef: setDragRef, isDragging } = useDraggable({
-    id: props.task.id,
-  });
-  const { setNodeRef: setDropRef } = useDroppable({ id: props.task.id });
-  const ref = (el: HTMLElement | null) => {
-    setDragRef(el);
-    setDropRef(el);
-  };
-  return (
-    <Row
-      {...props}
-      dragRef={ref}
-      dragHandle={{ ...listeners, ...attributes }}
-      isDragging={isDragging}
-    />
-  );
-}
-
+// Cleared-list row.
 function Row({
   task,
   index,
   onToggle,
   onRemove,
-  onPlay,
-  onOpen,
-  onRepeat,
-  dragRef,
-  dragHandle,
-  isDragging,
 }: {
   task: Task;
   index: number;
   onToggle: (t: Task) => void;
   onRemove: (t: Task) => void;
-  onPlay?: (t: Task) => void;
-  onOpen?: (t: Task) => void;
-  onRepeat?: (t: Task) => void;
-  // drag wiring (active list only); absent for the cleared list
-  dragRef?: (el: HTMLElement | null) => void;
-  dragHandle?: Record<string, unknown>;
-  isDragging?: boolean;
 }) {
   const done = task.status === "completed";
   const badge = TYPE_BADGE[task.type];
   const due = !done ? dueLabel(task.due) : null;
   return (
     <motion.li
-      ref={dragRef}
       layout
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, x: -16, transition: { duration: 0.2 } }}
       transition={{ layout: { type: "spring", stiffness: 320, damping: 32 }, delay: index * 0.03 }}
-      className={`group flex items-center gap-3 rounded-xl border border-white/10 bg-panel px-4 py-3.5 transition hover:border-acid/30 hover:bg-panel-2 ${
-        isDragging ? "opacity-40 ring-1 ring-acid/40" : ""
-      }`}
+      className="group flex items-center gap-3 rounded-xl border border-white/10 bg-panel px-4 py-3.5 transition hover:border-acid/30 hover:bg-panel-2"
     >
-      {dragHandle ? (
-        <span
-          {...dragHandle}
-          title="Drag to reorder"
-          aria-label="drag to reorder"
-          style={{ touchAction: "none" }}
-          className="w-6 shrink-0 cursor-grab select-none text-center font-mono text-[10px] text-muted-deep transition hover:text-acid active:cursor-grabbing"
-        >
-          {String(index + 1).padStart(2, "0")}
-        </span>
-      ) : (
-        <span className="w-6 shrink-0 font-mono text-[10px] text-muted-deep">
-          {String(index + 1).padStart(2, "0")}
-        </span>
-      )}
+      <span className="w-6 shrink-0 font-mono text-[10px] text-muted-deep">
+        {String(index + 1).padStart(2, "0")}
+      </span>
 
       <button
         onClick={() => onToggle(task)}
@@ -746,13 +589,7 @@ function Row({
       </button>
 
       <div className="flex min-w-0 flex-1 flex-col gap-1">
-        <span
-          onClick={!done && onOpen ? () => onOpen(task) : undefined}
-          title={!done && onOpen ? "Start a focus session" : undefined}
-          className={`strike font-sans text-base leading-snug transition-colors ${
-            done ? "on font-medium text-muted" : "text-text"
-          } ${!done && onOpen ? "cursor-pointer hover:text-acid" : ""}`}
-        >
+        <span className={`strike font-sans text-base leading-snug transition-colors ${done ? "on font-medium text-muted" : "text-text"}`}>
           {task.title}
         </span>
         {(badge || due) && (
@@ -771,30 +608,6 @@ function Row({
         )}
       </div>
 
-      {onRepeat && !done && (task.type === "task" || task.type === "habit") && (
-        <button
-          onClick={() => onRepeat(task)}
-          aria-label="toggle repeat"
-          title={task.type === "habit" ? "Repeats daily — tap to make one-off" : "Make repeatable (daily)"}
-          className={`grid h-7 w-7 shrink-0 place-items-center rounded-full border text-[13px] transition ${
-            task.type === "habit"
-              ? "border-acid/60 bg-acid/15 text-acid"
-              : "border-white/10 text-muted hover:border-acid/40 hover:text-acid"
-          }`}
-        >
-          ↻
-        </button>
-      )}
-      {onPlay && (
-        <button
-          onClick={() => onPlay(task)}
-          aria-label="focus on task"
-          title="Focus"
-          className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-acid/40 bg-acid/10 text-[11px] text-acid transition hover:bg-acid hover:text-bg"
-        >
-          ▶
-        </button>
-      )}
       <button
         onClick={() => onRemove(task)}
         aria-label="delete task"

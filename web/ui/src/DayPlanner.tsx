@@ -51,24 +51,92 @@ function ymd(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-// ── presentational block (used in slots + drag overlay) ─────────────────────
-function TaskBlock({ t, dragging }: { t: Task; dragging?: boolean }) {
+const BADGE: Record<string, { label: string; cls: string }> = {
+  habit: { label: "↻ HABIT", cls: "border-acid/30 text-acid" },
+  study: { label: "✦ STUDY", cls: "border-sky-400/30 text-sky-300" },
+  milestone: { label: "◈ GOAL", cls: "border-fuchsia-400/30 text-fuchsia-300" },
+};
+
+// when a task is due on a DIFFERENT day than the one being viewed, say so
+function dueChip(due: string | null | undefined, day: Date): string | null {
+  if (!due) return null;
+  const d = new Date(due);
+  if (isNaN(d.getTime())) return null;
+  if (d.toDateString() === day.toDateString()) return null; // its slot shows it
+  const now = new Date();
+  const time = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  if (d.toDateString() === now.toDateString()) return `today ${time}`;
+  if (d.toDateString() === addDays(now, 1).toDateString()) return `tmrw ${time}`;
+  return `${d.toLocaleDateString([], { month: "short", day: "numeric" })} ${time}`;
+}
+
+type TaskActions = {
+  onToggle: (t: Task) => void;
+  onRepeat: (t: Task) => void;
+  onRemove: (t: Task) => void;
+  onOpen: (t: Task) => void;
+};
+
+// stop pointerdown so pressing a control never starts a drag
+const stopDrag = { onPointerDown: (e: React.PointerEvent) => e.stopPropagation() };
+
+// ── task chip with full controls (tray + slots + drag overlay) ──────────────
+function TaskBlock({ t, day, actions, dragging }: { t: Task; day: Date; actions: TaskActions; dragging?: boolean }) {
+  const badge = BADGE[t.type];
+  const chip = dueChip(t.due, day);
   return (
     <div
-      className={`glass flex items-center gap-2 rounded-xl px-3 py-2.5 ${
+      className={`glass flex items-center gap-2 rounded-xl px-2.5 py-2 ${
         dragging ? "scale-[1.03] shadow-2xl ring-1 ring-white/40" : ""
       }`}
     >
-      <span className={`h-7 w-1 rounded-full ${t.type === "habit" ? "bg-acid" : "bg-muted"}`} />
-      <div className="min-w-0">
+      <button
+        {...stopDrag}
+        onClick={(e) => { e.stopPropagation(); actions.onToggle(t); }}
+        aria-label="mark done"
+        title="Mark done"
+        className="grid h-5 w-5 shrink-0 place-items-center rounded-md border border-white/25 transition hover:border-acid active:scale-90"
+      />
+      <div
+        onClick={(e) => { e.stopPropagation(); actions.onOpen(t); }}
+        title="Start a focus session"
+        className="min-w-0 flex-1 cursor-pointer"
+      >
         <p className="truncate font-sans text-sm font-semibold leading-tight text-text">{t.title}</p>
-        {t.type === "habit" && <p className="font-mono text-[8px] tracking-[0.14em] text-acid">↻ HABIT</p>}
+        {(badge || chip) && (
+          <p className="mt-0.5 flex items-center gap-1.5 font-mono text-[8px] tracking-[0.12em]">
+            {badge && <span className={badge.cls.split(" ")[1]}>{badge.label}</span>}
+            {chip && <span className="text-muted">⏰ {chip}</span>}
+          </p>
+        )}
       </div>
+      <button
+        {...stopDrag}
+        onClick={(e) => { e.stopPropagation(); actions.onRepeat(t); }}
+        aria-label="toggle repeat"
+        title={t.type === "habit" ? "Repeats daily — tap to make one-off" : "Make repeatable (daily)"}
+        className={`grid h-5 w-5 shrink-0 place-items-center rounded-full border text-[10px] transition ${
+          t.type === "habit"
+            ? "border-acid/60 bg-acid/15 text-acid"
+            : "border-white/10 text-muted hover:border-acid/40 hover:text-acid"
+        } ${t.type === "task" || t.type === "habit" ? "" : "invisible"}`}
+      >
+        ↻
+      </button>
+      <button
+        {...stopDrag}
+        onClick={(e) => { e.stopPropagation(); actions.onRemove(t); }}
+        aria-label="delete task"
+        title="Delete"
+        className="grid h-5 w-5 shrink-0 place-items-center rounded-md border border-white/10 text-xs text-muted transition hover:border-red/40 hover:text-red"
+      >
+        ×
+      </button>
     </div>
   );
 }
 
-function DraggableTask({ t }: { t: Task }) {
+function DraggableTask({ t, day, actions }: { t: Task; day: Date; actions: TaskActions }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: `plan-${t.id}` });
   return (
     <div
@@ -78,12 +146,12 @@ function DraggableTask({ t }: { t: Task }) {
       style={{ touchAction: "none" }}
       className={`cursor-grab active:cursor-grabbing ${isDragging ? "opacity-30" : ""}`}
     >
-      <TaskBlock t={t} />
+      <TaskBlock t={t} day={day} actions={actions} />
     </div>
   );
 }
 
-function Slot({ hour, task, onAdd }: { hour: number; task?: Task; onAdd: (h: number) => void }) {
+function Slot({ hour, task, day, actions, onAdd }: { hour: number; task?: Task; day: Date; actions: TaskActions; onAdd: (h: number) => void }) {
   const { setNodeRef, isOver } = useDroppable({ id: `slot-${hour}` });
   const free = !task;
   return (
@@ -100,7 +168,7 @@ function Slot({ hour, task, onAdd }: { hour: number; task?: Task; onAdd: (h: num
       }`}
     >
       {task ? (
-        <div className="p-1"><DraggableTask t={task} /></div>
+        <div className="p-1"><DraggableTask t={task} day={day} actions={actions} /></div>
       ) : (
         <div className="grid h-full place-items-center font-mono text-[10px] text-muted-deep">
           {isOver ? "drop here" : "+ add"}
@@ -110,21 +178,23 @@ function Slot({ hour, task, onAdd }: { hour: number; task?: Task; onAdd: (h: num
   );
 }
 
-// Inline day-planner section — shares the task state with the home page: the
-// parent owns tasks and persistence, this only renders + raises onMove/onAdd.
+// The active-task view: scheduled tasks sit in the timeline, everything else
+// in the UNSCHEDULED tray. Parent owns task state + persistence.
 export default function DayPlanner({
   tasks: all,
   onMove,
   onAdd,
+  onToggle,
+  onRepeat,
+  onRemove,
+  onOpen,
 }: {
   tasks: Task[];
   onMove: (id: string, dueISO: string | null) => void;
   onAdd: (title: string, dueISO: string) => void;
-}) {
-  const tasks = useMemo(
-    () => all.filter((t) => t.status === "active" && !t.title.includes(" — Step ")),
-    [all]
-  );
+} & TaskActions) {
+  const tasks = useMemo(() => all.filter((t) => t.status === "active"), [all]);
+  const actions: TaskActions = { onToggle, onRepeat, onRemove, onOpen };
   const [activeId, setActiveId] = useState<string | null>(null);
   const [addHour, setAddHour] = useState<number | null>(null);
   const [addTitle, setAddTitle] = useState("");
@@ -148,8 +218,8 @@ export default function DayPlanner({
     return () => clearInterval(id);
   }, []);
 
-  // tap vs drag: pointer needs 8px move; touch needs a short hold — so a tap
-  // still opens the add dialog, a hold+drag moves the task.
+  // tap vs drag: pointer needs 8px move; touch needs a short hold — so taps
+  // (checkbox, title, buttons, empty slot) still click, hold+drag moves.
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 180, tolerance: 8 } })
@@ -168,7 +238,15 @@ export default function DayPlanner({
     }
     return m;
   }, [tasks, day]);
-  const unscheduled = tasks.filter((t) => hourOf(t.due, day) == null);
+  // tray: not on this day's timeline — true unscheduled first, then other-day
+  // tasks by due time
+  const unscheduled = useMemo(() => {
+    const ts = (t: Task) => {
+      const n = t.due ? new Date(t.due).getTime() : NaN;
+      return isNaN(n) ? -Infinity : n;
+    };
+    return tasks.filter((t) => hourOf(t.due, day) == null).sort((a, b) => ts(a) - ts(b));
+  }, [tasks, day]);
   const activeTask = tasks.find((t) => t.id === activeId) || null;
 
   function onDragStart(e: DragStartEvent) {
@@ -206,14 +284,14 @@ export default function DayPlanner({
         }`}
       >
         <p className="mb-2 font-mono text-[9px] tracking-[0.16em] text-muted">
-          UNSCHEDULED / OTHER DAYS — drag onto a slot{isOver ? " · drop to unschedule" : ""}
+          UNSCHEDULED — drag onto a slot{isOver ? " · drop to unschedule" : ""}
         </p>
         {unscheduled.length === 0 ? (
           <p className="font-mono text-xs text-muted-deep">nothing unscheduled 🎉</p>
         ) : (
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-col gap-2">
             {unscheduled.map((t) => (
-              <div key={t.id} className="min-w-[44%] flex-1"><DraggableTask t={t} /></div>
+              <DraggableTask key={t.id} t={t} day={day} actions={actions} />
             ))}
           </div>
         )}
@@ -226,9 +304,9 @@ export default function DayPlanner({
   const showNow = isToday && nowMin / 60 >= START_HOUR && nowMin / 60 <= END_HOUR + 1;
 
   return (
-    <div className="mt-10">
+    <div className="mt-9">
       <div className="mb-3 flex items-center gap-3">
-        <span className="font-mono text-[10px] tracking-[0.18em] text-muted">// PLAN</span>
+        <span className="font-mono text-[10px] tracking-[0.18em] text-muted">// ACTIVE</span>
         <span className="h-px flex-1 bg-white/10" />
       </div>
 
@@ -271,7 +349,7 @@ export default function DayPlanner({
 
       <DndContext sensors={sensors} onDragStart={onDragStart} onDragEnd={onDragEnd}>
         {/* timeline left, unscheduled tray right (stacked on small screens) */}
-        <div className="mt-4 grid items-start gap-4 sm:grid-cols-[1fr_260px]">
+        <div className="mt-4 grid items-start gap-4 sm:grid-cols-[1fr_280px]">
           <div
             ref={scrollRef}
             style={{ maxHeight: PANE }}
@@ -290,7 +368,7 @@ export default function DayPlanner({
                     <span className="w-12 shrink-0 pt-1 text-right font-mono text-[10px] tracking-[0.1em] text-muted">
                       {hourLabel(h)}
                     </span>
-                    <Slot hour={h} task={byHour.get(h)} onAdd={(hr) => { setAddHour(hr); setAddTitle(""); }} />
+                    <Slot hour={h} task={byHour.get(h)} day={day} actions={actions} onAdd={(hr) => { setAddHour(hr); setAddTitle(""); }} />
                   </div>
                 ))}
               </div>
@@ -304,7 +382,7 @@ export default function DayPlanner({
         </div>
 
         <DragOverlay dropAnimation={{ duration: 200, easing: "cubic-bezier(0.22,1,0.36,1)" }}>
-          {activeTask ? <div className="w-64"><TaskBlock t={activeTask} dragging /></div> : null}
+          {activeTask ? <div className="w-64"><TaskBlock t={activeTask} day={day} actions={actions} dragging /></div> : null}
         </DragOverlay>
       </DndContext>
 
