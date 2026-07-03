@@ -258,16 +258,23 @@ function TaskApp({ onLogout }: { onLogout: () => void }) {
     }
   }
 
-  // repeat toggle: habit repeats daily (stays active on complete), task is one-off
-  async function toggleRepeat(task: Task) {
+  // repeat toggle: habit repeats daily (stays active on complete), task is
+  // one-off. dueISO anchors the habit's daily time when provided.
+  async function toggleRepeat(task: Task, dueISO?: string | null) {
     if (task.type !== "task" && task.type !== "habit") return;
     const next = task.type === "habit" ? "task" : "habit";
-    setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, type: next } : t)));
+    setTasks((prev) =>
+      prev.map((t) =>
+        t.id === task.id
+          ? { ...t, type: next, recurrence: next === "habit" ? 1 : null, ...(dueISO ? { due: dueISO } : {}) }
+          : t
+      )
+    );
     try {
-      const updated = await api.setType(task.id, next);
+      const updated = await api.setType(task.id, next, dueISO ?? undefined);
       setTasks((prev) => prev.map((t) => (t.id === task.id ? updated : t)));
     } catch (e) {
-      setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, type: task.type } : t)));
+      setTasks((prev) => prev.map((t) => (t.id === task.id ? task : t)));
       guard(e);
     }
   }

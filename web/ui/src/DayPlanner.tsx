@@ -57,6 +57,29 @@ const BADGE: Record<string, { label: string; cls: string }> = {
   milestone: { label: "◈ GOAL", cls: "border-fuchsia-400/30 text-fuchsia-300" },
 };
 
+// a habit anchored at its due date repeats every `recurrence` days at the
+// same clock time — project it onto any day on its cadence
+function habitOccursOn(t: Task, day: Date): boolean {
+  if (t.type !== "habit" || !t.due) return false;
+  const d = new Date(t.due);
+  if (isNaN(d.getTime())) return false;
+  const anchor = startOfDay(d).getTime();
+  const target = startOfDay(day).getTime();
+  if (target < anchor) return false;
+  const rec = t.recurrence && t.recurrence > 0 ? t.recurrence : 1;
+  const diffDays = Math.round((target - anchor) / 86400000);
+  return diffDays % rec === 0;
+}
+
+// which hour a task occupies on the viewed day (habits project forward)
+function slotHour(t: Task, day: Date): number | null {
+  if (t.type === "habit" && t.due) {
+    const d = new Date(t.due);
+    if (!isNaN(d.getTime())) return habitOccursOn(t, day) ? d.getHours() : null;
+  }
+  return hourOf(t.due, day);
+}
+
 // when a task is due on a DIFFERENT day than the one being viewed, say so
 function dueChip(due: string | null | undefined, day: Date): string | null {
   if (!due) return null;
@@ -72,7 +95,7 @@ function dueChip(due: string | null | undefined, day: Date): string | null {
 
 type TaskActions = {
   onToggle: (t: Task) => void;
-  onRepeat: (t: Task) => void;
+  onRepeat: (t: Task) => void; // habit → untoggle; task → opens the time dialog
   onRemove: (t: Task) => void;
   onOpen: (t: Task) => void;
 };
@@ -81,9 +104,12 @@ type TaskActions = {
 const stopDrag = { onPointerDown: (e: React.PointerEvent) => e.stopPropagation() };
 
 // ── task chip with full controls (tray + slots + drag overlay) ──────────────
-function TaskBlock({ t, day, actions, dragging }: { t: Task; day: Date; actions: TaskActions; dragging?: boolean }) {
+function TaskBlock({ t, day, actions, inSlot, dragging }: { t: Task; day: Date; actions: TaskActions; inSlot?: boolean; dragging?: boolean }) {
   const badge = BADGE[t.type];
   const chip = dueChip(t.due, day);
+  // repeat toggle: habits always show it (status + untoggle); plain tasks only
+  // once scheduled into a slot — schedule first, then make it repeat
+  const showRepeat = t.type === "habit" || (t.type === "task" && inSlot);
   return (
     <div
       className={`glass flex items-center gap-2 rounded-xl px-2.5 py-2 ${
@@ -110,19 +136,21 @@ function TaskBlock({ t, day, actions, dragging }: { t: Task; day: Date; actions:
           </p>
         )}
       </div>
-      <button
-        {...stopDrag}
-        onClick={(e) => { e.stopPropagation(); actions.onRepeat(t); }}
-        aria-label="toggle repeat"
-        title={t.type === "habit" ? "Repeats daily — tap to make one-off" : "Make repeatable (daily)"}
-        className={`grid h-5 w-5 shrink-0 place-items-center rounded-full border text-[10px] transition ${
-          t.type === "habit"
-            ? "border-acid/60 bg-acid/15 text-acid"
-            : "border-white/10 text-muted hover:border-acid/40 hover:text-acid"
-        } ${t.type === "task" || t.type === "habit" ? "" : "invisible"}`}
-      >
-        ↻
-      </button>
+      {showRepeat && (
+        <button
+          {...stopDrag}
+          onClick={(e) => { e.stopPropagation(); actions.onRepeat(t); }}
+          aria-label="toggle repeat"
+          title={t.type === "habit" ? "Repeats daily — tap to make one-off" : "Make repeatable (daily)"}
+          className={`grid h-5 w-5 shrink-0 place-items-center rounded-full border text-[10px] transition ${
+            t.type === "habit"
+              ? "border-acid/60 bg-acid/15 text-acid"
+              : "border-white/10 text-muted hover:border-acid/40 hover:text-acid"
+          }`}
+        >
+          ↻
+        </button>
+      )}
       <button
         {...stopDrag}
         onClick={(e) => { e.stopPropagation(); actions.onRemove(t); }}
@@ -136,7 +164,7 @@ function TaskBlock({ t, day, actions, dragging }: { t: Task; day: Date; actions:
   );
 }
 
-function DraggableTask({ t, day, actions }: { t: Task; day: Date; actions: TaskActions }) {
+function DraggableTask({ t, day, actions, inSlot }: { t: Task; day: Date; actions: TaskActions; inSlot?: boolean }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: `plan-${t.id}` });
   return (
     <div
@@ -146,7 +174,7 @@ function DraggableTask({ t, day, actions }: { t: Task; day: Date; actions: TaskA
       style={{ touchAction: "none" }}
       className={`cursor-grab active:cursor-grabbing ${isDragging ? "opacity-30" : ""}`}
     >
-      <TaskBlock t={t} day={day} actions={actions} />
+      <TaskBlock t={t} day={day} actions={actions} inSlot={inSlot} />
     </div>
   );
 }
@@ -168,7 +196,7 @@ function Slot({ hour, task, day, actions, onAdd }: { hour: number; task?: Task; 
       }`}
     >
       {task ? (
-        <div className="p-1"><DraggableTask t={task} day={day} actions={actions} /></div>
+        <div className="p-1"><DraggableTask t={task} day={day} actions={actions} inSlot /></div>
       ) : (
         <div className="grid h-full place-items-center font-mono text-[10px] text-muted-deep">
           {isOver ? "drop here" : "+ add"}
@@ -192,12 +220,48 @@ export default function DayPlanner({
   tasks: Task[];
   onMove: (id: string, dueISO: string | null) => void;
   onAdd: (title: string, dueISO: string) => void;
-} & TaskActions) {
+  onToggle: (t: Task) => void;
+  onRepeat: (t: Task, dueISO?: string | null) => void;
+  onRemove: (t: Task) => void;
+  onOpen: (t: Task) => void;
+}) {
   const tasks = useMemo(() => all.filter((t) => t.status === "active"), [all]);
-  const actions: TaskActions = { onToggle, onRepeat, onRemove, onOpen };
   const [activeId, setActiveId] = useState<string | null>(null);
   const [addHour, setAddHour] = useState<number | null>(null);
   const [addTitle, setAddTitle] = useState("");
+  const [repeatFor, setRepeatFor] = useState<Task | null>(null);
+  const [repeatTime, setRepeatTime] = useState("09:00");
+
+  // habit → untoggle straight away; task → ask what time it repeats daily
+  const actions: TaskActions = {
+    onToggle,
+    onRemove,
+    onOpen,
+    onRepeat: (t: Task) => {
+      if (t.type === "habit") return onRepeat(t);
+      const d = t.due ? new Date(t.due) : null;
+      setRepeatTime(
+        d && !isNaN(d.getTime())
+          ? `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`
+          : "09:00"
+      );
+      setRepeatFor(t);
+    },
+  };
+
+  function confirmRepeat() {
+    const t = repeatFor;
+    setRepeatFor(null);
+    if (!t) return;
+    let iso: string | undefined;
+    if (repeatTime) {
+      const [hh, mm] = repeatTime.split(":").map(Number);
+      const d = new Date(day);
+      d.setHours(hh || 0, mm || 0, 0, 0);
+      iso = d.toISOString();
+    }
+    onRepeat(t, iso);
+  }
   const [day, setDay] = useState<Date>(() => startOfDay(new Date()));
   const [nowMin, setNowMin] = useState(() => new Date().getHours() * 60 + new Date().getMinutes());
   const isToday = day.toDateString() === new Date().toDateString();
@@ -233,7 +297,7 @@ export default function DayPlanner({
   const byHour = useMemo(() => {
     const m = new Map<number, Task>();
     for (const t of tasks) {
-      const h = hourOf(t.due, day);
+      const h = slotHour(t, day);
       if (h != null && !m.has(h)) m.set(h, t);
     }
     return m;
@@ -245,7 +309,7 @@ export default function DayPlanner({
       const n = t.due ? new Date(t.due).getTime() : NaN;
       return isNaN(n) ? -Infinity : n;
     };
-    return tasks.filter((t) => hourOf(t.due, day) == null).sort((a, b) => ts(a) - ts(b));
+    return tasks.filter((t) => slotHour(t, day) == null).sort((a, b) => ts(a) - ts(b));
   }, [tasks, day]);
   const activeTask = tasks.find((t) => t.id === activeId) || null;
 
@@ -385,6 +449,33 @@ export default function DayPlanner({
           {activeTask ? <div className="w-64"><TaskBlock t={activeTask} day={day} actions={actions} dragging /></div> : null}
         </DragOverlay>
       </DndContext>
+
+      {/* repeat-time dialog: making a task a habit asks what time it repeats */}
+      <AnimatePresence>
+        {repeatFor && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-40 grid place-items-center bg-black/50 px-6">
+            <motion.div initial={{ scale: 0.92, y: 12 }} animate={{ scale: 1, y: 0 }} className="glass w-full max-w-xs rounded-3xl p-6">
+              <p className="font-mono text-[10px] tracking-[0.2em] text-acid">↻ REPEAT DAILY</p>
+              <p className="mt-2 truncate font-sans text-base font-semibold text-text">{repeatFor.title}</p>
+              <label className="mt-4 block font-mono text-[10px] tracking-[0.18em] text-muted">AT WHAT TIME, EVERY DAY?</label>
+              <input
+                type="time"
+                value={repeatTime}
+                onChange={(e) => setRepeatTime(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && confirmRepeat()}
+                autoFocus
+                className="mt-2 w-full rounded-2xl border border-white/10 bg-panel px-4 py-3 text-center font-mono text-xl text-text focus:border-acid/40 focus:outline-none"
+              />
+              <button onClick={confirmRepeat} className="mt-4 w-full rounded-2xl bg-acid py-3 font-sans font-bold text-bg transition hover:brightness-110 active:scale-[0.98]">
+                Repeat daily
+              </button>
+              <button onClick={() => setRepeatFor(null)} className="mt-2 w-full text-center font-mono text-[11px] tracking-[0.14em] text-muted transition hover:text-text">
+                cancel
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* tap-to-add dialog */}
       <AnimatePresence>

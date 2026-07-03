@@ -51,12 +51,12 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status }),
     })).then(json),
-  // repeat toggle: habit = repeats daily, task = one-off
-  setType: (id: string, type: "task" | "habit"): Promise<Task> =>
+  // repeat toggle: habit = repeats daily (optionally anchored at a time), task = one-off
+  setType: (id: string, type: "task" | "habit", due?: string): Promise<Task> =>
     fetch(`/api/tasks/${id}`, opts({
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type }),
+      body: JSON.stringify(due ? { type, due } : { type }),
     })).then(json),
   // habit-aware completion: a habit logs today's done + advances its reminder
   // (stays active); a one-off task closes. Mirrors the Telegram bot.
