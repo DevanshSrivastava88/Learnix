@@ -1,12 +1,37 @@
 # Learnix Backlog
 
-_Last updated: 2026-07-03_
+_Last updated: 2026-07-04_
 _Project status: workInProgress_
 _Auto-agent: enabled_
 
 ## 📋 Pending
-- **Merge the plan page and the main task page** (web) — user request 2026-07-03: unify DayPlanner
-  into the home task view instead of a separate fullscreen overlay. Do when user asks.
+- **Glass UI laggy on phone (2026-07-04) — mobile GPU perf, `backdrop-filter: blur()` is the
+  culprit.** Frosted-glass panels over the vivid cat wallpaper each force a full-screen blur pass;
+  on mobile GPUs that tanks scroll/animation FPS, worst when blurred layers are stacked, the blur
+  radius is large, or blurred elements animate/scroll. Fixes (in order): (1) cut blur radius + the
+  number of simultaneously-blurred layers; (2) mobile media query — swap `backdrop-filter` for a
+  flat semi-transparent bg (or a pre-blurred static image) below ~768px; (3) never animate/transition
+  a backdrop-filtered element; add `transform: translateZ(0)`/`will-change` only where it measurably
+  helps; (4) avoid blur over the large wallpaper — blur a solid tint instead. TODO: profile on the
+  phone (Chrome remote devtools), find the heaviest blurred layers, gate them behind the mobile query.
+- Web-native email signup (only if product outgrows Telegram-first onboarding) — parked
+- Live-test account deletion with a throwaway Telegram account (endpoint shipped, auth-guard
+  verified, destructive path never exercised)
+
+## ✅ Done (2026-07-04) — onboarding for other users (commit 4a07c4c5)
+- Login = mini landing + "Continue with Telegram" deep-link (`?start=weblogin` → bot registers
+  new user + mints code in one step, Telethon live-tested; code → /api/auth/verify ok)
+- DELETE /api/account (wipes all user tables — real name `settings`, not `user_settings`) +
+  GET /privacy (self-contained page, Dockerfile COPY added) + footer privacy/delete links
+- BotFather profile: command list, description, about — set via learnix_tester session
+- Built by 3 Sonnet subagents (App.tsx / main.py / bot.py partition), supervised + integrated
+
+## ✅ Done (2026-07-03) — web: plan page merged into home page
+- DayPlanner → inline `// PLAN` section on the home page (commit 4ebd7f7e, deployed + verified):
+  parent owns task state (onMove/onAdd callbacks), planner text on theme tokens, drag ids
+  `plan-`-prefixed. Day mode restyled to the planner aesthetic (frosted blur over vivid cat
+  wallpaper, mask keeps the top crisp). Playwright-verified on prod: tray→slot drag persists,
+  slot→tray unschedules, reload consistent.
 
 ## ✅ Done (2026-06-20, pt.2) — web: habit-done vs task-done + drag-reorder
 - **Habit-done vs task-done (api/main.py, ui/src/App.tsx + api.ts):** the web toggle used a single

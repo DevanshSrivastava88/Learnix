@@ -1,0 +1,31 @@
+'use client';
+
+import * as React from 'react';
+import { motion, type HTMLMotionProps } from 'motion/react';
+
+type ButtonProps = HTMLMotionProps<'button'> & {
+  hoverScale?: number;
+  tapScale?: number;
+};
+
+export function Button({
+  hoverScale = 1.05,
+  tapScale = 0.95,
+  className,
+  children,
+  ...props
+}: ButtonProps) {
+  return (
+    <motion.button
+      whileHover={{ scale: hoverScale }}
+      whileTap={{ scale: tapScale }}
+      transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+      className={className}
+      {...props}
+    >
+      {children}
+    </motion.button>
+  );
+}
+
+export default Button;
