@@ -255,7 +255,12 @@ def extract_goal_name_from_message(text: str) -> str:
         f'Message: "{text}"\n\n'
         f'Return: {{"goal_name": "..."}}'
     )
-    return result.get("goal_name", "").strip()
+    import re as _re_g
+    name = result.get("goal_name", "").strip()
+    name = _re_g.sub(r'^(?:delete|pause|resume|edit|remove|stop|get rid of|cancel)\s+', '', name, flags=_re_g.IGNORECASE)
+    name = _re_g.sub(r'^(?:my|the)\s+', '', name, flags=_re_g.IGNORECASE)
+    name = _re_g.sub(r'\s+goals?$', '', name, flags=_re_g.IGNORECASE).strip()
+    return name
 
 
 def extract_manage_goal_action(text: str) -> str:

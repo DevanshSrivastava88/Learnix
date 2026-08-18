@@ -178,3 +178,36 @@ def test_extract_topic_name_falls_back_to_empty():
     with patch.object(claude_svc, '_ask_json', return_value={}):
         result = claude_svc.extract_topic_name("jump somewhere")
     assert result == ""
+
+
+# ---------------------------------------------------------------------------
+# extract_goal_name_from_message — verb-prefix strip bug fix
+# ---------------------------------------------------------------------------
+
+def test_extract_goal_name_clean():
+    with patch.object(claude_svc, '_ask_json', return_value={"goal_name": "Python"}):
+        assert claude_svc.extract_goal_name_from_message("I want to learn Python") == "Python"
+
+def test_extract_goal_name_strips_delete_prefix():
+    with patch.object(claude_svc, '_ask_json', return_value={"goal_name": "delete Python"}):
+        assert claude_svc.extract_goal_name_from_message("delete my Python goal") == "Python"
+
+def test_extract_goal_name_strips_pause_prefix():
+    with patch.object(claude_svc, '_ask_json', return_value={"goal_name": "pause React"}):
+        assert claude_svc.extract_goal_name_from_message("pause my React goal") == "React"
+
+def test_extract_goal_name_strips_my_prefix():
+    with patch.object(claude_svc, '_ask_json', return_value={"goal_name": "My Machine Learning"}):
+        assert claude_svc.extract_goal_name_from_message("edit my Machine Learning goal") == "Machine Learning"
+
+def test_extract_goal_name_strips_goal_suffix():
+    with patch.object(claude_svc, '_ask_json', return_value={"goal_name": "Python goal"}):
+        assert claude_svc.extract_goal_name_from_message("delete my Python goal") == "Python"
+
+def test_extract_goal_name_strips_all_filler():
+    with patch.object(claude_svc, '_ask_json', return_value={"goal_name": "delete my French goal"}):
+        assert claude_svc.extract_goal_name_from_message("delete my French goal") == "French"
+
+def test_extract_goal_name_non_dict_returns_empty():
+    with patch.object(claude_svc, '_ask_json', return_value="bad"):
+        assert claude_svc.extract_goal_name_from_message("something") == ""
