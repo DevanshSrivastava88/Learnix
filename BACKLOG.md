@@ -1,6 +1,6 @@
 # Learnix Backlog
 
-_Last updated: 2026-06-21_
+_Last updated: 2026-08-18_
 _Project status: workInProgress_
 _Auto-agent: enabled_
 
@@ -95,8 +95,8 @@ engine, #8 sentiment read, Exocortex crisis classifier (safety — fold in soon)
   Commits 5f84c667, ce608a20. (3 increments shipped + live-verified.)
 
 ## 🔜 Next
-- **"delete my X goal" NL bug** — manage_goal name extraction mangles goal name; apply
-  strip-prefix like task titles.
+- ~~**"delete my X goal" NL bug** — manage_goal name extraction mangles goal name; apply
+  strip-prefix like task titles.~~ ✅ Fixed 2026-08-18 (auto) — action-verb prefix strip added to `extract_goal_name_from_message` in claude_svc + nim_svc; 7 new tests, 234 green.
 - **Study E2E**: verify full quiz completion advances day + marks topic done in a live run
   (unit-covered; header/lesson live-verified).
 - **Phase 2 web dashboard** (Next.js).
