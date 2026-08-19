@@ -135,3 +135,161 @@ def test_get_study_progress_returns_dict():
         assert result['pct'] == 50
         assert result['position'] == 2
         assert result['total'] == 2
+
+
+# ---------------------------------------------------------------------------
+# bubble_up_completion tests
+# ---------------------------------------------------------------------------
+
+def test_bubble_up_completion_marks_parent_when_all_siblings_done():
+    """When all siblings are completed, parent gets marked completed too."""
+    child = {'id': 'c1', 'goal_id': 'g1', 'parent_id': 'p1', 'status': 'completed'}
+    siblings = [{'status': 'completed'}, {'status': 'completed'}]
+
+    with patch('study.svc.get_client') as mock_get:
+        client = MagicMock()
+        # get_topic('c1') → child
+        topic_ex = MagicMock(); topic_ex.data = [child]
+        # siblings query for parent_id='p1'
+        sib_ex = MagicMock(); sib_ex.data = siblings
+        client.table.return_value.select.return_value.eq.return_value.execute.return_value = topic_ex
+        client.table.return_value.select.return_value.eq.return_value.eq.return_value.execute.return_value = sib_ex
+        mock_get.return_value = client
+
+        with patch('study.svc.update_topic_status') as mock_update, \
+             patch('study.svc.get_topic', side_effect=[child, None]):
+            study_svc.bubble_up_completion('c1')
+        mock_update.assert_called_once_with('p1', 'completed')
+
+
+def test_bubble_up_completion_skips_when_sibling_pending():
+    """Parent stays untouched if any sibling is not yet completed."""
+    child = {'id': 'c1', 'goal_id': 'g1', 'parent_id': 'p1', 'status': 'completed'}
+    siblings = [{'status': 'completed'}, {'status': 'not_started'}]
+
+    with patch('study.svc.get_topic', return_value=child), \
+         patch('study.svc.get_client') as mock_get:
+        client = MagicMock()
+        sib_ex = MagicMock(); sib_ex.data = siblings
+        client.table.return_value.select.return_value.eq.return_value.execute.return_value = sib_ex
+        mock_get.return_value = client
+
+        with patch('study.svc.update_topic_status') as mock_update:
+            study_svc.bubble_up_completion('c1')
+        mock_update.assert_not_called()
+
+
+def test_bubble_up_completion_no_op_when_no_parent():
+    """Root topics (no parent_id) cause early return without any update."""
+    root_topic = {'id': 'r1', 'goal_id': 'g1', 'parent_id': None, 'status': 'completed'}
+    with patch('study.svc.get_topic', return_value=root_topic), \
+         patch('study.svc.update_topic_status') as mock_update:
+        study_svc.bubble_up_completion('r1')
+    mock_update.assert_not_called()
+
+
+def test_bubble_up_completion_no_op_when_topic_missing():
+    """Missing topic (None from DB) returns without crashing."""
+    with patch('study.svc.get_topic', return_value=None), \
+         patch('study.svc.update_topic_status') as mock_update:
+        study_svc.bubble_up_completion('gone')
+    mock_update.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# get_weak_topics tests
+# ---------------------------------------------------------------------------
+
+def test_get_weak_topics_returns_needs_revision():
+    """Topics with status=needs_revision are always returned."""
+    topics = [
+        {'id': 't1', 'title': 'Vars', 'status': 'needs_revision', 'score': None},
+        {'id': 't2', 'title': 'OOP', 'status': 'completed', 'score': '5/5'},
+    ]
+    with patch('study.svc.list_topics_for_goal', return_value=topics):
+        weak = study_svc.get_weak_topics('g1')
+    assert len(weak) == 1 and weak[0]['id'] == 't1'
+
+
+def test_get_weak_topics_returns_low_score_completed():
+    """Completed topics scoring below threshold (80% by default) are included."""
+    topics = [
+        {'id': 't1', 'title': 'Vars', 'status': 'completed', 'score': '2/5'},   # 40% < 80%
+        {'id': 't2', 'title': 'OOP', 'status': 'completed', 'score': '4/5'},    # 80% = threshold
+        {'id': 't3', 'title': 'IO', 'status': 'completed', 'score': '5/5'},     # 100% fine
+    ]
+    with patch('study.svc.list_topics_for_goal', return_value=topics):
+        weak = study_svc.get_weak_topics('g1')
+    assert len(weak) == 1 and weak[0]['id'] == 't1'
+
+
+def test_get_weak_topics_skips_not_started():
+    """Topics with status=not_started are never flagged as weak."""
+    topics = [
+        {'id': 't1', 'title': 'Vars', 'status': 'not_started', 'score': None},
+    ]
+    with patch('study.svc.list_topics_for_goal', return_value=topics):
+        weak = study_svc.get_weak_topics('g1')
+    assert weak == []
+
+
+def test_get_weak_topics_handles_malformed_score():
+    """Completed topics with unparseable score strings are not raised — just skipped."""
+    topics = [
+        {'id': 't1', 'title': 'Vars', 'status': 'completed', 'score': 'bad/data'},
+        {'id': 't2', 'title': 'OOP', 'status': 'completed', 'score': ''},
+        {'id': 't3', 'title': 'IO', 'status': 'completed', 'score': None},
+    ]
+    with patch('study.svc.list_topics_for_goal', return_value=topics):
+        # No score info → not flagged (can't determine weakness)
+        weak = study_svc.get_weak_topics('g1')
+    assert weak == []
+
+
+def test_get_weak_topics_custom_threshold():
+    """Custom ratio_threshold is respected."""
+    topics = [
+        {'id': 't1', 'title': 'Vars', 'status': 'completed', 'score': '3/5'},   # 60%
+    ]
+    with patch('study.svc.list_topics_for_goal', return_value=topics):
+        # threshold=0.5 → 60% >= 50%, not weak
+        assert study_svc.get_weak_topics('g1', ratio_threshold=0.5) == []
+        # threshold=0.7 → 60% < 70%, weak
+        assert len(study_svc.get_weak_topics('g1', ratio_threshold=0.7)) == 1
+
+
+# ---------------------------------------------------------------------------
+# bulk_create_topics tests
+# ---------------------------------------------------------------------------
+
+def test_bulk_create_topics_creates_in_order():
+    """All titles are created in the given order, starting at order_index 0 when empty."""
+    with patch('study.svc.list_topics_for_goal', return_value=[]), \
+         patch('study.svc.create_topic', side_effect=lambda **kw: {'id': kw['title'], **kw}) as mock_create:
+        result = study_svc.bulk_create_topics('g1', ['Vars', 'OOP', 'IO'])
+    assert len(result) == 3
+    calls = mock_create.call_args_list
+    assert calls[0][1]['title'] == 'Vars' and calls[0][1]['order_index'] == 0
+    assert calls[1][1]['title'] == 'OOP' and calls[1][1]['order_index'] == 1
+    assert calls[2][1]['title'] == 'IO' and calls[2][1]['order_index'] == 2
+
+
+def test_bulk_create_topics_appends_after_existing():
+    """New topics start at max(existing order_index) + 1."""
+    existing = [
+        {'id': 'e1', 'order_index': 0},
+        {'id': 'e2', 'order_index': 1},
+    ]
+    with patch('study.svc.list_topics_for_goal', return_value=existing), \
+         patch('study.svc.create_topic', side_effect=lambda **kw: {'id': kw['title'], **kw}) as mock_create:
+        study_svc.bulk_create_topics('g1', ['NewTopic'])
+    assert mock_create.call_args[1]['order_index'] == 2  # starts after index 1
+
+
+def test_bulk_create_topics_empty_list_returns_empty():
+    """Empty titles list produces no DB calls and returns []."""
+    with patch('study.svc.list_topics_for_goal', return_value=[]), \
+         patch('study.svc.create_topic') as mock_create:
+        result = study_svc.bulk_create_topics('g1', [])
+    assert result == []
+    mock_create.assert_not_called()
