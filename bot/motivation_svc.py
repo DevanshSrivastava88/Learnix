@@ -2,10 +2,11 @@
 motivation_svc.py — Skip pattern detection + motivational message generation.
 
 Triggers (research-backed timing):
-  daily_skip_burst  — 3+ skips today → evening nudge (17-22 IST)
-  streak_broken     — streak > 0 but last_study_date 2+ days ago → morning (08-09 IST)
-  low_weekly_rate   — skip rate > 50% over last 7 days → morning (08-10 IST)
-  no_activity       — no activity or skips in 2+ days → any time (09-20 IST)
+  comeback_celebration — returned today after 2+ day gap → daytime (09-20 IST) [highest priority]
+  daily_skip_burst     — 3+ skips today → evening nudge (17-22 IST)
+  streak_broken        — streak > 0 but last_study_date 2+ days ago → morning (08-09 IST)
+  low_weekly_rate      — skip rate > 50% over last 7 days → morning (08-10 IST)
+  no_activity          — no activity or skips in 2+ days → any time (09-20 IST)
 
 One motivation message per user per 24 hours max (enforced via motivation_log table).
 Tone: identity-based, never guilt-shaming. References peak performance, not current gap.
@@ -131,6 +132,39 @@ def _days_since_any_activity(user_id: int) -> int:
     return (date.today() - max(candidates)).days
 
 
+def _is_comeback_day(user_id: int) -> bool:
+    """True if today has activity AND the most recent prior activity was 2+ days ago."""
+    today_str = date.today().isoformat()
+    since_str = (date.today() - timedelta(days=30)).isoformat()
+
+    today_res = (
+        get_client().table("activity_log")
+        .select("event_date")
+        .eq("user_id", user_id)
+        .eq("event_date", today_str)
+        .limit(1)
+        .execute()
+    )
+    if not today_res.data:
+        return False
+
+    prev_res = (
+        get_client().table("activity_log")
+        .select("event_date")
+        .eq("user_id", user_id)
+        .lt("event_date", today_str)
+        .gte("event_date", since_str)
+        .order("event_date", desc=True)
+        .limit(1)
+        .execute()
+    )
+    if not prev_res.data:
+        return False
+
+    prev_date = date.fromisoformat(str(prev_res.data[0]["event_date"]))
+    return (date.today() - prev_date).days >= 2
+
+
 # ---------------------------------------------------------------------------
 # Trigger evaluation — hour-gated, priority-ordered
 # ---------------------------------------------------------------------------
@@ -138,15 +172,19 @@ def _days_since_any_activity(user_id: int) -> int:
 def evaluate_triggers(user_id: int) -> tuple:
     """
     Returns (trigger_type, True) for the first matching trigger, or (None, False).
-    Priority: daily_skip_burst > streak_broken > low_weekly_rate > no_activity
+    Priority: comeback_celebration > daily_skip_burst > streak_broken > low_weekly_rate > no_activity
     Hour windows are IST, research-backed:
-      - daily_skip_burst: evening 17-22 (after day's skips are known)
-      - streak_broken:    morning 08-09 (fresh start framing)
-      - low_weekly_rate:  morning 08-10 (re-engagement)
-      - no_activity:      daytime 09-20 (gentle check-in)
+      - comeback_celebration: daytime 09-20 (positive moment, highest priority)
+      - daily_skip_burst:     evening 17-22 (after day's skips are known)
+      - streak_broken:        morning 08-09 (fresh start framing)
+      - low_weekly_rate:      morning 08-10 (re-engagement)
+      - no_activity:          daytime 09-20 (gentle check-in)
     """
     now_ist = datetime.now(IST)
     h = now_ist.hour
+
+    if 9 <= h <= 20 and _is_comeback_day(user_id):
+        return "comeback_celebration", True
 
     if 17 <= h <= 22 and _count_skips_today(user_id) >= 3:
         return "daily_skip_burst", True
@@ -317,6 +355,13 @@ def _context_brief(ctx: dict) -> str:
 # ---------------------------------------------------------------------------
 
 _TONE_GUIDES = {
+    "comeback_celebration": (
+        "The user is returning today after a 2+ day gap — a comeback moment. "
+        "Celebrate their return! One gap never erases what they built. "
+        "Reference their recent wins or what they're getting back to (if data is available). "
+        "Anti-AVE framing: they're still the person who shows up — this is proof. "
+        "Warm, energizing, zero guilt about the gap. Under 60 words. 1-2 emojis."
+    ),
     "daily_skip_burst": (
         "The user skipped 3 or more habits today. "
         "Send a warm, non-judgmental evening message. "

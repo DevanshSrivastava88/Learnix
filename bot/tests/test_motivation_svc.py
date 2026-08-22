@@ -153,6 +153,7 @@ def test_days_since_any_activity_uses_activity_log_date():
 
 def test_evaluate_daily_skip_burst_fires_at_evening_with_3plus_skips():
     with patch("motivation_svc.datetime", _mock_hour(18)), \
+         patch("motivation_svc._is_comeback_day", return_value=False), \
          patch("motivation_svc._count_skips_today", return_value=3):
         trigger, fired = motivation_svc.evaluate_triggers(1)
     assert trigger == "daily_skip_burst"
@@ -161,6 +162,7 @@ def test_evaluate_daily_skip_burst_fires_at_evening_with_3plus_skips():
 
 def test_evaluate_daily_skip_burst_does_not_fire_below_threshold():
     with patch("motivation_svc.datetime", _mock_hour(18)), \
+         patch("motivation_svc._is_comeback_day", return_value=False), \
          patch("motivation_svc._count_skips_today", return_value=2), \
          patch("motivation_svc._is_streak_broken", return_value=False), \
          patch("motivation_svc._skip_rate_last_7_days", return_value=0.0), \
@@ -171,6 +173,7 @@ def test_evaluate_daily_skip_burst_does_not_fire_below_threshold():
 
 
 def test_evaluate_streak_broken_fires_at_morning_hour():
+    # Hour 8 is outside comeback window (9-20), no need to mock _is_comeback_day
     with patch("motivation_svc.datetime", _mock_hour(8)), \
          patch("motivation_svc._count_skips_today", return_value=0), \
          patch("motivation_svc._is_streak_broken", return_value=True):
@@ -182,6 +185,7 @@ def test_evaluate_streak_broken_fires_at_morning_hour():
 def test_evaluate_streak_broken_does_not_fire_outside_window():
     # Hour 11 is outside the 08-09 window for streak_broken
     with patch("motivation_svc.datetime", _mock_hour(11)), \
+         patch("motivation_svc._is_comeback_day", return_value=False), \
          patch("motivation_svc._count_skips_today", return_value=0), \
          patch("motivation_svc._is_streak_broken", return_value=True), \
          patch("motivation_svc._skip_rate_last_7_days", return_value=0.0), \
@@ -192,6 +196,7 @@ def test_evaluate_streak_broken_does_not_fire_outside_window():
 
 def test_evaluate_low_weekly_rate_fires_at_morning():
     with patch("motivation_svc.datetime", _mock_hour(9)), \
+         patch("motivation_svc._is_comeback_day", return_value=False), \
          patch("motivation_svc._count_skips_today", return_value=0), \
          patch("motivation_svc._is_streak_broken", return_value=False), \
          patch("motivation_svc._skip_rate_last_7_days", return_value=0.6):
@@ -202,6 +207,7 @@ def test_evaluate_low_weekly_rate_fires_at_morning():
 
 def test_evaluate_no_activity_fires_at_daytime():
     with patch("motivation_svc.datetime", _mock_hour(14)), \
+         patch("motivation_svc._is_comeback_day", return_value=False), \
          patch("motivation_svc._count_skips_today", return_value=0), \
          patch("motivation_svc._is_streak_broken", return_value=False), \
          patch("motivation_svc._skip_rate_last_7_days", return_value=0.0), \
@@ -457,3 +463,108 @@ def test_generate_motivation_message_weaves_real_specifics():
         motivation_svc.generate_motivation_message("daily_skip_burst", ctx)
     prompt = mock_claude._ask.call_args[0][0]
     assert "Morning run" in prompt and "identity" in prompt.lower()
+
+
+# ─── _is_comeback_day ────────────────────────────────────────────────────────
+
+def _comeback_client(today_has_activity: bool, prev_date_iso=None):
+    """Build a mock supabase client for _is_comeback_day tests.
+
+    The two queries diverge after the shared .eq("user_id", ...) call:
+      Q1 (today check):   ...eq().eq().limit().execute()
+      Q2 (prev activity): ...eq().lt().gte().order().limit().execute()
+    """
+    c = MagicMock()
+    after_eq = c.table.return_value.select.return_value.eq.return_value
+
+    q1 = after_eq.eq.return_value.limit.return_value.execute.return_value
+    q1.data = [{"event_date": date.today().isoformat()}] if today_has_activity else []
+
+    q2 = after_eq.lt.return_value.gte.return_value.order.return_value.limit.return_value.execute.return_value
+    q2.data = [{"event_date": prev_date_iso}] if prev_date_iso else []
+
+    return c
+
+
+def test_is_comeback_day_true_when_2day_gap():
+    prev = (date.today() - timedelta(days=2)).isoformat()
+    c = _comeback_client(today_has_activity=True, prev_date_iso=prev)
+    with patch("motivation_svc.get_client", return_value=c):
+        assert motivation_svc._is_comeback_day(1) is True
+
+
+def test_is_comeback_day_true_when_5day_gap():
+    prev = (date.today() - timedelta(days=5)).isoformat()
+    c = _comeback_client(today_has_activity=True, prev_date_iso=prev)
+    with patch("motivation_svc.get_client", return_value=c):
+        assert motivation_svc._is_comeback_day(1) is True
+
+
+def test_is_comeback_day_false_when_no_activity_today():
+    c = _comeback_client(today_has_activity=False)
+    with patch("motivation_svc.get_client", return_value=c):
+        assert motivation_svc._is_comeback_day(1) is False
+
+
+def test_is_comeback_day_false_when_1day_gap():
+    prev = (date.today() - timedelta(days=1)).isoformat()
+    c = _comeback_client(today_has_activity=True, prev_date_iso=prev)
+    with patch("motivation_svc.get_client", return_value=c):
+        assert motivation_svc._is_comeback_day(1) is False
+
+
+def test_is_comeback_day_false_when_no_previous_activity():
+    # Brand-new user: active today but no prior history
+    c = _comeback_client(today_has_activity=True, prev_date_iso=None)
+    with patch("motivation_svc.get_client", return_value=c):
+        assert motivation_svc._is_comeback_day(1) is False
+
+
+# ─── evaluate_triggers: comeback_celebration ─────────────────────────────────
+
+def test_evaluate_comeback_fires_in_daytime_window():
+    with patch("motivation_svc.datetime", _mock_hour(14)), \
+         patch("motivation_svc._is_comeback_day", return_value=True):
+        trigger, fired = motivation_svc.evaluate_triggers(1)
+    assert trigger == "comeback_celebration"
+    assert fired is True
+
+
+def test_evaluate_comeback_fires_at_window_edges():
+    for h in (9, 20):
+        with patch("motivation_svc.datetime", _mock_hour(h)), \
+             patch("motivation_svc._is_comeback_day", return_value=True):
+            trigger, fired = motivation_svc.evaluate_triggers(1)
+        assert trigger == "comeback_celebration", f"expected comeback at hour {h}"
+
+
+def test_evaluate_comeback_does_not_fire_outside_window():
+    for h in (8, 23):
+        with patch("motivation_svc.datetime", _mock_hour(h)), \
+             patch("motivation_svc._is_comeback_day", return_value=True), \
+             patch("motivation_svc._count_skips_today", return_value=0), \
+             patch("motivation_svc._is_streak_broken", return_value=False), \
+             patch("motivation_svc._skip_rate_last_7_days", return_value=0.0), \
+             patch("motivation_svc._days_since_any_activity", return_value=0):
+            trigger, fired = motivation_svc.evaluate_triggers(1)
+        assert trigger is None, f"expected no trigger at hour {h}"
+
+
+def test_evaluate_comeback_has_priority_over_daily_skip_burst():
+    # Hour 18 is inside both comeback (9-20) and burst (17-22) windows
+    with patch("motivation_svc.datetime", _mock_hour(18)), \
+         patch("motivation_svc._is_comeback_day", return_value=True), \
+         patch("motivation_svc._count_skips_today", return_value=5):
+        trigger, fired = motivation_svc.evaluate_triggers(1)
+    assert trigger == "comeback_celebration"
+
+
+# ─── generate_motivation_message: comeback_celebration tone ──────────────────
+
+def test_generate_motivation_message_comeback_prompt_contains_celebration_cue():
+    with patch("motivation_svc.claude_svc") as mock_claude:
+        mock_claude._ask.return_value = "Welcome back!"
+        result = motivation_svc.generate_motivation_message("comeback_celebration")
+    prompt = mock_claude._ask.call_args[0][0]
+    assert "comeback" in prompt.lower() or "returning" in prompt.lower()
+    assert result == "Welcome back!"
