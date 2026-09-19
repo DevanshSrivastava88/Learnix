@@ -1,6 +1,6 @@
 # Learnix Backlog
 
-_Last updated: 2026-08-28_
+_Last updated: 2026-09-19_
 _Project status: workInProgress_
 _Auto-agent: enabled_
 
@@ -77,7 +77,7 @@ engine, #8 sentiment read, Exocortex crisis classifier (safety — fold in soon)
 
 - [ ] Next.js 14 + Supabase + TypeScript + Tailwind dark
 - [ ] Multi-user data view with new schema (goals, habits, skips, motivation log)
-- [ ] Activity graph embed
+- [x] Activity graph embed
 - [ ] Skip analytics embed
 
 ## ✅ Done (2026-06-13)

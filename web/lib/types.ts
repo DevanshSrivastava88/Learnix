@@ -44,3 +44,10 @@ export interface Settings {
   streak: number
   last_study_date: string | null
 }
+
+export type ActivityEventType = 'study' | 'habit' | 'milestone'
+
+export interface ActivityLog {
+  event_type: ActivityEventType
+  event_date: string  // YYYY-MM-DD
+}

@@ -1,12 +1,37 @@
 import { supabase } from '@/lib/supabase'
-import { Goal, Topic, QuizAttempt, Settings } from '@/lib/types'
+import { Goal, Topic, QuizAttempt, Settings, ActivityLog } from '@/lib/types'
 import { daysUntil, formatDate, statusIcon, countCompleted } from '@/lib/utils'
 import Link from 'next/link'
+import ActivityChart from '@/components/ActivityChart'
 
 export const revalidate = 60
 
+function buildActivityBuckets(logs: ActivityLog[]) {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+
+  const buckets = Array.from({ length: 30 }, (_, i) => {
+    const d = new Date(today)
+    d.setDate(d.getDate() - (29 - i))
+    return { date: d.toISOString().split('T')[0], study: 0, habit: 0, milestone: 0 }
+  })
+
+  const idx = new Map(buckets.map((b, i) => [b.date, i]))
+  for (const log of logs) {
+    const i = idx.get(log.event_date)
+    if (i !== undefined && (log.event_type === 'study' || log.event_type === 'habit' || log.event_type === 'milestone')) {
+      buckets[i][log.event_type]++
+    }
+  }
+  return buckets
+}
+
 async function getDashboardData() {
-  const [goalsRes, topicsRes, attemptsRes, settingsRes] = await Promise.all([
+  const thirtyDaysAgo = new Date()
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 29)
+  const since = thirtyDaysAgo.toISOString().split('T')[0]
+
+  const [goalsRes, topicsRes, attemptsRes, settingsRes, activityRes] = await Promise.all([
     supabase.from('goals').select('*').order('created_at', { ascending: true }),
     supabase.from('topics').select('*').order('order_index', { ascending: true }),
     supabase
@@ -15,6 +40,11 @@ async function getDashboardData() {
       .order('attempted_at', { ascending: false })
       .limit(5),
     supabase.from('settings').select('*').eq('id', 1).single(),
+    supabase
+      .from('activity_log')
+      .select('event_type, event_date')
+      .gte('event_date', since)
+      .order('event_date', { ascending: true }),
   ])
 
   return {
@@ -22,6 +52,7 @@ async function getDashboardData() {
     topics: (topicsRes.data ?? []) as Topic[],
     attempts: (attemptsRes.data ?? []) as (QuizAttempt & { topics: { title: string } })[],
     settings: settingsRes.data as Settings | null,
+    activityBuckets: buildActivityBuckets((activityRes.data ?? []) as ActivityLog[]),
   }
 }
 
@@ -55,7 +86,7 @@ function OnTrackBadge({ days, total, done }: { days: number | null; total: numbe
 }
 
 export default async function DashboardPage() {
-  const { goals, topics, attempts, settings } = await getDashboardData()
+  const { goals, topics, attempts, settings, activityBuckets } = await getDashboardData()
 
   const streak = settings?.streak ?? 0
   const activeGoals = goals.filter(g => g.status === 'in_progress')
@@ -203,6 +234,16 @@ export default async function DashboardPage() {
             ))}
           </div>
         )}
+      </section>
+
+      {/* Activity graph */}
+      <section>
+        <h2 className="text-sm font-semibold text-zinc-400 uppercase tracking-wider mb-4">
+          Activity — Last 30 Days
+        </h2>
+        <div className="bg-zinc-800/60 border border-zinc-700 rounded-xl p-5">
+          <ActivityChart days={activityBuckets} />
+        </div>
       </section>
     </div>
   )
