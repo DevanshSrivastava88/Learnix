@@ -1,10 +1,30 @@
 import { supabase } from '@/lib/supabase'
-import { Goal, Topic, QuizAttempt, Settings, ActivityLog } from '@/lib/types'
+import { Goal, Topic, QuizAttempt, Settings, ActivityLog, TaskSkip } from '@/lib/types'
 import { daysUntil, formatDate, statusIcon, countCompleted } from '@/lib/utils'
 import Link from 'next/link'
 import ActivityChart from '@/components/ActivityChart'
+import SkipChart from '@/components/SkipChart'
 
 export const revalidate = 60
+
+function buildSkipBuckets(skips: TaskSkip[]) {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+
+  const buckets = Array.from({ length: 30 }, (_, i) => {
+    const d = new Date(today)
+    d.setDate(d.getDate() - (29 - i))
+    return { date: d.toISOString().split('T')[0], skips: 0 }
+  })
+
+  const idx = new Map(buckets.map((b, i) => [b.date, i]))
+  for (const skip of skips) {
+    const date = skip.skipped_at.slice(0, 10)
+    const i = idx.get(date)
+    if (i !== undefined) buckets[i].skips++
+  }
+  return buckets
+}
 
 function buildActivityBuckets(logs: ActivityLog[]) {
   const today = new Date()
@@ -31,7 +51,7 @@ async function getDashboardData() {
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 29)
   const since = thirtyDaysAgo.toISOString().split('T')[0]
 
-  const [goalsRes, topicsRes, attemptsRes, settingsRes, activityRes] = await Promise.all([
+  const [goalsRes, topicsRes, attemptsRes, settingsRes, activityRes, skipsRes] = await Promise.all([
     supabase.from('goals').select('*').order('created_at', { ascending: true }),
     supabase.from('topics').select('*').order('order_index', { ascending: true }),
     supabase
@@ -45,14 +65,22 @@ async function getDashboardData() {
       .select('event_type, event_date')
       .gte('event_date', since)
       .order('event_date', { ascending: true }),
+    supabase
+      .from('task_skips')
+      .select('skipped_at')
+      .gte('skipped_at', since + 'T00:00:00+00:00')
+      .order('skipped_at', { ascending: true }),
   ])
 
+  const skipRows = (skipsRes.data ?? []) as TaskSkip[]
   return {
     goals: (goalsRes.data ?? []) as Goal[],
     topics: (topicsRes.data ?? []) as Topic[],
     attempts: (attemptsRes.data ?? []) as (QuizAttempt & { topics: { title: string } })[],
     settings: settingsRes.data as Settings | null,
     activityBuckets: buildActivityBuckets((activityRes.data ?? []) as ActivityLog[]),
+    skipBuckets: buildSkipBuckets(skipRows),
+    totalSkips: skipRows.length,
   }
 }
 
@@ -86,7 +114,7 @@ function OnTrackBadge({ days, total, done }: { days: number | null; total: numbe
 }
 
 export default async function DashboardPage() {
-  const { goals, topics, attempts, settings, activityBuckets } = await getDashboardData()
+  const { goals, topics, attempts, settings, activityBuckets, skipBuckets, totalSkips } = await getDashboardData()
 
   const streak = settings?.streak ?? 0
   const activeGoals = goals.filter(g => g.status === 'in_progress')
@@ -243,6 +271,20 @@ export default async function DashboardPage() {
         </h2>
         <div className="bg-zinc-800/60 border border-zinc-700 rounded-xl p-5">
           <ActivityChart days={activityBuckets} />
+        </div>
+      </section>
+
+      {/* Skip analytics */}
+      <section>
+        <h2 className="text-sm font-semibold text-zinc-400 uppercase tracking-wider mb-4">
+          Skip Analytics — Last 30 Days
+        </h2>
+        <div className="bg-zinc-800/60 border border-zinc-700 rounded-xl p-5">
+          {totalSkips === 0 ? (
+            <p className="text-zinc-500 text-sm">No skips recorded yet — keep it up!</p>
+          ) : (
+            <SkipChart days={skipBuckets} totalSkips={totalSkips} />
+          )}
         </div>
       </section>
     </div>

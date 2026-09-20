@@ -51,3 +51,7 @@ export interface ActivityLog {
   event_type: ActivityEventType
   event_date: string  // YYYY-MM-DD
 }
+
+export interface TaskSkip {
+  skipped_at: string  // ISO timestamp
+}
