@@ -1,8 +1,14 @@
 # Learnix Backlog
 
-_Last updated: 2026-09-20_
+_Last updated: 2026-09-28_
 _Project status: workInProgress_
 _Auto-agent: enabled_
+
+## ✅ Done (2026-09-28, autonomous)
+- **tests/test_timesheet_handlers.py** — 15 new unit tests for `_find_habit` (8 cases:
+  exact, case-insensitive, partial, reverse-partial, no match, empty list, mixed-case) and
+  `_parse_timesheet_input` (7 cases: valid dict, list/string/None non-dict responses, LLM
+  exception, single habit, prompt content check). Suite: 271 tests, all green.
 
 ## ✅ Done (2026-06-14, autonomous overnight)
 - **Motivation 10x — Increment 1 (context engine)** — `gather_user_context()` pulls real
