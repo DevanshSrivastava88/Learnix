@@ -1,8 +1,16 @@
 # Learnix Backlog
 
-_Last updated: 2026-09-28_
+_Last updated: 2026-09-29_
 _Project status: workInProgress_
 _Auto-agent: enabled_
+
+## ✅ Done (2026-09-29, autonomous)
+- **tests/test_scheduler.py** — 9 new unit tests for `format_evening_digest` (zero prior
+  coverage: empty-when-scheduled, shows-unscheduled, 🔁 habit marker, • task bullet,
+  subtask exclusion, milestone exclusion, empty list) and `format_eod` habit paths
+  (done-today ✅ vs not-done-today). Suite: 280 tests, all green.
+  Also cherry-picked the detached-HEAD commit `e9b88ed` (test_timesheet_handlers, 15 tests)
+  onto master — it was committed but never pushed in the prior session.
 
 ## ✅ Done (2026-09-28, autonomous)
 - **tests/test_timesheet_handlers.py** — 15 new unit tests for `_find_habit` (8 cases:
