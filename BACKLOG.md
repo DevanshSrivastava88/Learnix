@@ -1,8 +1,16 @@
 # Learnix Backlog
 
-_Last updated: 2026-09-29_
+_Last updated: 2026-10-02_
 _Project status: workInProgress_
 _Auto-agent: enabled_
+
+## ✅ Done (2026-10-02, autonomous)
+- **tests/test_missed_call_webhook.py** — 22 new unit tests for `missed_call_webhook.py` (zero prior
+  coverage): `_twilio_signature` (pure HMAC-SHA1, 2 cases), `_send_telegram` (correct URL/payload,
+  exception swallowed), `_notify_all` (multi-user, TELEGRAM_CHAT_ID fallback, no-op when neither),
+  `/twilio/missed-call` Flask route (403 bad sig, 204 non-missed, 200 + notify on no-answer/busy/failed,
+  XML body), `/twilio/call-response` route (missing param errors, invalid user_id, digit 1 done flow,
+  digit 2 skip flow, unknown digit no-op, empty-title fallback), `/health`. Suite: 302 tests, all green.
 
 ## ✅ Done (2026-09-29, autonomous)
 - **tests/test_scheduler.py** — 9 new unit tests for `format_evening_digest` (zero prior
