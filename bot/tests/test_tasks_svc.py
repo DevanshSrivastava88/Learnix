@@ -118,3 +118,90 @@ def test_unmark_important_removes_prefix():
         mock_update.assert_called_once()
         _, kwargs = mock_update.call_args
         assert kwargs.get('description') == 'my notes'
+
+
+# ---------------------------------------------------------------------------
+# get_reminder_count / increment_reminder_count / reset_reminder_count
+# ---------------------------------------------------------------------------
+
+def test_get_reminder_count_returns_zero_when_absent():
+    assert tasks_svc.get_reminder_count(_row(description='')) == 0
+
+
+def test_get_reminder_count_returns_zero_when_none_description():
+    assert tasks_svc.get_reminder_count(_row(description=None)) == 0
+
+
+def test_get_reminder_count_extracts_value():
+    assert tasks_svc.get_reminder_count(_row(description='reminded:3')) == 3
+
+
+def test_get_reminder_count_extracts_value_from_compound_description():
+    assert tasks_svc.get_reminder_count(_row(description='important:true|reminded:5')) == 5
+
+
+def test_increment_reminder_count_from_zero_creates_counter():
+    task = _row(description='')
+    with patch.object(tasks_svc, 'update_task') as mock_update:
+        result = tasks_svc.increment_reminder_count('task-1', task)
+    assert result == 1
+    _, kwargs = mock_update.call_args
+    assert kwargs.get('description') == 'reminded:1'
+
+
+def test_increment_reminder_count_increments_existing():
+    task = _row(description='reminded:2')
+    with patch.object(tasks_svc, 'update_task') as mock_update:
+        result = tasks_svc.increment_reminder_count('task-1', task)
+    assert result == 3
+    _, kwargs = mock_update.call_args
+    assert kwargs.get('description') == 'reminded:3'
+
+
+def test_increment_reminder_count_preserves_other_description_fields():
+    task = _row(description='important:true|reminded:1')
+    with patch.object(tasks_svc, 'update_task') as mock_update:
+        tasks_svc.increment_reminder_count('task-1', task)
+    _, kwargs = mock_update.call_args
+    assert kwargs.get('description') == 'important:true|reminded:2'
+
+
+def test_increment_reminder_count_appends_to_existing_description():
+    task = _row(description='important:true')
+    with patch.object(tasks_svc, 'update_task') as mock_update:
+        result = tasks_svc.increment_reminder_count('task-1', task)
+    assert result == 1
+    _, kwargs = mock_update.call_args
+    assert kwargs.get('description') == 'important:true|reminded:1'
+
+
+def test_reset_reminder_count_removes_counter():
+    task = _row(description='reminded:5')
+    with patch.object(tasks_svc, 'update_task') as mock_update:
+        tasks_svc.reset_reminder_count('task-1', task)
+    _, kwargs = mock_update.call_args
+    assert kwargs.get('description') == ''
+
+
+def test_reset_reminder_count_preserves_other_fields():
+    task = _row(description='important:true|reminded:3')
+    with patch.object(tasks_svc, 'update_task') as mock_update:
+        tasks_svc.reset_reminder_count('task-1', task)
+    _, kwargs = mock_update.call_args
+    assert kwargs.get('description') == 'important:true'
+
+
+def test_reset_reminder_count_noop_when_no_counter():
+    task = _row(description='important:true')
+    with patch.object(tasks_svc, 'update_task') as mock_update:
+        tasks_svc.reset_reminder_count('task-1', task)
+    _, kwargs = mock_update.call_args
+    assert kwargs.get('description') == 'important:true'
+
+
+def test_reset_reminder_count_handles_empty_description():
+    task = _row(description='')
+    with patch.object(tasks_svc, 'update_task') as mock_update:
+        tasks_svc.reset_reminder_count('task-1', task)
+    _, kwargs = mock_update.call_args
+    assert kwargs.get('description') == ''

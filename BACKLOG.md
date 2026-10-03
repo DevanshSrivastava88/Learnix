@@ -1,8 +1,15 @@
 # Learnix Backlog
 
-_Last updated: 2026-10-02_
+_Last updated: 2026-10-03_
 _Project status: workInProgress_
 _Auto-agent: enabled_
+
+## ✅ Done (2026-10-03, autonomous)
+- **tests/test_tasks_svc.py** — 12 new unit tests for `get_reminder_count`, `increment_reminder_count`,
+  `reset_reminder_count` in `tasks/svc.py` (zero prior coverage): count absent/None/simple/compound
+  descriptions; increment from zero, from existing, with important-flag prefix, appended to plain
+  description; reset removes counter, preserves other fields, no-ops when absent, handles empty.
+  Suite: 314 tests, all green.
 
 ## ✅ Done (2026-10-02, autonomous)
 - **tests/test_missed_call_webhook.py** — 22 new unit tests for `missed_call_webhook.py` (zero prior
@@ -11,7 +18,6 @@ _Auto-agent: enabled_
   `/twilio/missed-call` Flask route (403 bad sig, 204 non-missed, 200 + notify on no-answer/busy/failed,
   XML body), `/twilio/call-response` route (missing param errors, invalid user_id, digit 1 done flow,
   digit 2 skip flow, unknown digit no-op, empty-title fallback), `/health`. Suite: 302 tests, all green.
-
 ## ✅ Done (2026-09-29, autonomous)
 - **tests/test_scheduler.py** — 9 new unit tests for `format_evening_digest` (zero prior
   coverage: empty-when-scheduled, shows-unscheduled, 🔁 habit marker, • task bullet,
