@@ -1,8 +1,15 @@
 # Learnix Backlog
 
-_Last updated: 2026-10-03_
+_Last updated: 2026-10-04_
 _Project status: workInProgress_
 _Auto-agent: enabled_
+
+## ✅ Done (2026-10-04, autonomous)
+- **tests/test_twilio_svc.py** — 6 new unit tests for `make_reminder_call` (zero prior coverage):
+  env vars absent (all missing, one missing), no phone number returns False, success with IVR Gather
+  flow (verifies action_url + task/user params in TwiML), success with plain Say fallback, exception
+  returns False. Also cherry-picked two orphaned commits from 2026-10-02/03 onto master (those runs
+  committed in detached HEAD). Suite: 320 tests, all green.
 
 ## ✅ Done (2026-10-03, autonomous)
 - **tests/test_tasks_svc.py** — 12 new unit tests for `get_reminder_count`, `increment_reminder_count`,
