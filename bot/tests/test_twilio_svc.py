@@ -1,3 +1,5 @@
+import os
+import sys
 from unittest.mock import MagicMock, patch
 
 with patch("supabase_svc.create_client"):
@@ -122,3 +124,89 @@ def test_get_all_twilio_users_returns_empty_list_when_none():
         mock_get.return_value = _make_client(rows=[])
         result = twilio_svc.get_all_twilio_users()
         assert result == []
+
+
+# ---------------------------------------------------------------------------
+# make_reminder_call
+# ---------------------------------------------------------------------------
+
+_TWILIO_ENV = {
+    "TWILIO_ACCOUNT_SID": "ACtest123",
+    "TWILIO_AUTH_TOKEN": "auth_token_test",
+    "TWILIO_PHONE_NUMBER": "+15005550006",
+}
+
+
+def _mock_twilio_rest():
+    """Return a mock twilio.rest module with a pre-wired Client."""
+    mock_call = MagicMock()
+    mock_call.sid = "CAtest"
+    mock_client = MagicMock()
+    mock_client.calls.create.return_value = mock_call
+    mock_rest = MagicMock()
+    mock_rest.Client.return_value = mock_client
+    return mock_rest, mock_client
+
+
+def test_make_reminder_call_returns_false_when_env_vars_missing():
+    clean_env = {k: v for k, v in os.environ.items()
+                 if k not in _TWILIO_ENV}
+    with patch.dict(os.environ, clean_env, clear=True):
+        result = twilio_svc.make_reminder_call(123, "tid", "Walk")
+    assert result is False
+
+
+def test_make_reminder_call_returns_false_when_one_env_var_missing():
+    partial_env = {k: v for k, v in _TWILIO_ENV.items() if k != "TWILIO_AUTH_TOKEN"}
+    with patch.dict(os.environ, partial_env, clear=False):
+        with patch.dict(os.environ, {"TWILIO_AUTH_TOKEN": ""}, clear=False):
+            result = twilio_svc.make_reminder_call(123, "tid", "Walk")
+    assert result is False
+
+
+def test_make_reminder_call_returns_false_when_no_phone_number():
+    with patch.dict(os.environ, _TWILIO_ENV), \
+         patch("twilio_svc.get_phone_number", return_value=None):
+        result = twilio_svc.make_reminder_call(123, "tid", "Walk")
+    assert result is False
+
+
+def test_make_reminder_call_success_with_ivr_flow():
+    mock_rest, mock_client = _mock_twilio_rest()
+    with patch.dict(os.environ, _TWILIO_ENV), \
+         patch("twilio_svc.get_phone_number", return_value="+918004844144"), \
+         patch.dict(sys.modules, {"twilio": MagicMock(), "twilio.rest": mock_rest}):
+        result = twilio_svc.make_reminder_call(
+            123, "task-abc", "Cook dinner",
+            railway_url="https://app.railway.app"
+        )
+    assert result is True
+    mock_client.calls.create.assert_called_once()
+    twiml = mock_client.calls.create.call_args[1]["twiml"]
+    assert "task_id=task-abc" in twiml
+    assert "user_id=123" in twiml
+    assert "Cook dinner" in twiml
+    assert "Gather" in twiml
+
+
+def test_make_reminder_call_success_with_plain_say_fallback():
+    mock_rest, mock_client = _mock_twilio_rest()
+    with patch.dict(os.environ, _TWILIO_ENV), \
+         patch("twilio_svc.get_phone_number", return_value="+918004844144"), \
+         patch.dict(sys.modules, {"twilio": MagicMock(), "twilio.rest": mock_rest}):
+        result = twilio_svc.make_reminder_call(123, "task-abc", "Drink water")
+    assert result is True
+    mock_client.calls.create.assert_called_once()
+    twiml = mock_client.calls.create.call_args[1]["twiml"]
+    assert "Drink water" in twiml
+    assert "Gather" not in twiml
+
+
+def test_make_reminder_call_returns_false_on_exception():
+    mock_rest, mock_client = _mock_twilio_rest()
+    mock_client.calls.create.side_effect = RuntimeError("network error")
+    with patch.dict(os.environ, _TWILIO_ENV), \
+         patch("twilio_svc.get_phone_number", return_value="+918004844144"), \
+         patch.dict(sys.modules, {"twilio": MagicMock(), "twilio.rest": mock_rest}):
+        result = twilio_svc.make_reminder_call(123, "task-abc", "Meditate")
+    assert result is False
