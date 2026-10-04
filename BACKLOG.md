@@ -5,6 +5,9 @@ _Project status: workInProgress_
 _Auto-agent: enabled_
 
 ## 📋 Pending
+- **Future: learning-science upgrade for study mode (2026-10-04)** — ideas from moto's HLD Gym:
+  spaced repetition + retrieval practice, "explain it back" graded by LLM, kernels, interleaving.
+  Ranked plan + build order in `docs/LEARNING_SCIENCE_PLAN.md`. Ties into Exocortex memory hookup.
 - **Glass UI laggy on phone (2026-07-04) — mobile GPU perf, `backdrop-filter: blur()` is the
   culprit.** Frosted-glass panels over the vivid cat wallpaper each force a full-screen blur pass;
   on mobile GPUs that tanks scroll/animation FPS, worst when blurred layers are stacked, the blur
