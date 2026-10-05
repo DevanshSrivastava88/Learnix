@@ -1,8 +1,18 @@
 # Learnix Backlog
 
-_Last updated: 2026-10-04_
+_Last updated: 2026-10-05_
 _Project status: workInProgress_
 _Auto-agent: enabled_
+
+## ✅ Done (2026-10-05, autonomous)
+- **tests/test_tasks_svc.py** — 20 new unit tests for previously untested `tasks/svc.py` CRUD ops:
+  `list_tasks` (returns rows, None→[], status filter), `get_task` (found, not-found), `delete_task`
+  (correct id passed), `delete_subtasks` (removes step rows, zero when no steps, checks both active
+  and paused), `create_milestone` (inserts correct row), `list_milestones` (returns items, None→[]),
+  `count_milestones` (done/total counts, empty), `toggle_milestone` (done/undone), `log_skip`
+  (default note, custom note), `reschedule_task` (updates next_reminder_at),
+  `set_custom_time` (sets time + custom flag). Suite: 340 tests, all green.
+  Also cherry-picked 4 orphaned detached-HEAD commits (10-02/03/04 work) onto master.
 
 ## ✅ Done (2026-10-04, autonomous)
 - **tests/test_twilio_svc.py** — 6 new unit tests for `make_reminder_call` (zero prior coverage):
