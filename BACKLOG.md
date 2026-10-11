@@ -1,8 +1,16 @@
 # Learnix Backlog
 
-_Last updated: 2026-10-06_
+_Last updated: 2026-10-11_
 _Project status: workInProgress_
 _Auto-agent: enabled_
+
+## ✅ Done (2026-10-11, autonomous)
+- **tests/test_weekday_offset.py** — 19 new unit tests for `_weekday_offset_from_text` in
+  `tasks/handlers.py` (zero prior coverage): no-weekday returns None (3 cases), same-day
+  full/abbreviated returns 7 (next-week semantics), next-day full/abbreviated returns 1, all
+  7 weekdays and abbreviations produce offsets in [1, 7], deterministic arithmetic checks for
+  Monday/Friday/Sunday, weekday embedded in sentence, long-form abbreviations (tues, thurs,
+  satur), case insensitivity (upper/mixed). Suite: 388 tests, all green.
 
 ## ✅ Done (2026-10-05, autonomous)
 - **tests/test_tasks_svc.py** — 20 new unit tests for previously untested `tasks/svc.py` CRUD ops:
