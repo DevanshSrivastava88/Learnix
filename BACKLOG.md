@@ -1,8 +1,11 @@
 # Learnix Backlog
 
-_Last updated: 2026-10-11_
+_Last updated: 2026-10-12_
 _Project status: workInProgress_
 _Auto-agent: enabled_
+
+## ✅ Done (2026-10-12, autonomous)
+- **tests/test_claude_svc_study_fns.py** — 19 new unit tests for previously untested `claude_svc` study/breakdown functions (zero prior coverage): `revise_subtasks` (returns revised list, filters empty strings, strips whitespace, truncates to 10 items, raises ValueError on non-list, prompt includes parent/feedback/numbered-steps, coerces non-string items, handles empty existing steps), `teach_topic` (returns LLM string, omits notes when absent, includes notes in prompt when present), `generate_quiz` (returns list of dicts, truncates to 5, raises on non-list), `score_answer` (returns correct+explanation, returns false for wrong answer, passes all three fields to prompt). Suite: 407 tests, all green.
 
 ## ✅ Done (2026-10-11, autonomous)
 - **tests/test_weekday_offset.py** — 19 new unit tests for `_weekday_offset_from_text` in
