@@ -1,12 +1,14 @@
 # Learnix Backlog
 
-_Last updated: 2026-10-13_
+_Last updated: 2026-10-14_
 _Project status: workInProgress_
 _Auto-agent: enabled_
 
+## ✅ Done (2026-10-14, autonomous)
+- **tests/test_skip_handlers.py** — 11 new unit tests for `handle_skip_task` and `handle_skip_response` in `tasks/handlers.py` (zero prior coverage): `test_skip_task_found_sets_pending_and_replies` (sets pending_skip + sends prompt), `test_skip_task_not_found_replies_error` (no pending set on miss), `test_skip_task_matches_prefix_of_id` (prefix match works), `test_skip_response_returns_false_when_no_pending` (guard returns False), `test_skip_response_outright_skip_logs_and_reschedules` ("skip" keyword → log_skip + reschedule_task), `test_skip_response_outright_skip_uses_recurrence_days` (next_at offset matches recurrence_days), `test_skip_response_case_insensitive_skip_keyword` ("SKIP" also routes outright), `test_skip_response_valid_time_reschedules_to_parsed_dt` (parsed time → set_custom_time + log_skip with rescheduled note), `test_skip_response_valid_time_reply_contains_time_string` (reply shows IST time), `test_skip_response_invalid_time_re_prompts_and_keeps_pending` (None parse → re-prompt, pending preserved), `test_skip_response_invalid_time_does_not_log_skip` (None parse → no DB writes). Suite: 432 tests, all green.
+
 ## ✅ Done (2026-10-13, autonomous)
 - **tests/test_parse_time_only.py** — 14 new unit tests for `claude_svc.parse_time_only` (zero prior coverage): fast-path clock times `test_plain_time_future_returns_utc` (3pm > 10am → today), `test_plain_time_past_rolls_to_tomorrow` (9am < 10am → next day), `test_plain_time_with_minutes` (3:30pm), `test_plain_time_midnight_noon_edge` (12pm = noon → today), `test_plain_time_day_offset_overrides_roll` (day_offset=1 overrides roll logic), `test_plain_time_result_is_utc` (tzinfo check); LLM fallback path `test_llm_minutes_returns_future_utc` ({"minutes": 30}), `test_llm_minutes_zero_returns_none`, `test_llm_hhmm_future_time`, `test_llm_hhmm_past_rolls_to_tomorrow`, `test_llm_hhmm_tomorrow_flag_adds_day`, `test_llm_hhmm_with_day_offset` (day_offset=2), `test_llm_invalid_hhmm_falls_through_to_none` (bad hhmm → minutes=0 → None), `test_llm_non_dict_returns_none`. Suite: 421 tests, all green.
-
 ## ✅ Done (2026-10-12, autonomous)
 - **tests/test_claude_svc_study_fns.py** — 19 new unit tests for previously untested `claude_svc` study/breakdown functions (zero prior coverage): `revise_subtasks` (returns revised list, filters empty strings, strips whitespace, truncates to 10 items, raises ValueError on non-list, prompt includes parent/feedback/numbered-steps, coerces non-string items, handles empty existing steps), `teach_topic` (returns LLM string, omits notes when absent, includes notes in prompt when present), `generate_quiz` (returns list of dicts, truncates to 5, raises on non-list), `score_answer` (returns correct+explanation, returns false for wrong answer, passes all three fields to prompt). Suite: 407 tests, all green.
 
