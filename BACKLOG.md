@@ -1,9 +1,11 @@
 # Learnix Backlog
 
-_Last updated: 2026-10-14_
+_Last updated: 2026-10-15_
 _Project status: workInProgress_
 _Auto-agent: enabled_
 
+## ✅ Done (2026-10-15, autonomous)
+- **tests/test_study_svc_extra.py** — 20 new unit tests for `study/svc.py` functions with zero prior coverage: `get_goal_difficulty` (decodes diff tag, defaults to medium, handles None), `get_topic` (found/not-found), `update_goal_status` (correct status passed to update), `update_topic_status` (sets status+score, omits score when None, adds completed_at for terminal statuses, skips completed_at for not_started), `skip_topic` (updates to skipped), `insert_quiz_attempt` (inserts topic_id/score/attempted_at), `get_attempts_for_topic` (returns rows, None→[]), `get_next_pending_topic` (None when no goals, None when no pending, returns leaf over parent, returns first root when all leaves, fallback to topics[0] when no leaves), `get_topic_position` (root via is_null path, child via eq path, both return correct 1-based position and total). Suite: 452 tests, all green.
 ## ✅ Done (2026-10-14, autonomous)
 - **tests/test_skip_handlers.py** — 11 new unit tests for `handle_skip_task` and `handle_skip_response` in `tasks/handlers.py` (zero prior coverage): `test_skip_task_found_sets_pending_and_replies` (sets pending_skip + sends prompt), `test_skip_task_not_found_replies_error` (no pending set on miss), `test_skip_task_matches_prefix_of_id` (prefix match works), `test_skip_response_returns_false_when_no_pending` (guard returns False), `test_skip_response_outright_skip_logs_and_reschedules` ("skip" keyword → log_skip + reschedule_task), `test_skip_response_outright_skip_uses_recurrence_days` (next_at offset matches recurrence_days), `test_skip_response_case_insensitive_skip_keyword` ("SKIP" also routes outright), `test_skip_response_valid_time_reschedules_to_parsed_dt` (parsed time → set_custom_time + log_skip with rescheduled note), `test_skip_response_valid_time_reply_contains_time_string` (reply shows IST time), `test_skip_response_invalid_time_re_prompts_and_keeps_pending` (None parse → re-prompt, pending preserved), `test_skip_response_invalid_time_does_not_log_skip` (None parse → no DB writes). Suite: 432 tests, all green.
 
