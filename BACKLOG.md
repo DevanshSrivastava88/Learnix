@@ -5,6 +5,13 @@ _Project status: workInProgress_
 _Auto-agent: enabled_
 
 ## 📋 Pending
+- **STUDY GAME PLAN (2026-10-15) → `docs/STUDY_GAME_PLAN.md`** — Learnix = coach, Exocortex = memory/schedule, HLD Gym = science+content
+  - [ ] Phase 0: merge admin-bypass → master, check Railway bot+web alive, check Exocortex API (REST vs MCP-only)
+  - [ ] Phase 1: Learnix reads due topics from Exocortex, writes grades via record_review
+  - [ ] Phase 2: daily recall session (no notes shown → LLM grade → record_review)
+  - [ ] Phase 3: explain-it-back (text/voice) graded vs his notes
+  - [ ] Phase 4: HLD Gym chapters → Exocortex topics (after moto OK)
+  - [ ] 🧍 answer open questions in the plan (study surface? first subject? moto OK?)
 - **Future: learning-science upgrade for study mode (2026-10-04)** — ideas from moto's HLD Gym:
   spaced repetition + retrieval practice, "explain it back" graded by LLM, kernels, interleaving.
   Ranked plan + build order in `docs/LEARNING_SCIENCE_PLAN.md`. Ties into Exocortex memory hookup.
