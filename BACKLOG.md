@@ -1,8 +1,11 @@
 # Learnix Backlog
 
-_Last updated: 2026-10-15_
+_Last updated: 2026-10-16_
 _Project status: workInProgress_
 _Auto-agent: enabled_
+
+## ✅ Done (2026-10-16, autonomous)
+- **tests/test_study_format_fns.py** — 22 new unit tests for `study/handlers.py` functions with zero prior coverage: `format_plan` (includes goal name, difficulty labels easy/medium/hard/unknown, "today" label when date matches, formatted non-today date, dash for missing date, footer count, footer goal name, numbered topics, empty list) and `_format_goal_status` (no topics placeholder, goal name, 100% progress, 50% progress, no deadline indicator, overdue ⚠️, due today 🔥, within 7 days ⏰, more than 7 days 📅, invalid date fallback). Suite: 474 tests, all green.
 
 ## ✅ Done (2026-10-15, autonomous)
 - **tests/test_study_svc_extra.py** — 20 new unit tests for `study/svc.py` functions with zero prior coverage: `get_goal_difficulty` (decodes diff tag, defaults to medium, handles None), `get_topic` (found/not-found), `update_goal_status` (correct status passed to update), `update_topic_status` (sets status+score, omits score when None, adds completed_at for terminal statuses, skips completed_at for not_started), `skip_topic` (updates to skipped), `insert_quiz_attempt` (inserts topic_id/score/attempted_at), `get_attempts_for_topic` (returns rows, None→[]), `get_next_pending_topic` (None when no goals, None when no pending, returns leaf over parent, returns first root when all leaves, fallback to topics[0] when no leaves), `get_topic_position` (root via is_null path, child via eq path, both return correct 1-based position and total). Suite: 452 tests, all green.
