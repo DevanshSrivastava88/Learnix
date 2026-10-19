@@ -11,6 +11,10 @@ __pycache__/
 dist/
 build/
 
+# Coverage reports
+.coverage
+htmlcov/
+
 # Telethon session files — contain auth secrets, never commit
 *.session
 *.session-journal
