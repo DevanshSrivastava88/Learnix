@@ -1,12 +1,14 @@
 # Learnix Backlog
 
-_Last updated: 2026-10-21_
+_Last updated: 2026-10-22_
 _Project status: workInProgress_
 _Auto-agent: enabled_
 
+## ✅ Done (2026-10-22, autonomous)
+- **tests/test_format_morning_brief.py** — 13 new unit tests for `format_morning_brief` and `format_eod` in `scheduler.py` with zero prior coverage for these paths: `morning_brief_plan_on_track_shows_day_and_status`, `morning_brief_plan_behind_shows_behind_status`, `morning_brief_milestone_overdue`, `morning_brief_milestone_near_deadline`, `morning_brief_milestone_far_deadline`, `morning_brief_milestone_no_target_date`, `morning_brief_habit_due_today_shows_due_today`, `morning_brief_habit_future_shows_next_date`, `morning_brief_unscheduled_task_appears_in_section`, `morning_brief_no_unscheduled_section_when_all_have_reminders`, `morning_brief_missed_yesterday_listed`, `morning_brief_no_missed_section_when_none_missed`, `format_eod_studied_today_topic_shown`. Suite: 515 tests, all green.
+
 ## ✅ Done (2026-10-21, autonomous)
 - **tests/test_get_missed_yesterday.py** — 10 new unit tests for `get_missed_yesterday` in `scheduler.py` with zero prior coverage: `no_tasks_returns_empty`, `task_done_yesterday_not_missed`, `task_not_done_next_at_today_is_missed`, `task_not_done_next_at_tomorrow_is_missed`, `task_with_no_next_reminder_not_missed`, `task_with_stale_next_at_in_past_not_missed`, `done_check_is_case_insensitive`, `done_row_without_note_field_not_crash`, `multiple_tasks_only_undone_returned`, `none_data_from_db_handled_safely`. Suite: 502 tests, all green.
-
 ## ✅ Done (2026-10-19, autonomous)
 - **tests/test_timesheet_async_handlers.py** — 18 new unit tests for async handlers in `tasks/timesheet_handlers.py` with zero prior coverage: `cmd_timesheet` (no habits → END, filters non-habit tasks, stores habits in user_data, returns TS_PLAN state, reply contains habit names, only stores habit type), `ts_plan` (no matches → error message + END, clears user_data, one valid habit schedules + END, reply contains title, unmatched listed in reply, bad time string not scheduled, two habits both scheduled, empty habits list → END, correct user_id used), `_cancel` (clears user_data, sends cancelled message, returns END). Suite: 492 tests, all green.
 ## ✅ Done (2026-10-16, autonomous)
