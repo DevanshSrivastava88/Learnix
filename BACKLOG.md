@@ -1,12 +1,14 @@
 # Learnix Backlog
 
-_Last updated: 2026-10-25_
+_Last updated: 2026-10-26_
 _Project status: workInProgress_
 _Auto-agent: enabled_
 
+## ✅ Done (2026-10-26, autonomous)
+- **tests/test_settings_svc.py** — 16 new unit tests for previously uncovered `settings_svc.py` functions with zero prior coverage: `upsert_settings` (returns first row, returns {} on empty data, injects user_id into payload), `set_daily_time`, `set_morning_brief_time`, `set_eod_time`, `set_persona` (each delegates to upsert_settings with correct key), `get_persona` (returns stored persona, returns "default" when None, returns "default" when key missing), `get_all_users` (returns rows, returns [] when None), and two uncovered `update_streak` paths (`last_study_date is None` → streak starts at 1, `delta == 0` same-day → streak unchanged) plus a date-object last_study_date branch and upsert call verification. Suite: 576 tests, all green.
+
 ## ✅ Done (2026-10-25, autonomous)
 - **tests/test_delete_settings_handlers.py** — 21 new unit tests for `cmd_deletetask`, `deletetask_select`, `deletetask_confirm`, `cmd_settings`, and `cmd_persona` in `tasks/handlers.py` with zero prior coverage: `cmd_deletetask_no_tasks_replies_empty`, `cmd_deletetask_shows_task_titles`, `cmd_deletetask_stores_tasks_in_user_data`, `deletetask_select_found_stores_task_and_asks_confirm`, `deletetask_select_not_found_replies_error`, `deletetask_select_empty_list_replies_error`, `deletetask_confirm_yes_deletes_task`, `deletetask_confirm_yes_reply_contains_title`, `deletetask_confirm_cancel_keeps_task`, `deletetask_confirm_cancel_replies_kept`, `cmd_settings_shows_all_fields`, `cmd_settings_twilio_on_shows_on`, `cmd_settings_twilio_off_shows_off`, `cmd_settings_flirty_persona_shows_flirty_label`, `cmd_persona_flirty_sets_flirty`, `cmd_persona_sexy_sets_flirty`, `cmd_persona_normal_sets_default`, `cmd_persona_friendly_sets_default`, `cmd_persona_no_arg_shows_current_flirty`, `cmd_persona_no_arg_shows_current_friendly`, `cmd_persona_unknown_arg_shows_current`. Suite: 560 tests, all green.
-
 ## ✅ Done (2026-10-23, autonomous)
 - **tests/test_task_action_handlers.py** — 24 new unit tests for `cmd_pause`, `handle_pause_task`, `cmd_resume`, `handle_resume_task`, `cmd_complete`, `handle_complete_task`, and `handle_done` in `tasks/handlers.py` with zero prior coverage: `cmd_pause_no_tasks_replies_empty`, `cmd_pause_lists_active_tasks_with_shortids`, `cmd_pause_queries_active_status`, `handle_pause_task_found_pauses_and_replies`, `handle_pause_task_not_found_replies_error`, `handle_pause_task_prefix_match`, `cmd_resume_no_paused_replies_empty`, `cmd_resume_lists_paused_tasks`, `cmd_resume_queries_paused_status`, `handle_resume_task_found_activates_and_replies`, `handle_resume_task_not_found_replies_error`, `cmd_complete_no_milestones_replies_empty`, `cmd_complete_lists_milestones_only`, `cmd_complete_shows_shortid_links`, `handle_complete_task_found_marks_completed`, `handle_complete_task_logs_milestone_activity`, `handle_complete_task_reply_includes_title`, `handle_complete_task_not_found_replies_error`, `handle_done_marks_task_done`, `handle_done_logs_habit_activity`, `handle_done_reply_shows_recurrence_days`, `handle_done_shows_streak_when_greater_than_one`, `handle_done_no_streak_message_when_streak_is_one`, `handle_done_not_found_replies_error`. Suite: 539 tests, all green.
 
