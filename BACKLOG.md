@@ -1,8 +1,11 @@
 # Learnix Backlog
 
-_Last updated: 2026-10-26_
+_Last updated: 2026-10-28_
 _Project status: workInProgress_
 _Auto-agent: enabled_
+
+## ✅ Done (2026-10-28, autonomous)
+- **tests/test_cmd_tasks.py** — 16 new unit tests for `cmd_tasks` in `tasks/handlers.py` with zero prior coverage: `no_tasks_replies_empty`, `today_task_shows_today_header`, `habit_has_recycle_marker`, `non_habit_no_recycle_marker`, `time_label_on_the_hour`, `time_label_with_minutes`, `upcoming_task_tomorrow_label`, `upcoming_task_future_date_label`, `unscheduled_task_in_unscheduled_section`, `unscheduled_habit_daily_shows_every_day`, `unscheduled_habit_multi_day_frequency`, `unscheduled_hint_message`, `untimed_habit_appears_in_upcoming_with_tomorrow_label`, `subtask_indented_under_parent`, `orphan_step_renders_as_plain_task`, `multiple_sections_all_present`. Suite: 592 tests, all green.
 
 ## ✅ Done (2026-10-26, autonomous)
 - **tests/test_settings_svc.py** — 16 new unit tests for previously uncovered `settings_svc.py` functions with zero prior coverage: `upsert_settings` (returns first row, returns {} on empty data, injects user_id into payload), `set_daily_time`, `set_morning_brief_time`, `set_eod_time`, `set_persona` (each delegates to upsert_settings with correct key), `get_persona` (returns stored persona, returns "default" when None, returns "default" when key missing), `get_all_users` (returns rows, returns [] when None), and two uncovered `update_streak` paths (`last_study_date is None` → streak starts at 1, `delta == 0` same-day → streak unchanged) plus a date-object last_study_date branch and upsert call verification. Suite: 576 tests, all green.
