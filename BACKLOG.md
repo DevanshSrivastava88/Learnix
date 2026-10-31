@@ -1,8 +1,11 @@
 # Learnix Backlog
 
-_Last updated: 2026-10-28_
+_Last updated: 2026-10-31_
 _Project status: workInProgress_
 _Auto-agent: enabled_
+
+## ✅ Done (2026-10-31, autonomous)
+- **tests/test_parse_task.py** — 19 new unit tests for `claude_svc.parse_task` with zero prior coverage: `returns_dict_on_valid_llm_response`, `returns_empty_dict_on_non_dict_response`, `returns_empty_dict_on_list_response`, `returns_empty_dict_on_string_response`, `strips_add_prefix`, `strips_track_prefix`, `strips_remind_me_to_prefix`, `strips_remind_me_about_prefix`, `strips_schedule_prefix`, `strips_create_prefix`, `clean_title_unchanged`, `strips_habit_prefix`, `strips_habbit_typo_prefix`, `strips_daily_prefix`, `strips_at_pm_suffix`, `strips_at_24h_time_suffix`, `strips_embedded_time_with_colon_format`, `time_str_and_type_preserved`, `empty_title_returns_without_title_key_override`. Suite: 611 tests, all green.
 
 ## ✅ Done (2026-10-28, autonomous)
 - **tests/test_cmd_tasks.py** — 16 new unit tests for `cmd_tasks` in `tasks/handlers.py` with zero prior coverage: `no_tasks_replies_empty`, `today_task_shows_today_header`, `habit_has_recycle_marker`, `non_habit_no_recycle_marker`, `time_label_on_the_hour`, `time_label_with_minutes`, `upcoming_task_tomorrow_label`, `upcoming_task_future_date_label`, `unscheduled_task_in_unscheduled_section`, `unscheduled_habit_daily_shows_every_day`, `unscheduled_habit_multi_day_frequency`, `unscheduled_hint_message`, `untimed_habit_appears_in_upcoming_with_tomorrow_label`, `subtask_indented_under_parent`, `orphan_step_renders_as_plain_task`, `multiple_sections_all_present`. Suite: 592 tests, all green.
